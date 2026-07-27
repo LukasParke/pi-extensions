@@ -1,7 +1,7 @@
 {
   "name": "@parke.dev/pi-ext-config",
   "version": "0.1.0",
-  "description": "Shared typed configuration loader for pi coding agent extensions (defaults ← file ← env)",
+  "description": "Shared typed configuration loader for pi coding agent extensions (defaults \u2190 file \u2190 env)",
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",

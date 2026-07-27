@@ -28,6 +28,9 @@
   "pi": {
     "extensions": [
       "./extensions/file-search.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "peerDependencies": {
