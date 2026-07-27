@@ -19,6 +19,8 @@ unreachable** with these.
 - `steel_scrape { url, format?, delay?, includeLinks? }` — page content.
   `format` defaults to `["markdown"]`; `readability`, `cleaned_html`, and `html`
   are also available. Returns metadata (title, status, word count) plus content.
+  Its markdown preserves fenced code blocks and strips navigation boilerplate, so it
+  is a good default for reading technical documentation.
 - `steel_search { query, limit? }` — titles, URLs, snippets. The query runs from
   wherever Steel is hosted, so it does not require a third-party search API key.
 - `steel_screenshot { url, fullPage?, delay? }` — returns the image so you can
@@ -90,6 +92,13 @@ pi session shuts down, so a crash cannot leak a live browser. Still call
 `action: "status"` reports whether a session is live and its current URL. The
 start and status output include a viewer URL you can hand to the user to watch
 the browser live, which is genuinely useful when a flow is misbehaving.
+
+## What Steel cannot do
+
+There is **no site map and no crawl** — `steel_scrape` reads one URL per call. To enumerate
+a site's URLs or sweep many pages, you need a different tool (Firecrawl's `map` and `crawl`,
+for instance). A useful division of labour is to discover URLs with such a tool and read
+the pages that matter with `steel_scrape`.
 
 ## When Steel is unreachable
 

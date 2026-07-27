@@ -1,9 +1,9 @@
 /**
  * Firecrawl configuration.
  *
- * Defaults to Firecrawl's hosted API, which is what most users have. A
- * self-hosted instance only needs `baseUrl` pointed at it; the hosted API also
- * needs `apiKey`.
+ * Defaults to Firecrawl's hosted API, which is what most installing users have.
+ * A self-hosted instance (the project is open source and runs happily in docker)
+ * only needs `baseUrl` pointed at it and usually no key at all.
  */
 
 import { httpUrl, load, nonEmptyString, number, type Schema } from "@parke.dev/pi-ext-config";
