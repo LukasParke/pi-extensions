@@ -1,0 +1,22 @@
+{
+  "name": "@parke.dev/pi-steel",
+  "version": "0.1.0",
+  "description": "Steel browser tools for the pi coding agent: scrape, search, screenshot, PDF, plus a persistent session for logins and multi-step flows",
+  "type": "module",
+  "license": "MIT",
+  "author": "Luke Parke",
+  "keywords": ["pi-package", "pi", "pi-coding-agent", "steel", "browser", "scraping", "extension", "parke.dev"],
+  "files": ["extensions", "src", "skills", "README.md", "LICENSE"],
+  "publishConfig": { "access": "public" },
+  "pi": {
+    "extensions": ["./extensions/steel.ts", "./extensions/steel-session.ts"],
+    "skills": ["./skills"]
+  },
+  "dependencies": { "@parke.dev/pi-ext-config": "^0.1.0" },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "engines": { "node": ">=22.19.0" }
+}

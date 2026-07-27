@@ -1,0 +1,38 @@
+{
+  "name": "@parke.dev/pi-ext-config",
+  "version": "0.1.0",
+  "description": "Shared typed configuration loader for pi coding agent extensions (defaults ← file ← env)",
+  "type": "module",
+  "license": "MIT",
+  "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-ext-config#readme",
+  "bugs": {
+    "url": "https://github.com/LukasParke/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-ext-config"
+  },
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "config",
+    "extension",
+    "parke.dev"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}
