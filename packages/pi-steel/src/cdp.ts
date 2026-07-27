@@ -52,7 +52,10 @@ export class CdpSession {
 		const advertised: string = version.webSocketDebuggerUrl;
 		if (!advertised) throw new Error(`CDP endpoint ${base} did not advertise a webSocketDebuggerUrl`);
 		// Advertised authority is localhost (gateway rewrite); use the real host.
-		const wsUrl = advertised.replace(/^wss?:\/\/[^/]+/, base.replace(/^https/, "wss").replace(/^http:/, "ws:"));
+		const wsUrl = advertised.replace(
+			/^wss?:\/\/[^/]+/,
+			base.replace(/^https/, "wss").replace(/^http:/, "ws:"),
+		);
 
 		const ws = await openSocket(wsUrl);
 		const partial = new CdpSession(ws, "", "");
@@ -65,7 +68,10 @@ export class CdpSession {
 			ws.close();
 			throw new Error("Steel session has no page target to attach to");
 		}
-		const { sessionId } = await partial.send("Target.attachToTarget", { targetId: page.targetId, flatten: true });
+		const { sessionId } = await partial.send("Target.attachToTarget", {
+			targetId: page.targetId,
+			flatten: true,
+		});
 		const session = new CdpSession(ws, sessionId, page.targetId);
 		// Re-point socket handlers at the real session object.
 		ws.onmessage = (event: MessageEvent) => session.handleMessage(String(event.data));
@@ -131,7 +137,8 @@ export class CdpSession {
 			awaitPromise: true,
 		});
 		if (result.exceptionDetails) {
-			const text = result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? "evaluation failed";
+			const text =
+				result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? "evaluation failed";
 			throw new Error(`Page evaluation failed: ${String(text).split("\n")[0]}`);
 		}
 		return result.result?.value as T;

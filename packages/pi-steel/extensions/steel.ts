@@ -23,7 +23,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead } from "@earendil-works/pi-coding-agent";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	truncateHead,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { explain, imageMime, steelGet, steelPost, withRetry } from "../src/client.ts";
 import { cdpBase, looksRemote, steelConfig } from "../src/config.ts";
@@ -56,10 +61,13 @@ export default function (pi: ExtensionAPI) {
 					Type.Number({
 						minimum: 0,
 						maximum: 30_000,
-						description: "Milliseconds to wait after load before capturing — use for pages that hydrate late.",
+						description:
+							"Milliseconds to wait after load before capturing — use for pages that hydrate late.",
 					}),
 				),
-				includeLinks: Type.Optional(Type.Boolean({ description: "Append extracted links. Defaults to false." })),
+				includeLinks: Type.Optional(
+					Type.Boolean({ description: "Append extracted links. Defaults to false." }),
+				),
 			},
 			{ additionalProperties: false },
 		),
@@ -128,7 +136,11 @@ export default function (pi: ExtensionAPI) {
 					Type.Boolean({ description: "Capture the entire scrollable page instead of the viewport." }),
 				),
 				delay: Type.Optional(
-					Type.Number({ minimum: 0, maximum: 30_000, description: "Milliseconds to wait after load before capturing." }),
+					Type.Number({
+						minimum: 0,
+						maximum: 30_000,
+						description: "Milliseconds to wait after load before capturing.",
+					}),
 				),
 			},
 			{ additionalProperties: false },
@@ -166,16 +178,31 @@ export default function (pi: ExtensionAPI) {
 							text: `Screenshot of ${params.url} saved to ${file} (${size}${mimeType === "application/octet-stream" ? ", unrecognized image type" : ", too large to inline"}).`,
 						},
 					],
-					details: { url: params.url, bytes: bytes.length, mimeType, file, fullPage: params.fullPage === true },
+					details: {
+						url: params.url,
+						bytes: bytes.length,
+						mimeType,
+						file,
+						fullPage: params.fullPage === true,
+					},
 				};
 			}
 
 			return {
 				content: [
-					{ type: "text" as const, text: `Screenshot of ${params.url} (${size}, ${mimeType}${params.fullPage ? ", full page" : ""})` },
+					{
+						type: "text" as const,
+						text: `Screenshot of ${params.url} (${size}, ${mimeType}${params.fullPage ? ", full page" : ""})`,
+					},
 					{ type: "image" as const, data: bytes.toString("base64"), mimeType },
 				],
-				details: { url: params.url, bytes: bytes.length, mimeType, file: undefined as string | undefined, fullPage: params.fullPage === true },
+				details: {
+					url: params.url,
+					bytes: bytes.length,
+					mimeType,
+					file: undefined as string | undefined,
+					fullPage: params.fullPage === true,
+				},
 			};
 		},
 	});
@@ -188,9 +215,15 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object(
 			{
 				url: Type.String({ description: "Absolute URL to render." }),
-				output: Type.Optional(Type.String({ description: "File path to write the PDF to. Defaults to a temp file." })),
+				output: Type.Optional(
+					Type.String({ description: "File path to write the PDF to. Defaults to a temp file." }),
+				),
 				delay: Type.Optional(
-					Type.Number({ minimum: 0, maximum: 30_000, description: "Milliseconds to wait after load before rendering." }),
+					Type.Number({
+						minimum: 0,
+						maximum: 30_000,
+						description: "Milliseconds to wait after load before rendering.",
+					}),
 				),
 			},
 			{ additionalProperties: false },
@@ -217,7 +250,12 @@ export default function (pi: ExtensionAPI) {
 			}
 			await fs.writeFile(file, bytes);
 			return {
-				content: [{ type: "text" as const, text: `PDF of ${params.url} written to ${file} (${formatSize(bytes.length)}).` }],
+				content: [
+					{
+						type: "text" as const,
+						text: `PDF of ${params.url} written to ${file} (${formatSize(bytes.length)}).`,
+					},
+				],
 				details: { url: params.url, bytes: bytes.length, file },
 			};
 		},
@@ -245,7 +283,9 @@ export default function (pi: ExtensionAPI) {
 			} catch (error) {
 				throw new Error(explain(error, config));
 			}
-			const results: any[] = Array.isArray(payload?.results) ? payload.results.slice(0, params.limit ?? 10) : [];
+			const results: any[] = Array.isArray(payload?.results)
+				? payload.results.slice(0, params.limit ?? 10)
+				: [];
 			if (!results.length) {
 				return {
 					content: [{ type: "text" as const, text: `No results for "${params.query}".` }],
@@ -284,7 +324,10 @@ export default function (pi: ExtensionAPI) {
 					`sessions: ${list.length}`,
 					...list
 						.slice(0, 10)
-						.map((session) => `  ${String(session.id).slice(0, 8)} ${session.status} created ${session.createdAt}`),
+						.map(
+							(session) =>
+								`  ${String(session.id).slice(0, 8)} ${session.status} created ${session.createdAt}`,
+						),
 				];
 				ctx.ui.notify(lines.join("\n"), "info");
 			} catch (error) {

@@ -1,7 +1,7 @@
 {
-  "name": "@parke.dev/pi-steel",
+  "name": "@parke.dev/pi-firecrawl",
   "version": "0.1.0",
-  "description": "Steel browser tools for the pi coding agent: scrape, search, screenshot, PDF, plus a persistent session for logins and multi-step flows",
+  "description": "Firecrawl search, scrape, map and crawl tools for the pi coding agent",
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",
@@ -9,9 +9,9 @@
     "pi-package",
     "pi",
     "pi-coding-agent",
-    "steel",
-    "browser",
+    "firecrawl",
     "scraping",
+    "search",
     "extension",
     "parke.dev"
   ],
@@ -27,8 +27,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/steel.ts",
-      "./extensions/steel-session.ts"
+      "./extensions/firecrawl.ts"
     ],
     "skills": [
       "./skills"

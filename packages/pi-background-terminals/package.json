@@ -1,7 +1,7 @@
 {
-  "name": "@parke.dev/pi-steel",
+  "name": "@parke.dev/pi-background-terminals",
   "version": "0.1.0",
-  "description": "Steel browser tools for the pi coding agent: scrape, search, screenshot, PDF, plus a persistent session for logins and multi-step flows",
+  "description": "Long-running shell commands for the pi coding agent: dev servers, watchers and builds that keep running while the agent works",
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",
@@ -9,9 +9,8 @@
     "pi-package",
     "pi",
     "pi-coding-agent",
-    "steel",
-    "browser",
-    "scraping",
+    "terminal",
+    "background",
     "extension",
     "parke.dev"
   ],
@@ -27,8 +26,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/steel.ts",
-      "./extensions/steel-session.ts"
+      "./extensions/background-terminals.ts"
     ],
     "skills": [
       "./skills"
@@ -38,8 +36,8 @@
     "@parke.dev/pi-ext-config": "^0.1.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "engines": {

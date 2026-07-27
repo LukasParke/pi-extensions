@@ -1,0 +1,7 @@
+- run `npm run check` (typecheck + format + tests) after any change
+- extensions ship TypeScript source, no build step: pi transpiles on load
+- config belongs in `src/config.ts` via `@parke.dev/pi-ext-config`, never hardcoded hosts or paths
+- every package that registers tools must ship a skill teaching the model when to use them
+- avoid explicit return types unless needed; lean on inference
+- `as any` is a last resort
+- `git commit` on this machine must pass `--no-gpg-sign` or it hangs

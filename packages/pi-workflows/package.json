@@ -1,7 +1,7 @@
 {
-  "name": "@parke.dev/pi-steel",
+  "name": "@parke.dev/pi-workflows",
   "version": "0.1.0",
-  "description": "Steel browser tools for the pi coding agent: scrape, search, screenshot, PDF, plus a persistent session for logins and multi-step flows",
+  "description": "Multi-phase multi-agent orchestration for the pi coding agent: write a JavaScript program that fans out to subagents",
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",
@@ -9,9 +9,9 @@
     "pi-package",
     "pi",
     "pi-coding-agent",
-    "steel",
-    "browser",
-    "scraping",
+    "workflow",
+    "orchestration",
+    "agents",
     "extension",
     "parke.dev"
   ],
@@ -27,18 +27,17 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/steel.ts",
-      "./extensions/steel-session.ts"
+      "./extensions/workflows.ts"
     ],
     "skills": [
       "./skills"
     ]
   },
   "dependencies": {
-    "@parke.dev/pi-ext-config": "^0.1.0"
+    "@parke.dev/pi-ext-config": "^0.1.0",
+    "@parke.dev/pi-subagent": "^0.6.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
   },

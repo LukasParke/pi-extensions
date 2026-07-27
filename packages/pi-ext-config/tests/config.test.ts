@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	boolean,
 	configFilePath,
+	piConfigDir,
 	fromEnv,
 	httpUrl,
 	nonEmptyString,
@@ -113,9 +114,9 @@ describe("sanitize", () => {
 
 describe("fromEnv", () => {
 	it("reads only the declared env vars", () => {
-		expect(
-			fromEnv(schema, { DEMO_BASE_URL: "https://env.example.com", IRRELEVANT: "x" }),
-		).toEqual({ baseUrl: "https://env.example.com" });
+		expect(fromEnv(schema, { DEMO_BASE_URL: "https://env.example.com", IRRELEVANT: "x" })).toEqual({
+			baseUrl: "https://env.example.com",
+		});
 	});
 
 	it("skips malformed env values", () => {
@@ -158,5 +159,22 @@ describe("configFilePath", () => {
 
 	it("honors a rebranded config dir name", () => {
 		expect(configFilePath("steel", ".myagent")).toMatch(/\.myagent\/steel\.json$/);
+	});
+});
+
+describe("piConfigDir", () => {
+	it("honors PI_CODING_AGENT_DIR by using its parent", () => {
+		// Regression: an earlier version read PI_AGENT_DIR, which pi does not set.
+		// pi's own env var is PI_CODING_AGENT_DIR and points at the *agent* dir,
+		// so config files live one level up beside it.
+		const previous = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = "/tmp/example/agent";
+		try {
+			expect(piConfigDir()).toBe("/tmp/example");
+			expect(configFilePath("steel")).toBe("/tmp/example/steel.json");
+		} finally {
+			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previous;
+		}
 	});
 });

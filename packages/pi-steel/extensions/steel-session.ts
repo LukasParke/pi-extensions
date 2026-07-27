@@ -31,7 +31,12 @@
 
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead } from "@earendil-works/pi-coding-agent";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	truncateHead,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { CdpSession, jsString, waitForIdle } from "../src/cdp.ts";
 import { headers } from "../src/client.ts";
@@ -256,19 +261,25 @@ export default function (pi: ExtensionAPI) {
 			if (params.action === "end") {
 				const id = await releaseSession(config);
 				return {
-					content: [{ type: "text" as const, text: id ? `Released Steel session ${id}.` : "No live Steel session." }],
+					content: [
+						{ type: "text" as const, text: id ? `Released Steel session ${id}.` : "No live Steel session." },
+					],
 					details: { action: "end", released: id ?? null } as SessionDetails,
 				};
 			}
 			if (params.action === "status") {
 				if (!live) {
 					return {
-						content: [{ type: "text" as const, text: "No live Steel session. Use action:'start' to open one." }],
+						content: [
+							{ type: "text" as const, text: "No live Steel session. Use action:'start' to open one." },
+						],
 						details: { action: "status", live: false } as SessionDetails,
 					};
 				}
 				const age = Math.round((Date.now() - live.startedAt) / 1000);
-				const url = live.cdp ? await live.cdp.evaluate<string>("location.href").catch(() => live?.lastUrl) : live.lastUrl;
+				const url = live.cdp
+					? await live.cdp.evaluate<string>("location.href").catch(() => live?.lastUrl)
+					: live.lastUrl;
 				return {
 					content: [
 						{
@@ -313,7 +324,11 @@ export default function (pi: ExtensionAPI) {
 			{
 				url: Type.String({ description: "Absolute URL to open." }),
 				waitMs: Type.Optional(
-					Type.Number({ minimum: 0, maximum: 30_000, description: "Extra settle time after load, for late-hydrating apps." }),
+					Type.Number({
+						minimum: 0,
+						maximum: 30_000,
+						description: "Extra settle time after load, for late-hydrating apps.",
+					}),
 				),
 			},
 			{ additionalProperties: false },
@@ -346,10 +361,18 @@ export default function (pi: ExtensionAPI) {
 						"click: click a selector. type: focus a selector and enter text. press: send a key (e.g. Enter). select: choose an option value. scroll: scroll the page. wait: just settle.",
 				}),
 				selector: Type.Optional(Type.String({ description: "CSS selector for click / type / select." })),
-				text: Type.Optional(Type.String({ description: "Text to type, key to press, or option value to select." })),
-				clear: Type.Optional(Type.Boolean({ description: "Clear the field before typing. Defaults to true for type." })),
+				text: Type.Optional(
+					Type.String({ description: "Text to type, key to press, or option value to select." }),
+				),
+				clear: Type.Optional(
+					Type.Boolean({ description: "Clear the field before typing. Defaults to true for type." }),
+				),
 				waitMs: Type.Optional(
-					Type.Number({ minimum: 0, maximum: 30_000, description: "Settle time after the action. Defaults to 1000." }),
+					Type.Number({
+						minimum: 0,
+						maximum: 30_000,
+						description: "Settle time after the action. Defaults to 1000.",
+					}),
 				),
 			},
 			{ additionalProperties: false },
@@ -424,7 +447,8 @@ export default function (pi: ExtensionAPI) {
 					break;
 				}
 				case "select": {
-					if (params.text === undefined) throw new Error("steel_act action:'select' requires text (the option value).");
+					if (params.text === undefined)
+						throw new Error("steel_act action:'select' requires text (the option value).");
 					const ok = await cdp.evaluate<boolean>(`(() => {
             const el = document.querySelector(${jsString(params.selector)});
             if (!el) return false;
@@ -468,7 +492,9 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object(
 			{
 				mode: Type.Optional(
-					StringEnum(["text", "links", "forms", "all"], { description: "What to extract. Defaults to 'text'." }),
+					StringEnum(["text", "links", "forms", "all"], {
+						description: "What to extract. Defaults to 'text'.",
+					}),
 				),
 				selector: Type.Optional(Type.String({ description: "Scope extraction to this CSS selector." })),
 			},
@@ -492,7 +518,9 @@ export default function (pi: ExtensionAPI) {
 			"Screenshot the current page in the persistent Steel browser and return it as an image, so you can see the rendered state mid-flow. Use to verify a click worked or to read something only visible after rendering.",
 		parameters: Type.Object(
 			{
-				fullPage: Type.Optional(Type.Boolean({ description: "Capture the whole scrollable page, not just the viewport." })),
+				fullPage: Type.Optional(
+					Type.Boolean({ description: "Capture the whole scrollable page, not just the viewport." }),
+				),
 			},
 			{ additionalProperties: false },
 		),
@@ -544,9 +572,15 @@ export default function (pi: ExtensionAPI) {
 				return ctx.ui.notify(id ? `Released Steel session ${id}` : "No live Steel session", "info");
 			}
 			if (!live) return ctx.ui.notify("No live Steel session", "info");
-			const url = live.cdp ? await live.cdp.evaluate<string>("location.href").catch(() => live?.lastUrl) : live.lastUrl;
+			const url = live.cdp
+				? await live.cdp.evaluate<string>("location.href").catch(() => live?.lastUrl)
+				: live.lastUrl;
 			ctx.ui.notify(
-				[`session ${live.id}`, `url: ${url ?? "about:blank"}`, live.viewerUrl ? `viewer: ${live.viewerUrl}` : ""]
+				[
+					`session ${live.id}`,
+					`url: ${url ?? "about:blank"}`,
+					live.viewerUrl ? `viewer: ${live.viewerUrl}` : "",
+				]
 					.filter(Boolean)
 					.join("\n"),
 				"info",

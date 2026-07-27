@@ -1,7 +1,7 @@
 {
-  "name": "@parke.dev/pi-steel",
+  "name": "@parke.dev/pi-ask-user",
   "version": "0.1.0",
-  "description": "Steel browser tools for the pi coding agent: scrape, search, screenshot, PDF, plus a persistent session for logins and multi-step flows",
+  "description": "Lets the pi coding agent ask the user a multiple-choice question mid-task instead of guessing",
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",
@@ -9,16 +9,13 @@
     "pi-package",
     "pi",
     "pi-coding-agent",
-    "steel",
-    "browser",
-    "scraping",
+    "prompt",
+    "interaction",
     "extension",
     "parke.dev"
   ],
   "files": [
     "extensions",
-    "src",
-    "skills",
     "README.md",
     "LICENSE"
   ],
@@ -27,19 +24,12 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/steel.ts",
-      "./extensions/steel-session.ts"
-    ],
-    "skills": [
-      "./skills"
+      "./extensions/ask-user.ts"
     ]
   },
-  "dependencies": {
-    "@parke.dev/pi-ext-config": "^0.1.0"
-  },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "engines": {

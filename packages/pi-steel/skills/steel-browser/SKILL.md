@@ -57,14 +57,14 @@ the wrong element that you then have to debug.
 
 ### steel_act
 
-| action | needs | notes |
-|---|---|---|
-| `click` | `selector` | |
-| `type` | `selector`, `text` | clears the field first unless `clear: false` |
-| `select` | `selector`, `text` (option value) | |
-| `press` | `text` (key, e.g. `Enter`) | sends a real key event |
-| `scroll` | — | |
-| `wait` | — | just settles |
+| action   | needs                             | notes                                        |
+| -------- | --------------------------------- | -------------------------------------------- |
+| `click`  | `selector`                        |                                              |
+| `type`   | `selector`, `text`                | clears the field first unless `clear: false` |
+| `select` | `selector`, `text` (option value) |                                              |
+| `press`  | `text` (key, e.g. `Enter`)        | sends a real key event                       |
+| `scroll` | —                                 |                                              |
+| `wait`   | —                                 | just settles                                 |
 
 `waitMs` settles after the action, defaulting to 1000.
 

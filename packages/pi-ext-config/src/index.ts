@@ -33,11 +33,14 @@ export type Validator<T> = (value: unknown) => T | undefined;
  * Directory holding pi's user config, e.g. `~/.pi`.
  *
  * Resolved from the host's `CONFIG_DIR_NAME` when available so rebranded
- * distributions work, falling back to `.pi`. Honors `PI_AGENT_DIR`'s parent
- * when set, matching how pi itself relocates its config.
+ * distributions work, falling back to `.pi`.
+ *
+ * `PI_CODING_AGENT_DIR` overrides pi's *agent* dir (default `~/.pi/agent`), so
+ * its parent is the config dir extension config files live beside. Verified
+ * against pi's own `ENV_AGENT_DIR`; do not guess this variable's name.
  */
 export function piConfigDir(configDirName = ".pi"): string {
-	const fromEnv = process.env.PI_AGENT_DIR?.trim();
+	const fromEnv = process.env.PI_CODING_AGENT_DIR?.trim();
 	if (fromEnv) return path.dirname(path.resolve(expandTilde(fromEnv)));
 	return path.join(os.homedir(), configDirName);
 }
@@ -163,10 +166,7 @@ export function resolve<C extends object>(
 }
 
 /** Read + sanitize the optional config file. Missing or invalid files yield {}. */
-export async function readFile<C extends object>(
-	schema: Schema<C>,
-	file: string,
-): Promise<Partial<C>> {
+export async function readFile<C extends object>(schema: Schema<C>, file: string): Promise<Partial<C>> {
 	try {
 		return sanitize(schema, JSON.parse(await fs.readFile(file, "utf8")));
 	} catch {
