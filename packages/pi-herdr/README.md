@@ -22,6 +22,19 @@ it (`herdr worktree create`, `herdr agent start/prompt/wait/get/read`,
 | `herdr_task_status`  | Check a dispatched agent: lifecycle state (working/idle/done/blocked) and recent terminal output; `wait` to block |
 | `herdr_task_cleanup` | Safely close a finished agent's workspace and remove its dispatched-task worktree                                 |
 
+## Dispatch naming
+
+Every `herdr_task` call requires a workspace `name`: use **1-3 hyphenated words
+naming the subject of the task, not the action**. Good names include
+`mcp-proxy`, `server-tools`, `ci-speed`, and `workspace-naming`. Avoid action
+phrases such as `fix-the-thing` or the live failure that motivated this rule:
+`dig-into-ci-on-this-repo-on-main-and-det`.
+
+The name becomes both the agent/worktree label and the `agent/<name>` branch.
+Explicit names are normalized to lowercase kebab-case but otherwise preserved.
+The `/herdr-task` slash command has no explicit name field, so it derives the
+same 1-3 word subject name from the free-form task.
+
 Dispatch is fire-and-forget and resilient:
 
 - An existing worktree/branch left behind by a failed earlier dispatch is
@@ -30,10 +43,13 @@ Dispatch is fire-and-forget and resilient:
   adopted rather than colliding with `agent_pane_busy`.
 - Pane-not-ready states (`agent_pane_busy`, "not an available shell",
   `agent_kind_mismatch`) are retried as transient while the checkout settles.
-- Newly started agents receive the task in `pi`'s launch argv, eliminating the
-  startup prompt-swallow race. Dispatch waits up to 30 seconds for `working`
-  and falls back to a verified prompt only if the agent remains idle. Adopted
-  agents are already running, so they always use the verified prompt path.
+- Safe single-line tasks up to 2,048 characters launch in `pi`'s argv,
+  eliminating the startup prompt-swallow race. Multiline or longer tasks start
+  bare and use the verified prompt path. If Herdr still rejects argv encoding,
+  dispatch retries the start bare instead of orphaning the worktree.
+- After an argv launch, dispatch waits up to 30 seconds for `working` and falls
+  back to a verified prompt only if the agent remains idle. Adopted agents are
+  already running, so they always use the verified prompt path.
 
 ## Lifecycle
 
@@ -67,8 +83,9 @@ branch remains on the remote.
 
 - `/herdr-task [repo-name] <task...>` — dispatch from the prompt line. The
   leading token is treated as a repo short name if it matches a known repo;
-  otherwise the repo comes from the current directory. A bare GitHub PR URL
-  dispatches a review instead.
+  otherwise the repo comes from the current directory. Its workspace name is
+  derived from the first three meaningful subject words in the task. A bare
+  GitHub PR URL dispatches a review instead.
 - `/review <github-pr-url>` — dispatch a `review-pr-<num>` agent that runs
   `/pr-review` on the PR from that repo's worktree.
 

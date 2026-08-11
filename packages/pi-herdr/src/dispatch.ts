@@ -41,6 +41,51 @@ export function slugify(text: string): string {
 	return /^[a-z]/.test(slug) ? slug : `task-${slug || Date.now().toString(36)}`.slice(0, 40);
 }
 
+const STOPWORDS = new Set([
+	"a",
+	"an",
+	"and",
+	"are",
+	"determine",
+	"dig",
+	"figure",
+	"fix",
+	"for",
+	"in",
+	"into",
+	"investigate",
+	"is",
+	"it",
+	"main",
+	"of",
+	"on",
+	"or",
+	"our",
+	"out",
+	"please",
+	"repo",
+	"that",
+	"the",
+	"then",
+	"this",
+	"to",
+	"up",
+	"what",
+	"why",
+	"with",
+	"you",
+]);
+
+/** Derive a 1-3 word subject name from free-form task text. */
+export function shortName(text: string): string {
+	const words = text
+		.toLowerCase()
+		.replace(/[^a-z0-9\s-]+/g, " ")
+		.split(/[\s-]+/)
+		.filter((word) => word.length > 1 && !STOPWORDS.has(word));
+	return words.slice(0, 3).join("-") || slugify(text).split("-").slice(0, 3).join("-");
+}
+
 /**
  * Agent-start failures that resolve themselves: the pane is still checking
  * out the worktree (busy / "not an available shell"), or herdr misdetects the
@@ -162,8 +207,18 @@ export async function ensurePiAgent(
 			return { agentName: existing, launchedWithTask: false };
 		}
 		try {
-			const started = await herdr(["agent", "start", name, "--kind", "pi", "--pane", paneId, "--", task]);
-			return { agentName: started.agent.name, launchedWithTask: true };
+			const argvSafe = !/[\r\n]/.test(task) && task.length <= 2048;
+			const startArgs = ["agent", "start", name, "--kind", "pi", "--pane", paneId];
+			if (argvSafe) startArgs.push("--", task);
+			try {
+				const started = await herdr(startArgs);
+				return { agentName: started.agent.name, launchedWithTask: argvSafe };
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				if (!argvSafe || !message.includes("invalid_agent_argument")) throw error;
+				const started = await herdr(["agent", "start", name, "--kind", "pi", "--pane", paneId]);
+				return { agentName: started.agent.name, launchedWithTask: false };
+			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (!isTransientStartError(message) || now() >= deadline) throw error;
@@ -222,9 +277,8 @@ export async function dispatchHerdrTask(
 	input: { repoPath: string; task: string; name?: string },
 	options: DispatchOptions = {},
 ): Promise<HerdrTaskResult> {
-	const slug = slugify(input.name ?? input.task);
-	const name = input.name ?? slug;
-	const branch = `agent/${slug}`;
+	const name = input.name ? slugify(input.name) : shortName(input.task);
+	const branch = `agent/${name}`;
 
 	const worktree = await ensureWorktree(input.repoPath, branch, name, options);
 	const { agentName, launchedWithTask } = await ensurePiAgent(name, worktree.paneId, input.task, options);

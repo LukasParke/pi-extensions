@@ -46,11 +46,10 @@ export default function (pi: ExtensionAPI) {
 						"Repo short name (folder name under a configured repo root). Omit for the current repo.",
 				}),
 			),
-			name: Type.Optional(
-				Type.String({
-					description: "Short kebab-case label for the agent/worktree; derived from the task if omitted",
-				}),
-			),
+			name: Type.String({
+				description:
+					"Workspace name: 1-3 hyphenated words naming the SUBJECT of the task, not the action. Good: 'mcp-proxy', 'server-tools', 'ci-speed', 'workspace-naming'. Bad: 'dig-into-ci-on-this-repo-on-main-and-det', 'fix-the-thing'.",
+			}),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const config = await herdrConfig();
