@@ -18,6 +18,10 @@
 - Run process records now carry `worktreeCwd` so live worktree-isolated runs
   from **other concurrent Pi processes** are shielded from the global sweep,
   same as this session's live runs.
+- Known limitation: `pi-workflows` reuses `WorktreeManager` with the default
+  root (its worktrees land in the same containers and are reclaimed by the
+  global sweep) but writes run records to a separate lock root, so its live
+  worktrees are shielded only by the 1h min-age window, not by run records.
 
 ## 0.8.0
 

@@ -649,7 +649,7 @@ function scheduleMaintenance(runtime: SessionRuntime): void {
     for (const record of runtime.locks.listRunRecords()) {
       if (record.state === "running" && record.worktreeCwd) liveWorktrees.add(record.worktreeCwd);
     }
-    await runtime.worktrees.sweepAll(runtime.ctx.cwd, runtime.config.worktreeRetentionDays, liveWorktrees);
+    await runtime.worktrees.sweepAll(runtime.ctx.cwd, liveWorktrees);
   })().catch(() => { /* maintenance is best effort */ });
 }
 
@@ -1192,6 +1192,8 @@ export default function registerSubagent(pi: ExtensionAPI): void {
                   runId: taskRunId,
                   parentSessionKey: runtime.key,
                   childSessionId: partial.sessionId,
+                  // Read-then-write is safe: all writes for one taskRunId come
+                  // from this parent's single-threaded event loop.
                   worktreeCwd: partial.worktree?.cwd ?? runtime.locks.readRunRecord(taskRunId)?.worktreeCwd,
                   process: {
                     pid: partial.process.pid,

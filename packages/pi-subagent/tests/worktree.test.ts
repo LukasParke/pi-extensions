@@ -333,7 +333,7 @@ describe("WorktreeManager", () => {
       const live = await mgr.create(repo2, "live");
       await age(live.cwd); // aged but shielded by keepPaths
 
-      const report = await mgr.sweepAll(repo, 7, new Set([live.cwd]));
+      const report = await mgr.sweepAll(repo, new Set([live.cwd]));
       expect(report.removed).toContain(changed.cwd);
       expect(report.archived).toHaveLength(1);
       expect(await fs.readFile(report.archived[0]!, "utf8")).toContain("keep.txt");

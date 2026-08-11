@@ -712,7 +712,6 @@ export class WorktreeManager {
    */
   async sweepAll(
     currentCwd?: string,
-    retentionDays = defaultConfig.worktreeRetentionDays,
     keepPaths: ReadonlySet<string> = new Set(),
     now = Date.now(),
   ): Promise<GlobalSweepReport> {
