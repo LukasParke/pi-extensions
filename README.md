@@ -12,6 +12,7 @@ done. UI-only and library-only packages (no tools) do not need skills.
 | [`@parke.dev/pi-steel`](packages/pi-steel)                               | 9     | [Steel](https://github.com/steel-dev/steel-browser) browser: scrape, search, screenshot, PDF, plus a persistent session for logins and multi-step flows |
 | [`@parke.dev/pi-firecrawl`](packages/pi-firecrawl)                       | 4     | Firecrawl scrape, search, map, crawl                                                                                                                    |
 | [`@parke.dev/pi-background-terminals`](packages/pi-background-terminals) | 4     | Long-running commands: dev servers, watchers, builds, with a `/ps` UI                                                                                   |
+| [`@parke.dev/pi-sentinel`](packages/pi-sentinel)                         | 5     | Criteria-gated wakeups for CI, reviews, deployments, timers, and other external state                                                                   |
 | [`@parke.dev/pi-subagent`](packages/pi-subagent)                         | 2     | Production-grade isolated child agents, worktrees, budgets, retries, and the workflow execution SDK                                                     |
 | [`@parke.dev/pi-workflows`](packages/pi-workflows)                       | 1     | Multi-phase multi-agent orchestration from a JavaScript program you write                                                                               |
 | [`@parke.dev/pi-file-search`](packages/pi-file-search)                   | 2     | First-class `fd` and `rg` tools                                                                                                                         |
@@ -38,6 +39,7 @@ validated together.
 ```bash
 pi install npm:@parke.dev/pi-steel
 pi install npm:@parke.dev/pi-background-terminals
+pi install npm:@parke.dev/pi-sentinel
 # …etc
 
 # Install all productivity integrations together
