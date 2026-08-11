@@ -51,7 +51,8 @@ Dispatch → verify → cleanup:
 Herdr forgets an agent after its workspace closes. Status reports that agent as
 `gone`: if its checkout still exists under a configured worktree root, the
 response points to it for branch/PR verification and cleanup; otherwise it
-reports that the task was fully cleaned up.
+reports that no matching worktree was found under the configured roots. If
+multiple worktrees match, status refuses to choose one.
 
 Cleanup refuses non-Herdr worktrees. Without `force`, it also refuses agents
 that are still working/blocked, dirty checkouts, and unpushed commits. A refusal

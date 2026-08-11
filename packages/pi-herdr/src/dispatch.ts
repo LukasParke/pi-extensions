@@ -232,7 +232,9 @@ export async function dispatchHerdrTask(
 	if (launchedWithTask) {
 		try {
 			await herdr(["agent", "wait", agentName, "--until", "working", "--timeout", "30000"]);
-		} catch {
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (!message.includes("wait_timeout")) throw error;
 			const info = await herdr(["agent", "get", agentName]);
 			if (info.agent?.agent_status === "idle") await promptWithVerify(agentName, input.task, options);
 		}

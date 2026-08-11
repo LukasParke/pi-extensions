@@ -1,11 +1,12 @@
 import { herdr as realHerdr } from "./cli.ts";
 import type { HerdrRunner } from "./dispatch.ts";
-import { findOrphanWorktree } from "./repos.ts";
+import { AmbiguousOrphanWorktreeError, findOrphanWorktree } from "./repos.ts";
 
 export interface HerdrTaskStatus {
 	status: string;
 	cwd?: string;
 	worktreePath?: string | null;
+	matches?: string[];
 }
 
 export async function getHerdrTaskStatus(
@@ -23,7 +24,12 @@ export async function getHerdrTaskStatus(
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (!message.includes("agent_not_found")) throw error;
-		const orphan = (options.findOrphan ?? findOrphanWorktree)(input.agent, input.worktreeRoots);
-		return { status: "gone", worktreePath: orphan ?? null };
+		try {
+			const orphan = (options.findOrphan ?? findOrphanWorktree)(input.agent, input.worktreeRoots);
+			return { status: "gone", worktreePath: orphan ?? null };
+		} catch (error) {
+			if (!(error instanceof AmbiguousOrphanWorktreeError)) throw error;
+			return { status: "gone", worktreePath: null, matches: error.matches };
+		}
 	}
 }

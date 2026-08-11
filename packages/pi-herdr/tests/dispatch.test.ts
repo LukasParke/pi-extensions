@@ -399,6 +399,26 @@ describe("dispatchHerdrTask", () => {
 		]);
 	});
 
+	it("propagates non-timeout argv wait failures without prompting", async () => {
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": () => ({ agent: { name: "fix-thing" } }),
+			"agent wait": () => {
+				throw new Error("server_unavailable");
+			},
+		});
+		await expect(
+			dispatchHerdrTask(
+				{ repoPath: "/repo", task: "Fix the thing", name: "fix-thing" },
+				{ herdr: run, ...noSleep },
+			),
+		).rejects.toThrow("server_unavailable");
+		expect(calls.some((call) => call[1] === "prompt")).toBe(false);
+	});
+
 	it("does not prompt when argv launch settled before status verification", async () => {
 		const { run, calls } = fakeHerdr({
 			"worktree create": () => createdWorktree,

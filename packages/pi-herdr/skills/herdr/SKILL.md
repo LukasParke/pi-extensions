@@ -47,7 +47,9 @@ States: `working` (busy), `blocked` (asking a question — read the output, then
 answer with `herdr agent prompt` via bash), `idle`/`done` (turn finished), and
 `gone` (Herdr forgot the agent after its workspace closed). A gone status points
 to the surviving orphan worktree when one exists; verify its branch/PR, then
-clean it up. If no worktree remains, the task was already fully cleaned up.
+clean it up. If no worktree is found under the configured roots, status says
+so without claiming cleanup. If multiple worktrees match, resolve the ambiguity
+before cleanup.
 
 If Sentinel tools are available, register `sentinel_watch` against
 `herdr agent get <name>` reaching `idle` or `done`. Go idle and let Sentinel

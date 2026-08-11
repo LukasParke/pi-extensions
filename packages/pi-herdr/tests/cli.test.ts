@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { describeHerdrError, parseHerdrError, runHerdr } from "../src/cli.ts";
+import { describeHerdrError, parseHerdrError, runHerdr, runHerdrText } from "../src/cli.ts";
 
 describe("parseHerdrError", () => {
 	it("recovers the envelope from mixed CLI output", () => {
@@ -12,8 +12,8 @@ describe("parseHerdrError", () => {
 		expect(parseHerdrError(raw)).toEqual({ code: "wait_timeout", message: "gave up" });
 	});
 
-	it("copes with a pretty-printed multi-line envelope", () => {
-		const raw = 'noise\n{\n  "error": {\n    "code": "x",\n    "message": "boom"\n  }\n}\n';
+	it("copes with a pretty-printed multi-line envelope after progress JSON", () => {
+		const raw = '{"progress":50}\nnoise\n{\n  "error": {\n    "code": "x",\n    "message": "boom"\n  }\n}\n';
 		expect(parseHerdrError(raw)).toEqual({ code: "x", message: "boom" });
 	});
 
@@ -51,6 +51,25 @@ describe("runHerdr", () => {
 				ms: expect.any(Number),
 				ts: expect.any(String),
 			},
+		]);
+	});
+
+	it("logs successful and failed raw-text invocations", async () => {
+		const entries: string[] = [];
+		const appendLog = vi.fn((_path: string, entry: string) => entries.push(entry));
+		const exec = vi
+			.fn()
+			.mockResolvedValueOnce({ stdout: "terminal output" })
+			.mockRejectedValueOnce(new Error("read failed"));
+		await expect(
+			runHerdrText(["agent", "read", "fix"], { exec, appendLog, logPath: "/tmp/herdr.log" }),
+		).resolves.toBe("terminal output");
+		await expect(
+			runHerdrText(["agent", "read", "gone"], { exec, appendLog, logPath: "/tmp/herdr.log" }),
+		).rejects.toThrow("read failed");
+		expect(entries.map((entry) => JSON.parse(entry))).toMatchObject([
+			{ args: ["agent", "read", "fix"], outcome: "ok" },
+			{ args: ["agent", "read", "gone"], outcome: "error", error: "read failed" },
 		]);
 	});
 });

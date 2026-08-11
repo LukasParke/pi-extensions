@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { cleanupHerdrTask, type GitRunner } from "../src/cleanup.ts";
 import type { HerdrRunner } from "../src/dispatch.ts";
+import { AmbiguousOrphanWorktreeError } from "../src/repos.ts";
 
 const worktreeRoot = "/home/luke/.herdr/worktrees";
 const cwd = `${worktreeRoot}/app/agent-fix`;
@@ -140,6 +141,24 @@ describe("cleanupHerdrTask", () => {
 			workspaceId: null,
 			worktreePath: null,
 		});
+		expect(git).not.toHaveBeenCalled();
+	});
+
+	it("refuses ambiguous orphan matches without running git", async () => {
+		const { herdr, git } = setup({ agentNotFound: true });
+		const matches = [`${worktreeRoot}/app/agent-fix`, `${worktreeRoot}/other/agent-fix`];
+		await expect(
+			cleanupHerdrTask(
+				{ agent: "fix", worktreeRoots: [worktreeRoot] },
+				{
+					findOrphan: () => {
+						throw new AmbiguousOrphanWorktreeError(matches);
+					},
+					git,
+					herdr,
+				},
+			),
+		).resolves.toMatchObject({ cleaned: false, reason: "ambiguous", matches });
 		expect(git).not.toHaveBeenCalled();
 	});
 

@@ -93,17 +93,12 @@ export default function (pi: ExtensionAPI) {
 			}
 			const status = await getHerdrTaskStatus({ agent: params.agent, worktreeRoots: config.worktreeRoots });
 			if (status.status === "gone") {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: status.worktreePath
-								? `Agent "${params.agent}" is gone (herdr forgets agents when their workspace closes), but its worktree survives at ${status.worktreePath}. Verify its branch/PR, then herdr_task_cleanup to remove it.`
-								: `Agent "${params.agent}" is gone and no worktree remains — it was fully cleaned up.`,
-						},
-					],
-					details: status,
-				};
+				const text = status.matches
+					? `Agent "${params.agent}" is gone, but multiple worktrees match it:\n${status.matches.join("\n")}\nResolve the ambiguity before cleanup.`
+					: status.worktreePath
+						? `Agent "${params.agent}" is gone (herdr forgets agents when their workspace closes), but its worktree survives at ${status.worktreePath}. Verify its branch/PR, then herdr_task_cleanup to remove it.`
+						: `Agent "${params.agent}" is gone and no matching worktree was found under the configured roots.`;
+				return { content: [{ type: "text" as const, text }], details: status };
 			}
 			const output = await herdrText(
 				["agent", "read", params.agent, "--lines", String(params.lines ?? 60), "--format", "text"],
@@ -138,10 +133,14 @@ export default function (pi: ExtensionAPI) {
 			const config = await herdrConfig();
 			const result = await cleanupHerdrTask({ ...params, worktreeRoots: config.worktreeRoots });
 			if (!result.cleaned) {
-				const text =
-					result.reason === "nothing-found"
-						? `Agent "${params.agent}" is unknown to herdr and no orphaned worktree matches it — nothing to clean up.`
-						: `Refusing cleanup of "${params.agent}" (${result.worktreePath}):\n- ${result.problems!.join("\n- ")}\n\nResolve these (or pass force to discard) and retry.`;
+				let text: string;
+				if (result.reason === "nothing-found") {
+					text = `Agent "${params.agent}" is unknown to herdr and no matching worktree was found under the configured roots — nothing to clean up.`;
+				} else if (result.reason === "ambiguous") {
+					text = `Refusing cleanup of "${params.agent}": multiple worktrees match it:\n${result.matches!.join("\n")}\nResolve the ambiguity and retry.`;
+				} else {
+					text = `Refusing cleanup of "${params.agent}" (${result.worktreePath}):\n- ${result.problems!.join("\n- ")}\n\nResolve these (or pass force to discard) and retry.`;
+				}
 				return { content: [{ type: "text" as const, text }], details: result };
 			}
 			const text =

@@ -2,7 +2,12 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { herdr as realHerdr } from "./cli.ts";
 import type { HerdrRunner } from "./dispatch.ts";
-import { baseRepoFromCommonDir, findOrphanWorktree, isPathInside } from "./repos.ts";
+import {
+	AmbiguousOrphanWorktreeError,
+	baseRepoFromCommonDir,
+	findOrphanWorktree,
+	isPathInside,
+} from "./repos.ts";
 
 const exec = promisify(execFile);
 
@@ -17,7 +22,8 @@ export interface CleanupOptions {
 export interface CleanupResult {
 	cleaned: boolean;
 	problems?: string[];
-	reason?: "nothing-found";
+	reason?: "nothing-found" | "ambiguous";
+	matches?: string[];
 	removal?: "herdr" | "git";
 	workspaceId: string | null;
 	worktreePath: string | null;
@@ -46,17 +52,28 @@ export async function cleanupHerdrTask(
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (!message.includes("agent_not_found")) throw error;
-		const orphan = (options.findOrphan ?? findOrphanWorktree)(input.agent, input.worktreeRoots);
-		if (!orphan) {
+		try {
+			const orphan = (options.findOrphan ?? findOrphanWorktree)(input.agent, input.worktreeRoots);
+			if (!orphan) {
+				return {
+					cleaned: false,
+					reason: "nothing-found",
+					workspaceId: null,
+					worktreePath: null,
+				};
+			}
+			status = "gone";
+			cwd = orphan;
+		} catch (orphanError) {
+			if (!(orphanError instanceof AmbiguousOrphanWorktreeError)) throw orphanError;
 			return {
 				cleaned: false,
-				reason: "nothing-found",
+				reason: "ambiguous",
+				matches: orphanError.matches,
 				workspaceId: null,
 				worktreePath: null,
 			};
 		}
-		status = "gone";
-		cwd = orphan;
 	}
 
 	if (!input.worktreeRoots.some((root) => isPathInside(cwd, root))) {

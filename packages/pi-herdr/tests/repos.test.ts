@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+	AmbiguousOrphanWorktreeError,
 	baseRepoFromCommonDir,
 	findOrphanWorktree,
 	knownRepos,
@@ -63,6 +64,14 @@ describe("findOrphanWorktree", () => {
 		const path = join(worktreeRoot, "app", "fix");
 		mkdirSync(path, { recursive: true });
 		expect(findOrphanWorktree("fix", [worktreeRoot])).toBe(path);
+	});
+
+	it("refuses to choose between multiple matching worktrees", () => {
+		const firstRoot = join(root, "ambiguous-a");
+		const secondRoot = join(root, "ambiguous-b");
+		mkdirSync(join(firstRoot, "app", "agent-fix"), { recursive: true });
+		mkdirSync(join(secondRoot, "other", "agent-fix"), { recursive: true });
+		expect(() => findOrphanWorktree("fix", [firstRoot, secondRoot])).toThrow(AmbiguousOrphanWorktreeError);
 	});
 
 	it("returns undefined when no matching worktree survives", () => {
