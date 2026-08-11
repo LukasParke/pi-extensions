@@ -23,18 +23,25 @@ this session or the work is quick and read-only.
 ## Dispatch
 
 ```
-herdr_task { task: "<complete self-contained prompt>", repo: "pi-extensions", name: "fix-ci" }
+herdr_task { task: "<complete self-contained prompt>", repo: "pi-extensions", name: "ci-speed" }
 ```
 
 - Omit `repo` to use the current directory's repo.
-- `name` becomes the agent name and branch (`agent/<name>`); derived from the
-  task when omitted.
+- `name` is required. Use **1-3 hyphenated words naming the subject of the
+  task, not the action**. Good: `mcp-proxy`, `server-tools`, `ci-speed`,
+  `workspace-naming`. Bad: `fix-the-thing`,
+  `dig-into-ci-on-this-repo-on-main-and-det`.
+- `name` becomes the agent/worktree label and branch (`agent/<name>`). Explicit
+  names are lowercased and slugified but otherwise respected.
 - Returns immediately with the agent name, worktree path, and branch.
 - Dispatch is resilient: an existing worktree/branch from a failed earlier
   dispatch is reused and an already-running pi in the pane is adopted.
-- Newly started agents receive the task in pi's launch argv. Dispatch waits up
-  to 30 seconds for `working`, then uses the verified prompt path only if the
-  agent remains idle. Adopted agents always use the verified prompt path.
+- Safe single-line tasks up to 2,048 characters launch in pi's argv. Multiline,
+  longer, or argv-rejected tasks start bare and use the verified prompt path,
+  so an encoding failure does not orphan the worktree.
+- After an argv launch, dispatch waits up to 30 seconds for `working`, then uses
+  the verified prompt path only if the agent remains idle. Adopted agents
+  always use the verified prompt path.
 
 ## Monitor
 
@@ -81,7 +88,8 @@ Lifecycle: **dispatch → monitor/wake → verify the gate → cleanup**.
 
 ## Slash commands
 
-- `/herdr-task [repo-name] <task...>` — dispatch from the prompt line.
+- `/herdr-task [repo-name] <task...>` — dispatch from the prompt line. It
+  derives a 1-3 word subject name from the free-form task.
 - `/review <github-pr-url>` — dispatch a `review-pr-<num>` agent that runs
   `/pr-review` on the PR in that repo's worktree. A bare PR URL given to
   `/herdr-task` does the same.

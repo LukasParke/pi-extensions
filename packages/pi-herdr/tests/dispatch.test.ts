@@ -7,6 +7,7 @@ import {
 	isTransientStartError,
 	parsePrUrl,
 	promptWithVerify,
+	shortName,
 	slugify,
 } from "../src/dispatch.ts";
 import type { HerdrRunner } from "../src/dispatch.ts";
@@ -82,6 +83,17 @@ describe("slugify", () => {
 	});
 });
 
+describe("shortName", () => {
+	it("drops stopwords and caps names at three words", () => {
+		expect(shortName("Dig into CI on this repo on main and determine what is failing")).toBe("ci-failing");
+		expect(shortName("Improve workspace naming convention documentation")).toBe("improve-workspace-naming");
+	});
+
+	it("falls back to the first three slug words when every word is filtered", () => {
+		expect(shortName("Dig into this repo")).toBe("dig-into-this");
+	});
+});
+
 describe("transient-error classification", () => {
 	it("treats pane-busy, shell-not-ready, and kind-mismatch as transient", () => {
 		for (const message of [
@@ -96,6 +108,7 @@ describe("transient-error classification", () => {
 	it("treats anything else as real", () => {
 		for (const message of [
 			"herdr agent start: agent_name_taken: already exists",
+			"herdr agent start: invalid_agent_argument: cannot encode task",
 			"Command failed: herdr",
 			"ENOENT",
 		]) {
@@ -377,6 +390,52 @@ describe("dispatchHerdrTask", () => {
 		expect(calls.find((call) => call[1] === "start")?.slice(-2)).toEqual(["--", "Fix the thing"]);
 	});
 
+	it.each([
+		["multiline", "first line\nsecond line"],
+		["long", "x".repeat(2049)],
+	])("starts bare and prompts for a %s task", async (_kind, task) => {
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": (args) => ({ agent: { name: args[2] } }),
+			"agent prompt": () => ({}),
+		});
+		await dispatchHerdrTask({ repoPath: "/repo", task, name: "safe-argv" }, { herdr: run, ...noSleep });
+		expect(calls.filter((call) => call[1] === "start")).toEqual([
+			["agent", "start", "safe-argv", "--kind", "pi", "--pane", "pane-1"],
+		]);
+		expect(calls.filter((call) => call[1] === "prompt")).toEqual([
+			["agent", "prompt", "safe-argv", task, "--wait", "--until", "working"],
+		]);
+	});
+
+	it("retries bare and prompts when herdr rejects argv encoding", async () => {
+		let starts = 0;
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": (args) => {
+				starts += 1;
+				if (starts === 1) throw new Error("invalid_agent_argument: cannot encode task");
+				return { agent: { name: args[2] } };
+			},
+			"agent prompt": () => ({}),
+		});
+		await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "Fix the thing", name: "fix-thing" },
+			{ herdr: run, ...noSleep },
+		);
+		expect(calls.filter((call) => call[1] === "start")).toEqual([
+			["agent", "start", "fix-thing", "--kind", "pi", "--pane", "pane-1", "--", "Fix the thing"],
+			["agent", "start", "fix-thing", "--kind", "pi", "--pane", "pane-1"],
+		]);
+		expect(calls.filter((call) => call[1] === "prompt")).toHaveLength(1);
+	});
+
 	it("falls back to a verified prompt only when argv launch remains idle after the grace period", async () => {
 		const { run, calls } = fakeHerdr({
 			"worktree create": () => createdWorktree,
@@ -452,7 +511,7 @@ describe("dispatchHerdrTask", () => {
 		expect(calls.some((call) => call[1] === "prompt")).toBe(true);
 	});
 
-	it("derives the branch and agent name from the task when no name is given", async () => {
+	it("slugifies and respects an explicit name", async () => {
 		const { run } = fakeHerdr({
 			"worktree create": () => createdWorktree,
 			"agent get": () => {
@@ -462,10 +521,27 @@ describe("dispatchHerdrTask", () => {
 			"agent wait": () => ({}),
 		});
 		const result = await dispatchHerdrTask(
-			{ repoPath: "/repo", task: "Add CI caching for Node builds" },
+			{ repoPath: "/repo", task: "Fix the thing", name: "Server Tools" },
 			{ herdr: run, ...noSleep },
 		);
-		expect(result.branch).toBe("agent/add-ci-caching-for-node-builds");
-		expect(result.agentName).toBe("add-ci-caching-for-node-builds");
+		expect(result.branch).toBe("agent/server-tools");
+		expect(result.agentName).toBe("server-tools");
+	});
+
+	it("derives branch agent/<shortName> from slash-command free text", async () => {
+		const { run } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": (args) => ({ agent: { name: args[2] } }),
+			"agent wait": () => ({}),
+		});
+		const result = await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "Dig into CI on this repo on main and determine what is failing" },
+			{ herdr: run, ...noSleep },
+		);
+		expect(result.branch).toBe("agent/ci-failing");
+		expect(result.agentName).toBe("ci-failing");
 	});
 });
