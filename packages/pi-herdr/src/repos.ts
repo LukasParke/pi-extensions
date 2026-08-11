@@ -1,8 +1,8 @@
 /** Repo discovery and worktree trust decisions. Pure given injected roots. */
 
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
@@ -56,17 +56,33 @@ export async function worktreeBaseRepo(cwd: string): Promise<string | undefined>
 
 export type TrustDecision = "yes" | "undecided";
 
+/** Resolve symlinks when the path exists; otherwise normalize lexically. */
+function canonicalize(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return resolve(path);
+	}
+}
+
+/** True containment, immune to `..` segments and prefix-sharing siblings. */
+function isInside(child: string, parent: string): boolean {
+	const rel = relative(canonicalize(parent), canonicalize(child));
+	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
 /**
  * Trust a worktree iff it sits under a managed worktree root AND its base repo
  * lives under a known repo root. Anything else stays undecided so pi's normal
- * trust prompt applies.
+ * trust prompt applies. Paths are canonicalized (symlinks resolved, `..`
+ * collapsed) before any containment check.
  */
 export function worktreeTrust(
 	cwd: string,
 	baseRepo: string | undefined,
 	options: { worktreeRoots: string[]; repoRoots: string[] },
 ): TrustDecision {
-	const inWorktreeRoot = options.worktreeRoots.some((root) => cwd.startsWith(root + "/"));
+	const inWorktreeRoot = options.worktreeRoots.some((root) => isInside(cwd, root));
 	if (!inWorktreeRoot || !baseRepo) return "undecided";
-	return options.repoRoots.some((root) => baseRepo.startsWith(root + "/")) ? "yes" : "undecided";
+	return options.repoRoots.some((root) => isInside(baseRepo, root)) ? "yes" : "undecided";
 }

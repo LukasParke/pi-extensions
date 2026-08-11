@@ -30,11 +30,15 @@ export function parsePrUrl(text: string): { org: string; repo: string; num: stri
 }
 
 export function slugify(text: string): string {
-	return text
+	const slug = text
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, "-")
 		.replace(/^-+|-+$/g, "")
-		.slice(0, 40);
+		.slice(0, 40)
+		.replace(/-+$/, "");
+	// Herdr agent names must match [a-z][a-z0-9_-]*; never emit an empty or
+	// digit-leading slug (e.g. an all-punctuation or non-Latin task title).
+	return /^[a-z]/.test(slug) ? slug : `task-${slug || Date.now().toString(36)}`.slice(0, 40);
 }
 
 /**
@@ -50,9 +54,17 @@ export function isTransientStartError(message: string): boolean {
 	);
 }
 
-/** Prompt failures worth a re-send: the lifecycle never flipped to working. */
+/**
+ * Prompt failures worth a re-send: the lifecycle never flipped to working.
+ *
+ * Only herdr's own envelope errors qualify (our CLI wrapper prefixes them
+ * with the command). A process-level exec timeout is NOT re-sendable — the
+ * prompt may have reached the agent even though the CLI died waiting.
+ */
 export function isPromptStallError(message: string): boolean {
-	return message.includes("stall") || message.includes("timeout");
+	return (
+		message.includes("stall") || (message.startsWith("herdr agent prompt") && message.includes("timeout"))
+	);
 }
 
 export interface WorktreeHandle {

@@ -17,17 +17,29 @@ export interface HerdrError {
 	message: string;
 }
 
-/** Pull a herdr error envelope out of raw CLI output, if one is present. */
+/**
+ * Pull a herdr error envelope out of raw CLI output, if one is present.
+ *
+ * The output may contain several JSON objects (progress lines before the
+ * envelope), so each candidate is parsed individually rather than one greedy
+ * first-`{`-to-last-`}` span.
+ */
 export function parseHerdrError(raw: string): HerdrError | undefined {
-	const match = raw.match(/\{.*\}/s);
-	if (!match) return undefined;
-	try {
-		const envelope = JSON.parse(match[0]);
-		if (envelope && typeof envelope === "object" && envelope.error?.message) {
-			return { code: envelope.error.code, message: envelope.error.message };
+	const candidates = [
+		...raw.split("\n").filter((line) => line.trimStart().startsWith("{")),
+		// Fallback for pretty-printed (multi-line) envelopes.
+		raw.match(/\{.*\}/s)?.[0],
+	];
+	for (const candidate of candidates) {
+		if (!candidate) continue;
+		try {
+			const envelope = JSON.parse(candidate);
+			if (envelope && typeof envelope === "object" && envelope.error?.message) {
+				return { code: envelope.error.code, message: envelope.error.message };
+			}
+		} catch {
+			// Not an envelope; keep scanning.
 		}
-	} catch {
-		// Not an envelope after all; fall through to the raw exec error.
 	}
 	return undefined;
 }

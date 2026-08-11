@@ -67,8 +67,18 @@ describe("slugify", () => {
 		expect(slugify("--hello world--")).toBe("hello-world");
 	});
 
-	it("caps at 40 characters", () => {
-		expect(slugify("a".repeat(100)).length).toBe(40);
+	it("caps at 40 characters without a trailing dash", () => {
+		const slug = slugify(`${"a".repeat(39)}-tail`);
+		expect(slug.length).toBeLessThanOrEqual(40);
+		expect(slug.endsWith("-")).toBe(false);
+	});
+
+	it("never returns an empty or digit-leading slug (herdr requires [a-z] first)", () => {
+		for (const input of ["???", "日本語のタスク", "42 fix the thing", ""]) {
+			expect(slugify(input), input).toMatch(/^[a-z][a-z0-9_-]*$/);
+			expect(slugify(input).length).toBeLessThanOrEqual(40);
+		}
+		expect(slugify("42 fix the thing")).toBe("task-42-fix-the-thing");
 	});
 });
 
@@ -93,10 +103,16 @@ describe("transient-error classification", () => {
 		}
 	});
 
-	it("classifies prompt stalls and timeouts as re-sendable", () => {
-		expect(isPromptStallError("agent_prompt_stalled: no lifecycle change")).toBe(true);
-		expect(isPromptStallError("wait timeout exceeded")).toBe(true);
+	it("classifies herdr-envelope stalls and wait-timeouts as re-sendable", () => {
+		expect(isPromptStallError("herdr agent prompt: agent_prompt_stalled: no lifecycle change")).toBe(true);
+		expect(isPromptStallError("herdr agent prompt: wait_timeout: timeout exceeded")).toBe(true);
 		expect(isPromptStallError("agent_not_found: nope")).toBe(false);
+	});
+
+	it("does NOT classify a process-level exec timeout as re-sendable", () => {
+		// The CLI died waiting, but the prompt may already have reached the
+		// agent — re-sending would duplicate it.
+		expect(isPromptStallError("Command failed: timeout of 120000ms exceeded")).toBe(false);
 	});
 });
 

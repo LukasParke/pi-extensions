@@ -18,7 +18,12 @@ import { knownRepos, resolveRepo, worktreeBaseRepo, worktreeTrust } from "../src
 export default function (pi: ExtensionAPI) {
 	// Completions are synchronous; keep a resolved snapshot for them.
 	let configSnapshot: HerdrConfig = defaultConfig;
-	void herdrConfig().then((c) => (configSnapshot = c));
+	void herdrConfig().then(
+		(c) => (configSnapshot = c),
+		() => {
+			// Keep defaults; the async paths surface the load error themselves.
+		},
+	);
 
 	pi.on("project_trust", async (event) => {
 		const config = await herdrConfig();
@@ -81,6 +86,7 @@ export default function (pi: ExtensionAPI) {
 				await herdr(args);
 			}
 			const info = await herdr(["agent", "get", params.agent]);
+			if (!info?.agent) throw new Error(`herdr returned no agent named "${params.agent}"`);
 			const output = await herdrText(
 				["agent", "read", params.agent, "--lines", String(params.lines ?? 60), "--format", "text"],
 				signal as AbortSignal | undefined,

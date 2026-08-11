@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -104,5 +104,26 @@ describe("worktreeTrust", () => {
 
 	it("does not trust a sibling directory that merely shares the root as a prefix", () => {
 		expect(worktreeTrust("/home/u/.worktrees-evil/x", "/home/u/github-evil/app", options)).toBe("undecided");
+	});
+
+	it("is immune to `..` traversal that lexically matches a root", () => {
+		expect(worktreeTrust("/home/u/.worktrees/../outside", "/home/u/github/app", options)).toBe("undecided");
+		expect(worktreeTrust("/home/u/.worktrees/x", "/home/u/github/../secrets/app", options)).toBe("undecided");
+	});
+
+	it("resolves symlinks before deciding trust", () => {
+		const worktreesRoot = join(root, "trust", ".worktrees");
+		const outside = join(root, "trust", "outside");
+		mkdirSync(worktreesRoot, { recursive: true });
+		mkdirSync(outside, { recursive: true });
+		// A symlink under the managed root pointing outside it must not be trusted.
+		const link = join(worktreesRoot, "escape");
+		symlinkSync(outside, link);
+		expect(
+			worktreeTrust(link, join(root, "trust", "github", "app"), {
+				worktreeRoots: [worktreesRoot],
+				repoRoots: [join(root, "trust", "github")],
+			}),
+		).toBe("undecided");
 	});
 });
