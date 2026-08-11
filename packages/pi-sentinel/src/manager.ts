@@ -1,21 +1,27 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { combinedOutput, evaluatePredicate, hashOutput, truncateOutput, updateGateState } from "./index.ts";
 import type { GateState, Predicate, ProbeResult } from "./index.ts";
 
 const DEFAULT_INTERVAL_MS = 60_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
+const STREAM_OUTPUT_BYTES = 1024 * 1024;
+export const MAX_STREAM_WATCHES = 4;
 
 export type SentinelKind = "watch" | "sleep";
-export type SentinelState = "waiting" | "passing" | "failing" | "complete" | "timeout";
+export type SentinelState = "waiting" | "running" | "passing" | "failing" | "failed" | "complete" | "timeout";
+export type WatchMode = "poll" | "stream";
+export type EventUrgency = "wake" | "next-turn";
 
 export interface WatchOptions {
 	name: string;
 	command: string;
 	cwd: string;
+	mode?: WatchMode;
 	intervalMs?: number;
 	doneWhen?: Predicate;
 	timeoutMs?: number;
 	wakeOnChange?: boolean;
+	urgency?: EventUrgency;
 	note?: string;
 }
 
@@ -23,6 +29,7 @@ export interface CriterionOptions {
 	name: string;
 	command: string;
 	passWhen?: Predicate;
+	urgency?: EventUrgency;
 }
 
 export interface GateOptions {
@@ -30,11 +37,13 @@ export interface GateOptions {
 	cwd: string;
 	quietForMs?: number;
 	intervalMs?: number;
+	urgency?: EventUrgency;
 }
 
 export interface SentinelSnapshot {
 	name: string;
 	kind: SentinelKind;
+	mode?: WatchMode;
 	command?: string;
 	note?: string;
 	state: SentinelState;
@@ -65,9 +74,21 @@ export interface SentinelSnapshotSet {
 
 export interface SentinelEvent {
 	id: string;
+	source: string;
+	urgency: EventUrgency;
 	message: string;
 	details: Record<string, unknown>;
 }
+
+export interface StreamHandle {
+	kill: () => void;
+}
+
+export type StreamRunner = (
+	command: string,
+	cwd: string,
+	onExit: (result: ProbeResult) => void,
+) => StreamHandle;
 
 interface Entry extends SentinelSnapshot {
 	cwd?: string;
@@ -75,10 +96,12 @@ interface Entry extends SentinelSnapshot {
 	doneWhen?: Predicate;
 	expiresAt?: number;
 	wakeOnChange?: boolean;
+	urgency?: EventUrgency;
 	lastHash?: string;
 	timer?: NodeJS.Timeout;
 	running?: boolean;
 	wakeAt?: number;
+	stream?: StreamHandle;
 }
 
 interface GateEntry {
@@ -86,6 +109,7 @@ interface GateEntry {
 	quietForMs: number;
 	intervalMs: number;
 	criteria: CriterionOptions[];
+	urgency: EventUrgency;
 	outputs: Record<string, string>;
 	state: GateState;
 	nextPollAt?: number;
@@ -116,6 +140,54 @@ export function runProbe(command: string, cwd: string, timeoutMs = DEFAULT_COMMA
 	});
 }
 
+function appendOutput(current: string, chunk: string) {
+	const next = current + chunk;
+	if (Buffer.byteLength(next) <= STREAM_OUTPUT_BYTES) return next;
+	const bytes = Buffer.from(next);
+	let start = bytes.length - STREAM_OUTPUT_BYTES;
+	while (start < bytes.length && (bytes[start]! & 0xc0) === 0x80) start++;
+	return bytes.subarray(start).toString("utf8");
+}
+
+export function runStream(command: string, cwd: string, onExit: (result: ProbeResult) => void) {
+	const child = spawn("/bin/sh", ["-c", command], {
+		cwd,
+		stdio: ["ignore", "pipe", "pipe"],
+		detached: process.platform !== "win32",
+	});
+	let stdout = "";
+	let stderr = "";
+	let settled = false;
+	child.stdout?.setEncoding("utf8");
+	child.stderr?.setEncoding("utf8");
+	child.stdout?.on("data", (chunk: string) => (stdout = appendOutput(stdout, chunk)));
+	child.stderr?.on("data", (chunk: string) => (stderr = appendOutput(stderr, chunk)));
+	child.on("error", (error) => {
+		if (settled) return;
+		settled = true;
+		onExit({ exitCode: null, stdout, stderr: appendOutput(stderr, error.message) });
+	});
+	child.on("close", (exitCode) => {
+		if (settled) return;
+		settled = true;
+		onExit({ exitCode, stdout, stderr });
+	});
+	return {
+		kill: () => {
+			try {
+				if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGTERM");
+				else child.kill("SIGTERM");
+			} catch {
+				try {
+					child.kill("SIGTERM");
+				} catch {
+					/* already exited */
+				}
+			}
+		},
+	};
+}
+
 export class SentinelManager {
 	private readonly entries = new Map<string, Entry>();
 	private gate?: GateEntry;
@@ -124,10 +196,12 @@ export class SentinelManager {
 	private disposed = false;
 	private onEventHook?: (event: SentinelEvent) => void;
 	private onChangeHook?: () => void;
+	private onSuppressHook?: (sources: string[]) => void;
 
 	constructor(
 		private readonly runner: ProbeRunner = runProbe,
 		private readonly now = () => Date.now(),
+		private readonly streamRunner: StreamRunner = runStream,
 	) {}
 
 	onEvent(hook: (event: SentinelEvent) => void) {
@@ -136,6 +210,10 @@ export class SentinelManager {
 
 	onChange(hook: () => void) {
 		this.onChangeHook = hook;
+	}
+
+	onSuppress(hook: (sources: string[]) => void) {
+		this.onSuppressHook = hook;
 	}
 
 	startSession() {
@@ -149,7 +227,9 @@ export class SentinelManager {
 		this.idle = idle;
 		if (!idle || !this.active) return;
 		for (const entry of this.entries.values()) {
-			if (entry.state === "waiting" || entry.state === "failing") this.scheduleEntry(entry, 0);
+			if (entry.mode !== "stream" && (entry.state === "waiting" || entry.state === "failing")) {
+				this.scheduleEntry(entry, 0);
+			}
 		}
 		if (this.gate && !this.gate.state.complete) this.scheduleGate(0);
 	}
@@ -160,10 +240,17 @@ export class SentinelManager {
 		if (name === "gate") throw new Error('"gate" is reserved for the session gate');
 		if (this.entries.has(name)) throw new Error(`Sentinel ${name} already exists`);
 		if (!options.command.trim()) throw new Error("command must not be empty");
+		const mode = options.mode ?? "poll";
+		if (mode === "stream" && this.streamCount() >= MAX_STREAM_WATCHES) {
+			throw new Error(
+				`Max ${MAX_STREAM_WATCHES} stream watches can run at once. Cancel one before starting another.`,
+			);
+		}
 		const now = this.now();
 		const entry: Entry = {
 			name,
 			kind: "watch",
+			mode,
 			command: options.command,
 			note: options.note,
 			state: "waiting",
@@ -173,6 +260,7 @@ export class SentinelManager {
 			doneWhen: options.doneWhen,
 			expiresAt: options.timeoutMs ? now + options.timeoutMs : undefined,
 			wakeOnChange: options.wakeOnChange,
+			urgency: options.urgency ?? "wake",
 		};
 		this.entries.set(name, entry);
 		this.scheduleEntry(entry, 0);
@@ -182,9 +270,14 @@ export class SentinelManager {
 
 	sleep(name: string, wakeAt: number, note?: string) {
 		if (!Number.isFinite(wakeAt) || wakeAt <= this.now()) throw new Error("Sleep time must be in the future");
-		if (this.entries.has(name)) throw new Error(`Sentinel ${name} already exists`);
+		const normalized = name.trim();
+		if (!normalized) throw new Error("name must not be empty");
+		if (normalized === "gate") throw new Error('"gate" is reserved for the session gate');
+		const existing = this.entries.get(normalized);
+		if (existing?.kind === "watch") throw new Error(`Sentinel ${normalized} already exists`);
+		if (existing) this.removeEntry(normalized, true);
 		const entry: Entry = {
-			name,
+			name: normalized,
 			kind: "sleep",
 			note,
 			state: "waiting",
@@ -192,7 +285,7 @@ export class SentinelManager {
 			wakeAt,
 			nextPollAt: wakeAt,
 		};
-		this.entries.set(name, entry);
+		this.entries.set(normalized, entry);
 		this.scheduleEntry(entry, wakeAt - this.now());
 		this.changed();
 		return this.snapshotEntry(entry);
@@ -206,12 +299,13 @@ export class SentinelManager {
 		if (options.criteria.some((criterion) => !criterion.command.trim())) {
 			throw new Error("criterion commands must not be empty");
 		}
-		this.clearGate();
+		this.clearGate(true);
 		this.gate = {
 			cwd: options.cwd,
 			criteria: options.criteria.map((criterion, index) => ({ ...criterion, name: names[index]! })),
 			quietForMs: options.quietForMs ?? 0,
 			intervalMs: options.intervalMs ?? DEFAULT_INTERVAL_MS,
+			urgency: options.urgency ?? "wake",
 			outputs: {},
 			state: { passes: {}, complete: false },
 			allPassNotified: false,
@@ -224,17 +318,17 @@ export class SentinelManager {
 	cancel(name?: string, all = false) {
 		const cancelled: string[] = [];
 		if (all) {
-			for (const key of [...this.entries.keys()]) if (this.removeEntry(key)) cancelled.push(key);
+			for (const key of [...this.entries.keys()]) if (this.removeEntry(key, true)) cancelled.push(key);
 			if (this.gate) {
-				this.clearGate();
+				this.clearGate(true);
 				cancelled.push("gate");
 			}
 		} else if (name === "gate") {
 			if (this.gate) {
-				this.clearGate();
+				this.clearGate(true);
 				cancelled.push("gate");
 			}
-		} else if (name && this.removeEntry(name)) cancelled.push(name);
+		} else if (name && this.removeEntry(name, true)) cancelled.push(name);
 		this.changed();
 		return cancelled;
 	}
@@ -249,7 +343,7 @@ export class SentinelManager {
 	dispose() {
 		this.disposed = true;
 		this.active = false;
-		for (const entry of this.entries.values()) if (entry.timer) clearTimeout(entry.timer);
+		for (const entry of this.entries.values()) this.stopEntry(entry);
 		this.clearGate();
 		this.entries.clear();
 	}
@@ -258,9 +352,13 @@ export class SentinelManager {
 		this.onChangeHook?.();
 	}
 
+	private suppress(source: string) {
+		this.onSuppressHook?.([source]);
+	}
+
 	private snapshotEntry(entry: Entry): SentinelSnapshot {
-		const { name, kind, command, note, state, createdAt, nextPollAt, lastOutput } = entry;
-		return { name, kind, command, note, state, createdAt, nextPollAt, lastOutput };
+		const { name, kind, mode, command, note, state, createdAt, nextPollAt, lastOutput } = entry;
+		return { name, kind, mode, command, note, state, createdAt, nextPollAt, lastOutput };
 	}
 
 	private snapshotGate(): GateSnapshot | undefined {
@@ -286,6 +384,11 @@ export class SentinelManager {
 	}
 
 	private scheduleEntry(entry: Entry, delay: number) {
+		if (entry.mode === "stream") {
+			if (this.active && !this.disposed && !entry.stream && entry.state === "waiting")
+				this.startStream(entry);
+			return;
+		}
 		if (entry.timer && delay === 0 && entry.nextPollAt !== undefined && entry.nextPollAt > this.now()) {
 			clearTimeout(entry.timer);
 			entry.timer = undefined;
@@ -296,7 +399,8 @@ export class SentinelManager {
 			entry.timer ||
 			entry.running ||
 			entry.state === "complete" ||
-			entry.state === "timeout"
+			entry.state === "timeout" ||
+			entry.state === "failed"
 		)
 			return;
 		const actualDelay = Math.max(0, delay);
@@ -308,6 +412,45 @@ export class SentinelManager {
 		entry.timer.unref?.();
 	}
 
+	private startStream(entry: Entry) {
+		entry.state = "running";
+		entry.running = true;
+		entry.nextPollAt = entry.expiresAt;
+		try {
+			entry.stream = this.streamRunner(entry.command!, entry.cwd!, (result) =>
+				this.finishStream(entry, result),
+			);
+		} catch (error) {
+			entry.running = false;
+			entry.state = "failed";
+			entry.lastOutput = error instanceof Error ? error.message : String(error);
+			this.emitWatchEvent(entry, "failed to start", { status: "failed", exitCode: null });
+			return this.changed();
+		}
+		if (entry.expiresAt) {
+			entry.timer = setTimeout(() => this.expireEntry(entry), Math.max(0, entry.expiresAt! - this.now()));
+			entry.timer.unref?.();
+		}
+		this.changed();
+	}
+
+	private finishStream(entry: Entry, result: ProbeResult) {
+		if (!this.entries.has(entry.name) || entry.state !== "running") return;
+		if (entry.timer) clearTimeout(entry.timer);
+		entry.timer = undefined;
+		entry.stream = undefined;
+		entry.running = false;
+		entry.nextPollAt = undefined;
+		entry.lastOutput = truncateOutput(combinedOutput(result));
+		const done = evaluatePredicate(result, entry.doneWhen);
+		entry.state = done ? "complete" : "failed";
+		this.emitWatchEvent(entry, done ? "completed" : "exited without satisfying its predicate", {
+			status: done ? "complete" : "failed",
+			exitCode: result.exitCode,
+		});
+		this.changed();
+	}
+
 	private async pollEntry(entry: Entry) {
 		if (!this.active || this.disposed || !this.entries.has(entry.name)) return;
 		const now = this.now();
@@ -317,6 +460,8 @@ export class SentinelManager {
 			entry.nextPollAt = undefined;
 			this.emit({
 				id: `sleep:${entry.name}:elapsed`,
+				source: entry.name,
+				urgency: "wake",
 				message: `Sentinel sleep "${entry.name}" elapsed${entry.note ? ` — ${entry.note}` : ""}.`,
 				details: { name: entry.name, status: "elapsed" },
 			});
@@ -338,17 +483,15 @@ export class SentinelManager {
 		const done = evaluatePredicate(result, entry.doneWhen);
 		entry.state = done ? "complete" : "failing";
 		if (done) {
-			this.emit({
-				id: `watch:${entry.name}:complete`,
-				message: `Sentinel watch "${entry.name}" completed.\n${output}`,
-				details: { name: entry.name, status: "complete", exitCode: result.exitCode },
-			});
+			this.emitWatchEvent(entry, "completed", { status: "complete", exitCode: result.exitCode });
 		} else if (entry.expiresAt && this.now() >= entry.expiresAt) {
 			return this.expireEntry(entry);
 		} else {
 			if (entry.wakeOnChange && changed) {
 				this.emit({
 					id: `watch:${entry.name}:change:${hash}`,
+					source: entry.name,
+					urgency: entry.urgency ?? "wake",
 					message: `Sentinel watch "${entry.name}" output changed.\n${output}`,
 					details: { name: entry.name, status: "changed", exitCode: result.exitCode },
 				});
@@ -359,11 +502,29 @@ export class SentinelManager {
 		this.changed();
 	}
 
+	private emitWatchEvent(entry: Entry, action: string, details: Record<string, unknown>) {
+		this.emit({
+			id: `watch:${entry.name}:${details.status}`,
+			source: entry.name,
+			urgency: entry.urgency ?? "wake",
+			message: `Sentinel watch "${entry.name}" ${action}.\n${entry.lastOutput ?? "No output captured."}`,
+			details: { name: entry.name, ...details },
+		});
+	}
+
 	private expireEntry(entry: Entry) {
+		if (!this.entries.has(entry.name) || ["complete", "timeout", "failed"].includes(entry.state)) return;
+		entry.stream?.kill();
+		entry.stream = undefined;
+		entry.running = false;
+		if (entry.timer) clearTimeout(entry.timer);
+		entry.timer = undefined;
 		entry.state = "timeout";
 		entry.nextPollAt = undefined;
 		this.emit({
 			id: `watch:${entry.name}:timeout`,
+			source: entry.name,
+			urgency: entry.urgency ?? "wake",
 			message: `Sentinel watch "${entry.name}" timed out.\n${entry.lastOutput ?? "No output captured."}`,
 			details: { name: entry.name, status: "timeout" },
 		});
@@ -406,19 +567,24 @@ export class SentinelManager {
 		gate.state = update.state;
 		const table = this.gateTable(gate);
 		if (update.changes.length) {
-			const changed = update.changes
-				.map((change) => `${change.name}: ${change.from ? "PASS" : "FAIL"} → ${change.to ? "PASS" : "FAIL"}`)
-				.join(", ");
-			this.emit({
-				id: `gate:flip:${update.changes.map((change) => `${change.name}:${change.to}`).join("|")}:${this.now()}`,
-				message: `Sentinel gate changed: ${changed}\n\n${table}`,
-				details: { status: "changed", changes: update.changes, passes },
-			});
+			for (const change of update.changes) {
+				const criterion = gate.criteria.find((item) => item.name === change.name)!;
+				this.emit({
+					id: `gate:flip:${change.name}:${change.to}:${this.now()}`,
+					source: "gate",
+					urgency: criterion.urgency ?? "next-turn",
+					message: `Sentinel gate changed: ${change.name}: ${change.from ? "PASS" : "FAIL"} → ${change.to ? "PASS" : "FAIL"}\n\n${table}`,
+					details: { status: "changed", changes: [change], passes },
+				});
+			}
 		}
 		if (gate.state.complete && !gate.allPassNotified) {
 			gate.allPassNotified = true;
+			this.suppress("gate");
 			this.emit({
 				id: "gate:all-pass",
+				source: "gate",
+				urgency: gate.urgency,
 				message: `SENTINEL GATE: ALL PASS\n\n${table}`,
 				details: { status: "all_pass", passes },
 			});
@@ -427,7 +593,7 @@ export class SentinelManager {
 			const quietRemaining = allPass
 				? Math.max(0, gate.quietForMs - (this.now() - gate.state.passingSince!))
 				: gate.intervalMs;
-			this.scheduleGate(Math.min(gate.intervalMs, quietRemaining || gate.intervalMs));
+			this.scheduleGate(Math.min(gate.intervalMs, quietRemaining));
 		}
 		this.changed();
 	}
@@ -447,16 +613,31 @@ export class SentinelManager {
 		this.onEventHook?.(event);
 	}
 
-	private removeEntry(name: string) {
+	private streamCount() {
+		return [...this.entries.values()].filter(
+			(entry) => entry.mode === "stream" && (entry.state === "waiting" || entry.state === "running"),
+		).length;
+	}
+
+	private stopEntry(entry: Entry) {
+		if (entry.timer) clearTimeout(entry.timer);
+		entry.stream?.kill();
+		entry.timer = undefined;
+		entry.stream = undefined;
+	}
+
+	private removeEntry(name: string, suppress = false) {
 		const entry = this.entries.get(name);
 		if (!entry) return false;
-		if (entry.timer) clearTimeout(entry.timer);
 		this.entries.delete(name);
+		this.stopEntry(entry);
+		if (suppress) this.suppress(name);
 		return true;
 	}
 
-	private clearGate() {
+	private clearGate(suppress = false) {
 		if (this.gate?.timer) clearTimeout(this.gate.timer);
 		this.gate = undefined;
+		if (suppress) this.suppress("gate");
 	}
 }
