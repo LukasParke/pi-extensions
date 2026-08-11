@@ -10,5 +10,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
       - run: npm ci
+      - name: Cache embedding model
+        uses: actions/cache@v4
+        with:
+          path: packages/pi-memory/models
+          key: memory-model-${{ hashFiles('scripts/fetch-memory-model.mjs') }}
+      - run: node scripts/fetch-memory-model.mjs
       - run: npm run check
       - run: npm run pack:check
