@@ -1,5 +1,5 @@
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { requestLaunchApproval } from "../src/approval.ts";
 import { defaultConfig } from "../src/config.ts";
 
@@ -10,6 +10,11 @@ function ctx(hasUI: boolean, confirmResult = true): ExtensionContext {
 			confirm: vi.fn(async () => confirmResult),
 		},
 	} as unknown as ExtensionContext;
+}
+
+function pi() {
+	const emit = vi.fn();
+	return { emit, pi: { events: { emit } } as unknown as ExtensionAPI };
 }
 
 const request = {
@@ -60,5 +65,46 @@ describe("approval gate", () => {
 			ctx: ctx(true, false),
 		});
 		expect(decision.ok).toBe(false);
+	});
+
+	it("signals tool-triggered approval and releases it", async () => {
+		const c = ctx(true);
+		const bus = pi();
+		await requestLaunchApproval({
+			config: { ...defaultConfig, approval: "auto" },
+			request,
+			ctx: c,
+			pi: bus.pi,
+		});
+		expect(bus.emit.mock.calls).toEqual([
+			["herdr:blocked", { active: true, label: "confirm: run workflow test" }],
+			["herdr:blocked", { active: false }],
+		]);
+	});
+
+	it("passes the tool abort signal to the dialog", async () => {
+		const c = ctx(true);
+		const bus = pi();
+		const controller = new AbortController();
+		await requestLaunchApproval({
+			config: { ...defaultConfig, approval: "auto" },
+			request,
+			ctx: c,
+			pi: bus.pi,
+			signal: controller.signal,
+		});
+		expect(c.ui.confirm).toHaveBeenCalledWith("Run workflow?", expect.any(String), {
+			signal: controller.signal,
+		});
+	});
+
+	it("does not signal slash-command approval", async () => {
+		const c = ctx(true);
+		await requestLaunchApproval({
+			config: { ...defaultConfig, approval: "auto" },
+			request,
+			ctx: c,
+		});
+		expect(c.ui.confirm).toHaveBeenCalledOnce();
 	});
 });

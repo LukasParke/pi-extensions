@@ -119,6 +119,7 @@ export default async function (pi: ExtensionAPI) {
 		resumeFrom?: string;
 		preApproved?: boolean;
 		runId?: string;
+		toolExecution?: boolean;
 	}) => {
 		const runId = options.runId ?? newRunId();
 		const label = str(options.description, options.name ?? "workflow");
@@ -145,6 +146,8 @@ export default async function (pi: ExtensionAPI) {
 				preApproved: options.preApproved,
 			},
 			ctx: options.ctx,
+			pi: options.toolExecution ? pi : undefined,
+			signal: options.signal,
 		});
 		if (!approval.ok) throw new Error(approval.reason);
 
@@ -401,6 +404,7 @@ export default async function (pi: ExtensionAPI) {
 						resumeFrom: dir,
 						preApproved: true,
 						runId: definition.identity.runId,
+						toolExecution: true,
 					});
 				}
 				// rerun from scratch with same source/args
@@ -413,6 +417,7 @@ export default async function (pi: ExtensionAPI) {
 					signal,
 					background: params.async !== false && config.backgroundByDefault,
 					preApproved: true,
+					toolExecution: true,
 				});
 			}
 
@@ -451,6 +456,7 @@ export default async function (pi: ExtensionAPI) {
 				signal,
 				background,
 				preApproved,
+				toolExecution: true,
 			});
 		},
 	});

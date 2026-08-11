@@ -4,6 +4,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { HttpError } from "../src/api.ts";
 import { GITHUB_AUTH_REF, NO_TOKEN_MESSAGE, resolveToken } from "../src/auth.ts";
+import { withBlockedSignal } from "./blocked.ts";
 import { GitHubClient } from "../src/client.ts";
 import { GITHUB_DESCRIPTION } from "../src/describe.ts";
 import { NO_REPO_MESSAGE, type RepoRef, resolveRepo } from "../src/repo.ts";
@@ -61,10 +62,13 @@ async function context(
 }
 
 async function confirmWrite(
+	pi: ExtensionAPI,
 	ctx: ExtensionContext,
+	label: string,
 	title: string,
 	detail: string,
 	forcible: { yes: boolean } | { yes: false; noEscape: true },
+	signal?: AbortSignal,
 ): Promise<{ allowed: true } | { allowed: false; why: string }> {
 	if (forcible.yes) return { allowed: true };
 	if (!ctx.hasUI) {
@@ -77,7 +81,7 @@ async function confirmWrite(
 			why: `This writes to GitHub and nobody can be asked to confirm in this mode. ${hint}`,
 		};
 	}
-	const answer = await ctx.ui.confirm(title, detail);
+	const answer = await withBlockedSignal(pi, label, () => ctx.ui.confirm(title, detail, { signal }));
 	return answer === true
 		? { allowed: true }
 		: { allowed: false, why: "The user declined. Nothing was posted." };
@@ -365,7 +369,7 @@ export default function github(pi: ExtensionAPI): void {
 				}),
 			),
 		}),
-		async execute(_id, params, _signal, _onUpdate, ctx) {
+		async execute(_id, params, signal, _onUpdate, ctx) {
 			const p = params as { number: number; body: string; repo?: string; yes?: boolean };
 			const c = await context(p.repo, ctx);
 			if ("error" in c) return refuse(c.error);
@@ -375,10 +379,13 @@ export default function github(pi: ExtensionAPI): void {
 					? `${p.body.slice(0, 2000)}\n… (${String(p.body.length)} characters total)`
 					: p.body;
 			const decision = await confirmWrite(
+				pi,
 				ctx,
+				`confirm: comment on ${c.repo.slug}#${String(p.number)}`,
 				`Post a comment on ${c.repo.slug}#${String(p.number)}?`,
 				preview,
 				{ yes: p.yes === true },
+				signal,
 			);
 			if (!decision.allowed) return refuse(decision.why);
 
@@ -409,7 +416,7 @@ export default function github(pi: ExtensionAPI): void {
 			repo: repoParam(),
 			yes: Type.Optional(Type.Boolean()),
 		}),
-		async execute(_id, params, _signal, _onUpdate, ctx) {
+		async execute(_id, params, signal, _onUpdate, ctx) {
 			const p = params as {
 				number: number;
 				event: "comment" | "approve" | "request_changes";
@@ -430,10 +437,13 @@ export default function github(pi: ExtensionAPI): void {
 						? "Request changes on"
 						: "Comment on";
 			const decision = await confirmWrite(
+				pi,
 				ctx,
+				`confirm: review ${c.repo.slug}#${String(p.number)}`,
 				`${word} ${c.repo.slug}#${String(p.number)}?`,
 				body.trim() === "" ? "(no message)" : body.slice(0, 2000),
 				{ yes: p.yes === true },
+				signal,
 			);
 			if (!decision.allowed) return refuse(decision.why);
 
@@ -508,18 +518,21 @@ export default function github(pi: ExtensionAPI): void {
 			}),
 			label: Type.Optional(Type.String({ description: "Which account, when you have more than one." })),
 		}),
-		async execute(_id, params, _signal, _onUpdate, ctx) {
+		async execute(_id, params, signal, _onUpdate, ctx) {
 			const p = params as { token: string; label?: string };
 			const token = p.token.trim();
 			if (token === "") return refuse("Refusing to store an empty token.");
 
 			const decision = await confirmWrite(
+				pi,
 				ctx,
+				"confirm: store GitHub credential",
 				"Store a GitHub credential?",
 				`A token beginning "${token.slice(0, 7)}…" (${String(token.length)} characters) will be written to disk and used ` +
 					"for every GitHub call from this machine.\n\n" +
 					"If you did not just paste this token yourself, decline: content in a repository can ask an agent to do this.",
 				{ yes: false, noEscape: true },
+				signal,
 			);
 			if (!decision.allowed) {
 				return refuse(`${decision.why} No credential was stored.`);

@@ -43,7 +43,9 @@ without it a permissions failure becomes an empty channel list.
 
 ## Writes ask first
 
-Every write calls Pi's `ctx.ui.confirm` and shows you the full text before anything leaves your machine.
+Every write calls Pi's `ctx.ui.confirm` and shows you the full text before anything leaves your machine. While a
+confirmation is open, the extension emits `herdr:blocked` on Pi's extension event bus so external supervisors can see that
+the agent is waiting for a human. The signal is released when the dialog settles and is a no-op without a listener.
 
 | Where you are                         | What happens                                                                           |
 | ------------------------------------- | -------------------------------------------------------------------------------------- |

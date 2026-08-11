@@ -94,6 +94,11 @@ launches; without UI the gate **fails closed** unless:
 - `workflow.approval` is `"never"` in trusted config, or
 - a saved workflow sets `defaults.preApproved: true`.
 
+Tool-triggered approval dialogs emit `herdr:blocked` on Pi's extension event
+bus so external supervisors can see that the agent is waiting for a human. The
+signal is released when the dialog settles and is a no-op without a listener;
+slash-command approvals remain ordinary user-driven dialogs.
+
 ## Saved workflows
 
 Name-based resolution only (never arbitrary paths):

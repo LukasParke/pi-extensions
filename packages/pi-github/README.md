@@ -64,6 +64,8 @@ Run `github_status` to see which one is in use.
 ## Writes ask first
 
 Both writing tools call Pi's `ctx.ui.confirm` before anything is posted, showing the full text you are about to send.
+While a confirmation is open, the extension emits `herdr:blocked` on Pi's extension event bus so external supervisors can
+see that the agent is waiting for a human. The signal is released when the dialog settles and is a no-op without a listener.
 
 | Where you are                            | What happens                                                                           |
 | ---------------------------------------- | -------------------------------------------------------------------------------------- |

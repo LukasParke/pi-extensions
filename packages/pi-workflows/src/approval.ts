@@ -6,7 +6,8 @@
  * the saved workflow is marked preApproved under trusted configuration.
  */
 
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { withBlockedSignal } from "./blocked.ts";
 import type { WorkflowConfig } from "./config.ts";
 
 export interface ApprovalRequest {
@@ -30,8 +31,10 @@ export async function requestLaunchApproval(options: {
 	config: WorkflowConfig;
 	request: ApprovalRequest;
 	ctx: ExtensionContext;
+	pi?: ExtensionAPI;
+	signal?: AbortSignal;
 }): Promise<ApprovalDecision> {
-	const { config, request, ctx } = options;
+	const { config, request, ctx, pi, signal } = options;
 
 	if (request.preApproved) return { ok: true };
 	if (config.approval === "never") return { ok: true };
@@ -58,7 +61,10 @@ export async function requestLaunchApproval(options: {
 		truncate(request.scriptPreview, 1200),
 	].join("\n");
 
-	const confirmed = await ctx.ui.confirm("Run workflow?", lines);
+	const confirm = () => ctx.ui.confirm("Run workflow?", lines, { signal });
+	const confirmed = pi
+		? await withBlockedSignal(pi, `confirm: run workflow ${request.label}`, confirm)
+		: await confirm();
 	if (!confirmed) return { ok: false, reason: "User declined workflow launch" };
 	return { ok: true };
 }
