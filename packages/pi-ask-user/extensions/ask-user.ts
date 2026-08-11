@@ -20,6 +20,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { withBlockedSignal } from "./blocked.ts";
 
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 5;
@@ -84,7 +85,10 @@ export default function (pi: ExtensionAPI) {
 			const labels = options.map((option) =>
 				option.description ? `${option.label} — ${option.description}` : option.label,
 			);
-			const choice = await ctx.ui.select(params.question, [...labels, CUSTOM_LABEL]);
+			const blockedLabel = params.question.length > 80 ? `${params.question.slice(0, 79)}…` : params.question;
+			const choice = await withBlockedSignal(pi, blockedLabel, () =>
+				ctx.ui.select(params.question, [...labels, CUSTOM_LABEL], { signal }),
+			);
 
 			// Dismissed (Esc): the model must not assume an answer.
 			if (choice === undefined || choice === null) {
@@ -100,7 +104,11 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (choice === CUSTOM_LABEL) {
-				const typed = (await ctx.ui.input(params.question, "Type your answer…"))?.trim();
+				const typed = (
+					await withBlockedSignal(pi, blockedLabel, () =>
+						ctx.ui.input(params.question, "Type your answer…", { signal }),
+					)
+				)?.trim();
 				if (!typed) {
 					return {
 						content: [

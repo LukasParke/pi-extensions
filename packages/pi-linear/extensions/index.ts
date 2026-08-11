@@ -3,6 +3,7 @@ import { PiAuthStore, registerCredentialCommand } from "@parke.dev/pi-integratio
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { LINEAR_AUTH_REF, NO_KEY_MESSAGE, resolveKey } from "../src/auth.ts";
+import { withBlockedSignal } from "./blocked.ts";
 import { LinearClient } from "../src/client.ts";
 import { LINEAR_DESCRIPTION } from "../src/describe.ts";
 import { renderIssues, renderToolCall } from "../src/tui.ts";
@@ -46,10 +47,13 @@ async function client(): Promise<{ linear: LinearClient } | { error: string }> {
 }
 
 async function confirmWrite(
+	pi: ExtensionAPI,
 	ctx: ExtensionContext,
+	label: string,
 	title: string,
 	detail: string,
 	forcible: { yes: boolean } | { yes: false; noEscape: true },
+	signal?: AbortSignal,
 ): Promise<{ allowed: true } | { allowed: false; why: string }> {
 	if (forcible.yes) return { allowed: true };
 	if (!ctx.hasUI) {
@@ -62,7 +66,7 @@ async function confirmWrite(
 			why: `This writes to Linear and nobody can be asked to confirm in this mode. ${hint}`,
 		};
 	}
-	const answer = await ctx.ui.confirm(title, detail);
+	const answer = await withBlockedSignal(pi, label, () => ctx.ui.confirm(title, detail, { signal }));
 	return answer === true
 		? { allowed: true }
 		: { allowed: false, why: "The user declined. Nothing was posted." };
@@ -218,7 +222,7 @@ export default function linear(pi: ExtensionAPI): void {
 				Type.Boolean({ description: "Skip the confirmation. Only for non-interactive use." }),
 			),
 		}),
-		async execute(_id, params, _signal, _onUpdate, ctx) {
+		async execute(_id, params, signal, _onUpdate, ctx) {
 			const p = params as { issue: string; body: string; yes?: boolean };
 			const c = await client();
 			if ("error" in c) return refuse(c.error);
@@ -227,9 +231,15 @@ export default function linear(pi: ExtensionAPI): void {
 				p.body.length > 2000
 					? `${p.body.slice(0, 2000)}\n… (${String(p.body.length)} characters total)`
 					: p.body;
-			const decision = await confirmWrite(ctx, `Comment on ${p.issue}?`, preview, {
-				yes: p.yes === true,
-			});
+			const decision = await confirmWrite(
+				pi,
+				ctx,
+				`confirm: comment on ${p.issue}`,
+				`Comment on ${p.issue}?`,
+				preview,
+				{ yes: p.yes === true },
+				signal,
+			);
 			if (!decision.allowed) return refuse(decision.why);
 
 			try {
@@ -256,16 +266,19 @@ export default function linear(pi: ExtensionAPI): void {
 			state: Type.String({ description: 'The target state name, e.g. "In Review".' }),
 			yes: Type.Optional(Type.Boolean()),
 		}),
-		async execute(_id, params, _signal, _onUpdate, ctx) {
+		async execute(_id, params, signal, _onUpdate, ctx) {
 			const p = params as { issue: string; state: string; yes?: boolean };
 			const c = await client();
 			if ("error" in c) return refuse(c.error);
 
 			const decision = await confirmWrite(
+				pi,
 				ctx,
+				`confirm: move ${p.issue} to ${p.state}`,
 				`Move ${p.issue} to "${p.state}"?`,
 				"This changes the issue's state for everyone on the team.",
 				{ yes: p.yes === true },
+				signal,
 			);
 			if (!decision.allowed) return refuse(decision.why);
 
@@ -328,18 +341,21 @@ export default function linear(pi: ExtensionAPI): void {
 			key: Type.String({ description: "A personal API key." }),
 			label: Type.Optional(Type.String({ description: "Which account, when you have more than one." })),
 		}),
-		async execute(_id, params, _signal, _onUpdate, ctx) {
+		async execute(_id, params, signal, _onUpdate, ctx) {
 			const p = params as { key: string; label?: string };
 			const key = p.key.trim();
 			if (key === "") return refuse("Refusing to store an empty key.");
 
 			const decision = await confirmWrite(
+				pi,
 				ctx,
+				"confirm: store Linear credential",
 				"Store a Linear credential?",
 				`A key beginning "${key.slice(0, 8)}…" (${String(key.length)} characters) will be written to disk and used for ` +
 					"every Linear call from this machine.\n\n" +
 					"If you did not just paste this key yourself, decline: content in a repository can ask an agent to do this.",
 				{ yes: false, noEscape: true },
+				signal,
 			);
 			if (!decision.allowed) return refuse(`${decision.why} No credential was stored.`);
 

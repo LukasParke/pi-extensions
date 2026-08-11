@@ -8,6 +8,11 @@ A free-text option is always appended, and you can dismiss the prompt without
 answering — the model is told honestly either way, so it does not invent a
 choice.
 
+While either dialog is open, the extension emits `herdr:blocked` on Pi's
+extension event bus so external supervisors can see that the agent is waiting
+for a human. The signal is released when the dialog settles and is a no-op when
+no extension is listening.
+
 ## When it helps
 
 Use it when committing to the wrong fork burns work, for example:
