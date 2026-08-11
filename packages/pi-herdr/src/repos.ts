@@ -21,6 +21,21 @@ export function knownRepos(repoRoots: string[]): Map<string, string> {
 	return repos;
 }
 
+/** Locate a dispatched checkout after herdr forgets its closed workspace. */
+export function findOrphanWorktree(agentName: string, worktreeRoots: string[]): string | undefined {
+	for (const root of worktreeRoots) {
+		if (!existsSync(root)) continue;
+		for (const repo of readdirSync(root, { withFileTypes: true })) {
+			if (!repo.isDirectory()) continue;
+			for (const candidate of [`agent-${agentName}`, agentName]) {
+				const path = join(root, repo.name, candidate);
+				if (existsSync(path)) return path;
+			}
+		}
+	}
+	return undefined;
+}
+
 /** Resolve a repo by short name, or fall back to the git root of `cwd`. */
 export async function resolveRepo(
 	name: string | undefined,

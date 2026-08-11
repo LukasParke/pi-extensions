@@ -8,9 +8,11 @@
  */
 
 import { execFile } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import { promisify } from "node:util";
+import { defaultConfig, herdrConfig } from "./config.ts";
 
-const exec = promisify(execFile);
+const execFileAsync = promisify(execFile);
 
 export interface HerdrError {
 	code?: string;
@@ -27,7 +29,6 @@ export interface HerdrError {
 export function parseHerdrError(raw: string): HerdrError | undefined {
 	const candidates = [
 		...raw.split("\n").filter((line) => line.trimStart().startsWith("{")),
-		// Fallback for pretty-printed (multi-line) envelopes.
 		raw.match(/\{.*\}/s)?.[0],
 	];
 	for (const candidate of candidates) {
@@ -38,7 +39,7 @@ export function parseHerdrError(raw: string): HerdrError | undefined {
 				return { code: envelope.error.code, message: envelope.error.message };
 			}
 		} catch {
-			// Not an envelope; keep scanning.
+			// Not a structured Herdr envelope; keep scanning.
 		}
 	}
 	return undefined;
@@ -49,28 +50,75 @@ export function describeHerdrError(args: string[], error: HerdrError): string {
 	return error.code ? `${command}: ${error.code}: ${error.message}` : `${command}: ${error.message}`;
 }
 
-/** Run a herdr command and return the parsed `result` from its JSON envelope. */
-export async function herdr(args: string[]): Promise<any> {
-	let stdout: string;
+type ExecResult = { stdout: string };
+type HerdrExec = (file: string, args: string[], options: { timeout: number }) => Promise<ExecResult>;
+type AppendLog = (path: string, data: string) => void;
+
+export interface HerdrRunOptions {
+	exec?: HerdrExec;
+	appendLog?: AppendLog;
+	logPath?: string;
+	now?: () => number;
+}
+
+function logInvocation(
+	path: string,
+	appendLog: AppendLog,
+	entry: { args: string[]; outcome: "ok" | "error"; error?: string; ms: number },
+) {
 	try {
-		({ stdout } = await exec("herdr", args, { timeout: 120_000 }));
-	} catch (error: any) {
-		if (error?.code === "ENOENT") {
-			throw new Error("The `herdr` CLI is not installed or not on PATH. Install herdr to use this tool.");
+		appendLog(path, `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`);
+	} catch {
+		// Diagnostics must never change command behavior.
+	}
+}
+
+/** Run and log a herdr command, returning the parsed `result` from its JSON envelope. */
+export async function runHerdr(args: string[], options: HerdrRunOptions = {}) {
+	const exec = options.exec ?? (execFileAsync as unknown as HerdrExec);
+	const appendLog = options.appendLog ?? appendFileSync;
+	const now = options.now ?? Date.now;
+	const startedAt = now();
+	try {
+		let stdout: string;
+		try {
+			({ stdout } = await exec("herdr", args, { timeout: 120_000 }));
+		} catch (error: any) {
+			if (error?.code === "ENOENT") {
+				throw new Error("The `herdr` CLI is not installed or not on PATH. Install herdr to use this tool.");
+			}
+			const parsed = parseHerdrError(`${error?.stdout ?? ""}${error?.stderr ?? ""}`);
+			if (parsed) throw new Error(describeHerdrError(args, parsed));
+			throw error;
 		}
-		// herdr exits non-zero on API errors but still prints the JSON envelope;
-		// surface the structured code/message instead of "Command failed".
-		const parsed = parseHerdrError(`${error?.stdout ?? ""}${error?.stderr ?? ""}`);
-		if (parsed) throw new Error(describeHerdrError(args, parsed));
+		const envelope = JSON.parse(stdout);
+		if (envelope.error) throw new Error(describeHerdrError(args, envelope.error));
+		logInvocation(options.logPath ?? defaultConfig.logPath, appendLog, {
+			args,
+			outcome: "ok",
+			ms: now() - startedAt,
+		});
+		return envelope.result;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		logInvocation(options.logPath ?? defaultConfig.logPath, appendLog, {
+			args,
+			outcome: "error",
+			error: message,
+			ms: now() - startedAt,
+		});
 		throw error;
 	}
-	const envelope = JSON.parse(stdout);
-	if (envelope.error) throw new Error(describeHerdrError(args, envelope.error));
-	return envelope.result;
+}
+
+/** Run a herdr command using the configured invocation log. */
+export async function herdr(args: string[]) {
+	const config = await herdrConfig();
+	return runHerdr(args, { logPath: config.logPath });
 }
 
 /** Raw text output from a herdr command that does not emit a JSON envelope. */
 export async function herdrText(args: string[], signal?: AbortSignal): Promise<string> {
-	const { stdout } = await exec("herdr", args, { timeout: 30_000, signal });
+	const { stdout } = await execFileAsync("herdr", args, { timeout: 30_000, signal });
 	return stdout;
 }

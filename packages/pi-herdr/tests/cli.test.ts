@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { describeHerdrError, parseHerdrError } from "../src/cli.ts";
+import { describe, expect, it, vi } from "vitest";
+import { describeHerdrError, parseHerdrError, runHerdr } from "../src/cli.ts";
 
 describe("parseHerdrError", () => {
 	it("recovers the envelope from mixed CLI output", () => {
@@ -24,6 +24,34 @@ describe("parseHerdrError", () => {
 	it("returns undefined for JSON without an error envelope", () => {
 		expect(parseHerdrError('{"result":{"ok":true}}')).toBeUndefined();
 		expect(parseHerdrError("{not json}")).toBeUndefined();
+	});
+});
+
+describe("runHerdr", () => {
+	it("logs one JSONL record for successful and failed invocations", async () => {
+		const entries: string[] = [];
+		const appendLog = vi.fn((_path: string, entry: string) => entries.push(entry));
+		const exec = vi.fn().mockResolvedValueOnce({ stdout: '{"result":{"ok":true}}' }).mockRejectedValueOnce({
+			stdout: '{"error":{"code":"agent_not_found","message":"gone"}}',
+			stderr: "",
+		});
+		await expect(runHerdr(["status"], { exec, appendLog, logPath: "/tmp/herdr.log" })).resolves.toEqual({
+			ok: true,
+		});
+		await expect(
+			runHerdr(["agent", "get", "gone"], { exec, appendLog, logPath: "/tmp/herdr.log" }),
+		).rejects.toThrow("agent_not_found");
+		expect(appendLog).toHaveBeenCalledTimes(2);
+		expect(entries.map((entry) => JSON.parse(entry))).toMatchObject([
+			{ args: ["status"], outcome: "ok", ms: expect.any(Number), ts: expect.any(String) },
+			{
+				args: ["agent", "get", "gone"],
+				outcome: "error",
+				error: expect.stringContaining("agent_not_found"),
+				ms: expect.any(Number),
+				ts: expect.any(String),
+			},
+		]);
 	});
 });
 

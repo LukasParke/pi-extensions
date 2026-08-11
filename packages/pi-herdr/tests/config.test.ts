@@ -10,6 +10,7 @@ describe("defaults", () => {
 	it("targets the conventional layout with no config at all", () => {
 		expect(defaultConfig.repoRoots.some((p) => p.endsWith("/github"))).toBe(true);
 		expect(defaultConfig.worktreeRoots.some((p) => p.includes(".herdr/worktrees"))).toBe(true);
+		expect(defaultConfig.logPath).toMatch(/\.pi\/herdr-task\.log$/);
 	});
 });
 
@@ -23,11 +24,16 @@ describe("precedence and parsing", () => {
 		expect(load({ repoRoots: ["/file"] }, env).repoRoots).toEqual(["/a", "/b"]);
 	});
 
-	it("expands ~ in configured roots", () => {
-		// The real pipeline sanitizes file content before resolving.
-		const [root] = load(sanitize(schema, { repoRoots: ["~/code"] })).repoRoots;
+	it("accepts an invocation log path override", () => {
+		expect(load({}, { HERDR_LOG_PATH: "/tmp/herdr.jsonl" }).logPath).toBe("/tmp/herdr.jsonl");
+	});
+
+	it("expands ~ in configured paths", () => {
+		const config = load(sanitize(schema, { repoRoots: ["~/code"], logPath: "~/logs/herdr.jsonl" }));
+		const [root] = config.repoRoots;
 		expect(root.startsWith("/")).toBe(true);
 		expect(root.endsWith("/code")).toBe(true);
+		expect(config.logPath).toMatch(/\/logs\/herdr\.jsonl$/);
 	});
 
 	it("falls back to defaults on an empty or malformed value", () => {

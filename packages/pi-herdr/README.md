@@ -30,9 +30,10 @@ Dispatch is fire-and-forget and resilient:
   adopted rather than colliding with `agent_pane_busy`.
 - Pane-not-ready states (`agent_pane_busy`, "not an available shell",
   `agent_kind_mismatch`) are retried as transient while the checkout settles.
-- The prompt is submitted with `--wait --until working` and verified: pi
-  silently drops prompts sent during startup, so a stalled prompt is re-sent
-  unless the agent is already working.
+- Newly started agents receive the task in `pi`'s launch argv, eliminating the
+  startup prompt-swallow race. Dispatch waits up to 30 seconds for `working`
+  and falls back to a verified prompt only if the agent remains idle. Adopted
+  agents are already running, so they always use the verified prompt path.
 
 ## Lifecycle
 
@@ -47,14 +48,19 @@ Dispatch → verify → cleanup:
    exists, and wait for required CI/reviews/deployments.
 4. Call `herdr_task_cleanup` only after those criteria pass.
 
+Herdr forgets an agent after its workspace closes. Status reports that agent as
+`gone`: if its checkout still exists under a configured worktree root, the
+response points to it for branch/PR verification and cleanup; otherwise it
+reports that the task was fully cleaned up.
+
 Cleanup refuses non-Herdr worktrees. Without `force`, it also refuses agents
-that are still working/blocked, dirty checkouts, unpushed commits, and branches
-with no upstream. A refusal lists every problem to resolve. `force` bypasses
-those safety checks for deliberately abandoned work. Cleanup asks Herdr to
-remove the worktree and its workspace together. If that workspace is already
-missing, it closes it best-effort, removes the orphaned checkout with Git from
-the base repo, and prunes stale worktree metadata. The pushed branch remains on
-the remote.
+that are still working/blocked, dirty checkouts, and unpushed commits. A refusal
+lists every problem to resolve. `force` bypasses those safety checks for
+deliberately abandoned work. Cleanup asks Herdr to remove the worktree and its
+workspace together. If the workspace or agent is already gone, it resolves the
+base repo with `git rev-parse --path-format=absolute --git-common-dir`, removes the orphaned checkout
+with `git worktree remove`, and prunes stale worktree metadata. The pushed
+branch remains on the remote.
 
 ## Slash commands
 
@@ -81,14 +87,22 @@ Optional, via `~/.pi/herdr.json` or environment variables:
 | --------------- | ---------------------- | ------------------------------------ |
 | `repoRoots`     | `HERDR_REPO_ROOTS`     | `~/github`, `~/Development`          |
 | `worktreeRoots` | `HERDR_WORKTREE_ROOTS` | `~/.herdr/worktrees`, `~/.worktrees` |
+| `logPath`       | `HERDR_LOG_PATH`       | `~/.pi/herdr-task.log`               |
 
-Env values are PATH-style separated lists; file values are JSON arrays. `~` is
-expanded.
+Root env values are PATH-style separated lists; root file values are JSON
+arrays. `logPath` is a single path. `~` is expanded.
+
+Every Herdr CLI invocation appends one JSONL object to `logPath` with `ts`,
+`args`, `outcome` (`ok` or `error`), optional `error`, and elapsed `ms`. Logging
+failures never fail the tool. This supplements Herdr's server log, which records
+request outcomes but not the parameters or structured error codes needed for
+failed-dispatch post-mortems.
 
 ```json
 {
   "repoRoots": ["~/code"],
-  "worktreeRoots": ["~/.herdr/worktrees"]
+  "worktreeRoots": ["~/.herdr/worktrees"],
+  "logPath": "~/.pi/herdr-task.log"
 }
 ```
 

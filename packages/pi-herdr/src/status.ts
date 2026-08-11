@@ -1,0 +1,29 @@
+import { herdr as realHerdr } from "./cli.ts";
+import type { HerdrRunner } from "./dispatch.ts";
+import { findOrphanWorktree } from "./repos.ts";
+
+export interface HerdrTaskStatus {
+	status: string;
+	cwd?: string;
+	worktreePath?: string | null;
+}
+
+export async function getHerdrTaskStatus(
+	input: { agent: string; worktreeRoots: string[] },
+	options: {
+		herdr?: HerdrRunner;
+		findOrphan?: (agentName: string, roots: string[]) => string | undefined;
+	} = {},
+): Promise<HerdrTaskStatus> {
+	const herdr = options.herdr ?? realHerdr;
+	try {
+		const info = await herdr(["agent", "get", input.agent]);
+		if (!info?.agent) throw new Error(`herdr returned no agent named "${input.agent}"`);
+		return { status: info.agent.agent_status, cwd: info.agent.cwd };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (!message.includes("agent_not_found")) throw error;
+		const orphan = (options.findOrphan ?? findOrphanWorktree)(input.agent, input.worktreeRoots);
+		return { status: "gone", worktreePath: orphan ?? null };
+	}
+}
