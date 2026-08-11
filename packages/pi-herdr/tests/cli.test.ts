@@ -54,6 +54,32 @@ describe("runHerdr", () => {
 		]);
 	});
 
+	it("redacts task text while preserving command metadata", async () => {
+		const entries: string[] = [];
+		const appendLog = (_path: string, entry: string) => entries.push(entry);
+		const exec = vi
+			.fn()
+			.mockResolvedValueOnce({ stdout: '{"result":{}}' })
+			.mockRejectedValueOnce(new Error("failed to send another secret"));
+		await runHerdr(["agent", "start", "fix", "--kind", "pi", "--pane", "pane-1", "--", "secret task"], {
+			exec,
+			appendLog,
+			logPath: "/tmp/herdr.log",
+		});
+		await expect(
+			runHerdr(["agent", "prompt", "fix", "another secret", "--wait", "--until", "working"], {
+				exec,
+				appendLog,
+				logPath: "/tmp/herdr.log",
+			}),
+		).rejects.toThrow("another secret");
+		expect(entries.map((entry) => JSON.parse(entry).args)).toEqual([
+			["agent", "start", "fix", "--kind", "pi", "--pane", "pane-1", "--", "[redacted]"],
+			["agent", "prompt", "fix", "[redacted]", "--wait", "--until", "working"],
+		]);
+		expect(entries.join("\n")).not.toContain("secret");
+	});
+
 	it("logs successful and failed raw-text invocations", async () => {
 		const entries: string[] = [];
 		const appendLog = vi.fn((_path: string, entry: string) => entries.push(entry));

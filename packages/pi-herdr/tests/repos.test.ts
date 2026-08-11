@@ -77,6 +77,10 @@ describe("findOrphanWorktree", () => {
 	it("returns undefined when no matching worktree survives", () => {
 		expect(findOrphanWorktree("missing", [join(root, "orphans")])).toBeUndefined();
 	});
+
+	it.each(["", ".", "..", "with/slash", "with\\slash"])("rejects invalid agent name %j", (name) => {
+		expect(() => findOrphanWorktree(name, [join(root, "orphans")])).toThrow("non-empty path segment");
+	});
 });
 
 describe("resolveRepo", () => {

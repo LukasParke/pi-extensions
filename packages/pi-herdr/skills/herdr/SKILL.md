@@ -64,7 +64,7 @@ reviews, or deployments.
 
 Then clean up:
 
-```
+```text
 herdr_task_cleanup { agent: "fix-ci" }
 ```
 

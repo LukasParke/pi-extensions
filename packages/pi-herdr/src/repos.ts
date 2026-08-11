@@ -27,8 +27,17 @@ export class AmbiguousOrphanWorktreeError extends Error {
 	}
 }
 
+export const AGENT_NAME_PATTERN = String.raw`^(?!\.{1,2}$)[^/\\]+$`;
+
+export function assertAgentName(agentName: string) {
+	if (!new RegExp(AGENT_NAME_PATTERN).test(agentName)) {
+		throw new Error("Agent name must be a non-empty path segment other than . or ..");
+	}
+}
+
 /** Locate a dispatched checkout after herdr forgets its closed workspace. */
 export function findOrphanWorktree(agentName: string, worktreeRoots: string[]): string | undefined {
+	assertAgentName(agentName);
 	const matches: string[] = [];
 	for (const root of worktreeRoots) {
 		if (!existsSync(root)) continue;

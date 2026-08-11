@@ -13,6 +13,7 @@ function setup(
 		dirty?: string;
 		unpushed?: string;
 		missingUpstream?: boolean;
+		revListError?: Error;
 		removeFailsMissingWorkspace?: boolean;
 		agentNotFound?: boolean;
 	} = {},
@@ -39,11 +40,11 @@ function setup(
 		calls.push(["git", ...args]);
 		if (args.includes("status")) return options.dirty ?? "";
 		if (args.includes("rev-list")) {
-			if (options.missingUpstream) throw new Error("no upstream");
+			if (options.revListError) throw options.revListError;
+			if (options.missingUpstream) throw new Error("fatal: no upstream configured for branch 'agent/fix'");
 			return options.unpushed ?? "";
 		}
 		if (args.includes("rev-parse")) return "/home/luke/github/app/.git\n";
-		if (args.includes("log")) return options.missingUpstream ? "abc123 local\n" : "";
 		if (args.includes("worktree")) return "";
 		throw new Error(`unexpected git command: ${args.join(" ")}`);
 	});
@@ -69,10 +70,16 @@ describe("cleanupHerdrTask", () => {
 		expect(result.problems).toEqual(["unpushed commits:\nabc123 feat: unfinished"]);
 	});
 
-	it("refuses a branch with no upstream", async () => {
+	it("refuses a branch with no upstream even when HEAD exists on another remote ref", async () => {
 		const { herdr, git } = setup({ missingUpstream: true });
 		const result = await cleanup(herdr, git);
 		expect(result.problems).toEqual(["branch has no upstream (never pushed)"]);
+		expect(git.mock.calls.some(([args]) => args.includes("log"))).toBe(false);
+	});
+
+	it("propagates unexpected rev-list failures", async () => {
+		const { herdr, git } = setup({ revListError: new Error("fatal: corrupt repository") });
+		await expect(cleanup(herdr, git)).rejects.toThrow("corrupt repository");
 	});
 
 	it.each(["working", "blocked"])("refuses while the agent is %s", async (status) => {

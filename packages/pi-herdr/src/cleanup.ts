@@ -4,6 +4,7 @@ import { herdr as realHerdr } from "./cli.ts";
 import type { HerdrRunner } from "./dispatch.ts";
 import {
 	AmbiguousOrphanWorktreeError,
+	assertAgentName,
 	baseRepoFromCommonDir,
 	findOrphanWorktree,
 	isPathInside,
@@ -38,6 +39,7 @@ export async function cleanupHerdrTask(
 	input: { agent: string; force?: boolean; worktreeRoots: string[] },
 	options: CleanupOptions = {},
 ): Promise<CleanupResult> {
+	assertAgentName(input.agent);
 	const herdr = options.herdr ?? realHerdr;
 	const git = options.git ?? realGit;
 	let status: string;
@@ -92,9 +94,10 @@ export async function cleanupHerdrTask(
 		try {
 			const unpushed = await git(["-C", cwd, "rev-list", "--oneline", "@{upstream}..HEAD"]);
 			if (unpushed.trim()) problems.push(`unpushed commits:\n${unpushed.trim()}`);
-		} catch {
-			const local = await git(["-C", cwd, "log", "--oneline", "-1", "--not", "--remotes"]);
-			if (local.trim()) problems.push("branch has no upstream (never pushed)");
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (!message.includes("no upstream")) throw error;
+			problems.push("branch has no upstream (never pushed)");
 		}
 
 		if (problems.length) {

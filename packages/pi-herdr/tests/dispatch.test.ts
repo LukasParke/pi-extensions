@@ -452,6 +452,17 @@ describe("dispatchHerdrTask", () => {
 		expect(calls.some((call) => call[1] === "prompt")).toBe(true);
 	});
 
+	it.each(["", ".", "..", "with/slash", "with\\slash"])(
+		"rejects invalid explicit agent name %j before creating a worktree",
+		async (name) => {
+			const { run, calls } = fakeHerdr({});
+			await expect(
+				dispatchHerdrTask({ repoPath: "/repo", task: "Fix the thing", name }, { herdr: run, ...noSleep }),
+			).rejects.toThrow("non-empty path segment");
+			expect(calls).toEqual([]);
+		},
+	);
+
 	it("derives the branch and agent name from the task when no name is given", async () => {
 		const { run } = fakeHerdr({
 			"worktree create": () => createdWorktree,

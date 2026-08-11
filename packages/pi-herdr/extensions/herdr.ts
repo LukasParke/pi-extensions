@@ -5,7 +5,13 @@ import { herdr, herdrText } from "../src/cli.ts";
 import { cleanupHerdrTask } from "../src/cleanup.ts";
 import { defaultConfig, herdrConfig, type HerdrConfig } from "../src/config.ts";
 import { dispatchHerdrTask, parsePrUrl } from "../src/dispatch.ts";
-import { knownRepos, resolveRepo, worktreeBaseRepo, worktreeTrust } from "../src/repos.ts";
+import {
+	AGENT_NAME_PATTERN,
+	knownRepos,
+	resolveRepo,
+	worktreeBaseRepo,
+	worktreeTrust,
+} from "../src/repos.ts";
 import { getHerdrTaskStatus } from "../src/status.ts";
 
 // Task herdr-managed pi agents in repo worktrees.
@@ -49,6 +55,7 @@ export default function (pi: ExtensionAPI) {
 			name: Type.Optional(
 				Type.String({
 					description: "Short kebab-case label for the agent/worktree; derived from the task if omitted",
+					pattern: AGENT_NAME_PATTERN,
 				}),
 			),
 		}),
@@ -74,7 +81,7 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Check a herdr-dispatched agent: current state (working/idle/done/blocked) and recent terminal output. Pass wait=true to block until it settles.",
 		parameters: Type.Object({
-			agent: Type.String({ description: "Agent name from herdr_task" }),
+			agent: Type.String({ description: "Agent name from herdr_task", pattern: AGENT_NAME_PATTERN }),
 			wait: Type.Optional(Type.Boolean({ description: "Block until the agent settles (default false)" })),
 			timeout_ms: Type.Optional(Type.Number({ description: "Max wait, ms. Only with wait=true" })),
 			lines: Type.Optional(Type.Number({ description: "Terminal lines to read (default 60)" })),
@@ -122,7 +129,10 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Tear down a finished herdr-dispatched agent: removes its worktree and workspace. Refuses unless the work is verifiably safe to discard — agent settled, no uncommitted changes, no unpushed commits — because the checkout is deleted (the pushed branch survives). Call after verifying the task's completion criteria (PR opened/merged, CI green). Use force only to discard abandoned work.",
 		parameters: Type.Object({
-			agent: Type.String({ description: "Agent name (or pane id) from herdr_task" }),
+			agent: Type.String({
+				description: "Agent name (or pane id) from herdr_task",
+				pattern: AGENT_NAME_PATTERN,
+			}),
 			force: Type.Optional(
 				Type.Boolean({
 					description: "Skip safety checks and discard uncommitted/unpushed work (default false)",

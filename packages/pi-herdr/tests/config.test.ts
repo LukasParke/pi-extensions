@@ -1,4 +1,4 @@
-import { delimiter } from "node:path";
+import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolve, sanitize } from "@parke.dev/pi-ext-config";
 import { defaultConfig, schema, type HerdrConfig } from "../src/config.ts";
@@ -8,9 +8,9 @@ const load = (file: Partial<HerdrConfig> = {}, env: NodeJS.ProcessEnv = {}) =>
 
 describe("defaults", () => {
 	it("targets the conventional layout with no config at all", () => {
-		expect(defaultConfig.repoRoots.some((p) => p.endsWith("/github"))).toBe(true);
-		expect(defaultConfig.worktreeRoots.some((p) => p.includes(".herdr/worktrees"))).toBe(true);
-		expect(defaultConfig.logPath).toMatch(/\.pi\/herdr-task\.log$/);
+		expect(defaultConfig.repoRoots.some((p) => p.endsWith(join("", "github")))).toBe(true);
+		expect(defaultConfig.worktreeRoots.some((p) => p.includes(join(".herdr", "worktrees")))).toBe(true);
+		expect(defaultConfig.logPath.endsWith(join(".pi", "herdr-task.log"))).toBe(true);
 	});
 });
 
@@ -32,8 +32,8 @@ describe("precedence and parsing", () => {
 		const config = load(sanitize(schema, { repoRoots: ["~/code"], logPath: "~/logs/herdr.jsonl" }));
 		const [root] = config.repoRoots;
 		expect(root.startsWith("/")).toBe(true);
-		expect(root.endsWith("/code")).toBe(true);
-		expect(config.logPath).toMatch(/\/logs\/herdr\.jsonl$/);
+		expect(root.endsWith(join("", "code"))).toBe(true);
+		expect(config.logPath.endsWith(join("logs", "herdr.jsonl"))).toBe(true);
 	});
 
 	it("falls back to defaults on an empty or malformed value", () => {

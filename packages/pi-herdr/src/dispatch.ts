@@ -8,6 +8,7 @@
  */
 
 import { herdr as realHerdr } from "./cli.ts";
+import { assertAgentName } from "./repos.ts";
 
 /** Runs a herdr command and returns the parsed `result` from its envelope. */
 export type HerdrRunner = (args: string[]) => Promise<any>;
@@ -224,6 +225,7 @@ export async function dispatchHerdrTask(
 ): Promise<HerdrTaskResult> {
 	const slug = slugify(input.name ?? input.task);
 	const name = input.name ?? slug;
+	assertAgentName(name);
 	const branch = `agent/${slug}`;
 
 	const worktree = await ensureWorktree(input.repoPath, branch, name, options);

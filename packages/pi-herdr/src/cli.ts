@@ -87,13 +87,39 @@ export interface HerdrRunOptions {
 	now?: () => number;
 }
 
+function taskArgs(args: string[]) {
+	if (args[0] === "agent" && args[1] === "prompt") return args.slice(3, 4).filter(Boolean);
+	if (args[0] === "agent" && args[1] === "start") {
+		const separator = args.indexOf("--");
+		if (separator >= 0) return args.slice(separator + 1).filter(Boolean);
+	}
+	return [];
+}
+
+function redactTask(args: string[]) {
+	const redacted = [...args];
+	if (args[0] === "agent" && args[1] === "prompt" && args.length > 3) redacted[3] = "[redacted]";
+	if (args[0] === "agent" && args[1] === "start") {
+		const separator = args.indexOf("--");
+		if (separator >= 0) redacted.fill("[redacted]", separator + 1);
+	}
+	return redacted;
+}
+
 function logInvocation(
 	path: string,
 	appendLog: AppendLog,
 	entry: { args: string[]; outcome: "ok" | "error"; error?: string; ms: number },
 ) {
 	try {
-		appendLog(path, `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`);
+		const error = taskArgs(entry.args).reduce(
+			(message, task) => message?.replaceAll(task, "[redacted]"),
+			entry.error,
+		);
+		appendLog(
+			path,
+			`${JSON.stringify({ ts: new Date().toISOString(), ...entry, args: redactTask(entry.args), error })}\n`,
+		);
 	} catch {
 		// Diagnostics must never change command behavior.
 	}
