@@ -162,8 +162,11 @@ describe("ensurePiAgent", () => {
 		const { run, calls } = fakeHerdr({
 			"agent get": () => ({ agent: { agent: "pi", name: "existing-pi" } }),
 		});
-		const name = await ensurePiAgent("fix", "pane-1", { herdr: run, ...noSleep });
-		expect(name).toBe("existing-pi");
+		const result = await ensurePiAgent("fix", "pane-1", "do the thing", {
+			herdr: run,
+			...noSleep,
+		});
+		expect(result).toEqual({ agentName: "existing-pi", launchedWithTask: false });
 		expect(calls.some((c) => c[1] === "start")).toBe(false);
 	});
 
@@ -172,8 +175,11 @@ describe("ensurePiAgent", () => {
 			"agent get": () => ({ agent: { agent: "pi" } }),
 			"agent rename": () => ({}),
 		});
-		const name = await ensurePiAgent("fix", "pane-1", { herdr: run, ...noSleep });
-		expect(name).toBe("fix");
+		const result = await ensurePiAgent("fix", "pane-1", "do the thing", {
+			herdr: run,
+			...noSleep,
+		});
+		expect(result).toEqual({ agentName: "fix", launchedWithTask: false });
 		expect(calls.find((c) => c[1] === "rename")).toEqual(["agent", "rename", "pane-1", "fix"]);
 	});
 
@@ -189,8 +195,11 @@ describe("ensurePiAgent", () => {
 				return { agent: { name: "fix" } };
 			},
 		});
-		const name = await ensurePiAgent("fix", "pane-1", { herdr: run, ...noSleep });
-		expect(name).toBe("fix");
+		const result = await ensurePiAgent("fix", "pane-1", "do the thing", {
+			herdr: run,
+			...noSleep,
+		});
+		expect(result).toEqual({ agentName: "fix", launchedWithTask: true });
 		expect(attempts).toBe(3);
 	});
 
@@ -206,7 +215,9 @@ describe("ensurePiAgent", () => {
 				return { agent: { name: "fix" } };
 			},
 		});
-		await expect(ensurePiAgent("fix", "pane-1", { herdr: run, ...noSleep })).resolves.toBe("fix");
+		await expect(ensurePiAgent("fix", "pane-1", "do the thing", { herdr: run, ...noSleep })).resolves.toEqual(
+			{ agentName: "fix", launchedWithTask: true },
+		);
 		expect(attempts).toBe(2);
 	});
 
@@ -221,7 +232,7 @@ describe("ensurePiAgent", () => {
 			},
 		});
 		await expect(
-			ensurePiAgent("fix", "pane-1", {
+			ensurePiAgent("fix", "pane-1", "do the thing", {
 				herdr: run,
 				sleep: async () => {
 					clock += 3_000;
@@ -243,10 +254,31 @@ describe("ensurePiAgent", () => {
 				throw new Error("agent_name_taken: fix");
 			},
 		});
-		await expect(ensurePiAgent("fix", "pane-1", { herdr: run, ...noSleep })).rejects.toThrow(
+		await expect(ensurePiAgent("fix", "pane-1", "do the thing", { herdr: run, ...noSleep })).rejects.toThrow(
 			/agent_name_taken/,
 		);
 		expect(attempts).toBe(1);
+	});
+
+	it("passes the task in argv when starting pi", async () => {
+		const { run, calls } = fakeHerdr({
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": () => ({ agent: { name: "fix" } }),
+		});
+		await ensurePiAgent("fix", "pane-1", "do the thing", { herdr: run, ...noSleep });
+		expect(calls.at(-1)).toEqual([
+			"agent",
+			"start",
+			"fix",
+			"--kind",
+			"pi",
+			"--pane",
+			"pane-1",
+			"--",
+			"do the thing",
+		]);
 	});
 });
 
@@ -315,17 +347,14 @@ describe("promptWithVerify", () => {
 });
 
 describe("dispatchHerdrTask", () => {
-	it("runs the full flow: worktree → agent → verified prompt", async () => {
+	it("launches with the task and does not prompt when pi starts working", async () => {
 		const { run, calls } = fakeHerdr({
 			"worktree create": () => createdWorktree,
-			"agent get": (args) =>
-				args[2] === "pane-1"
-					? (() => {
-							throw new Error("agent_not_found");
-						})()
-					: { agent: { agent_status: "working" } },
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
 			"agent start": () => ({ agent: { name: "fix-thing" } }),
-			"agent prompt": () => ({}),
+			"agent wait": () => ({}),
 		});
 		const result = await dispatchHerdrTask(
 			{ repoPath: "/repo", task: "Fix the thing", name: "fix-thing" },
@@ -343,8 +372,84 @@ describe("dispatchHerdrTask", () => {
 			"worktree create",
 			"agent get",
 			"agent start",
-			"agent prompt",
+			"agent wait",
 		]);
+		expect(calls.find((call) => call[1] === "start")?.slice(-2)).toEqual(["--", "Fix the thing"]);
+	});
+
+	it("falls back to a verified prompt only when argv launch remains idle after the grace period", async () => {
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": (args) => {
+				if (args[2] === "pane-1") throw new Error("agent_not_found");
+				return { agent: { agent_status: "idle" } };
+			},
+			"agent start": () => ({ agent: { name: "fix-thing" } }),
+			"agent wait": () => {
+				throw new Error("wait_timeout");
+			},
+			"agent prompt": () => ({}),
+		});
+		await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "Fix the thing", name: "fix-thing" },
+			{ herdr: run, ...noSleep },
+		);
+		expect(calls.filter((call) => call[1] === "prompt")).toEqual([
+			["agent", "prompt", "fix-thing", "Fix the thing", "--wait", "--until", "working"],
+		]);
+	});
+
+	it("propagates non-timeout argv wait failures without prompting", async () => {
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": () => ({ agent: { name: "fix-thing" } }),
+			"agent wait": () => {
+				throw new Error("server_unavailable");
+			},
+		});
+		await expect(
+			dispatchHerdrTask(
+				{ repoPath: "/repo", task: "Fix the thing", name: "fix-thing" },
+				{ herdr: run, ...noSleep },
+			),
+		).rejects.toThrow("server_unavailable");
+		expect(calls.some((call) => call[1] === "prompt")).toBe(false);
+	});
+
+	it("does not prompt when argv launch settled before status verification", async () => {
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": (args) => {
+				if (args[2] === "pane-1") throw new Error("agent_not_found");
+				return { agent: { agent_status: "working" } };
+			},
+			"agent start": () => ({ agent: { name: "fix-thing" } }),
+			"agent wait": () => {
+				throw new Error("wait_timeout");
+			},
+		});
+		await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "Fix the thing", name: "fix-thing" },
+			{ herdr: run, ...noSleep },
+		);
+		expect(calls.some((call) => call[1] === "prompt")).toBe(false);
+	});
+
+	it("always prompts an adopted agent instead of launching it with argv", async () => {
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => ({ agent: { agent: "pi", name: "existing-pi" } }),
+			"agent prompt": () => ({}),
+		});
+		await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "Fix the thing", name: "fix-thing" },
+			{ herdr: run, ...noSleep },
+		);
+		expect(calls.some((call) => call[1] === "start")).toBe(false);
+		expect(calls.some((call) => call[1] === "prompt")).toBe(true);
 	});
 
 	it("derives the branch and agent name from the task when no name is given", async () => {
@@ -354,7 +459,7 @@ describe("dispatchHerdrTask", () => {
 				throw new Error("agent_not_found");
 			},
 			"agent start": (args) => ({ agent: { name: args[2] } }),
-			"agent prompt": () => ({}),
+			"agent wait": () => ({}),
 		});
 		const result = await dispatchHerdrTask(
 			{ repoPath: "/repo", task: "Add CI caching for Node builds" },

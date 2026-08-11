@@ -16,11 +16,14 @@ export interface HerdrConfig {
 	repoRoots: string[];
 	/** Roots whose git worktrees inherit trust from their base repo. */
 	worktreeRoots: string[];
+	/** JSONL audit log for every herdr CLI invocation. */
+	logPath: string;
 }
 
 export const defaultConfig: HerdrConfig = {
 	repoRoots: [join(homedir(), "github"), join(homedir(), "Development")],
 	worktreeRoots: [join(homedir(), ".herdr", "worktrees"), join(homedir(), ".worktrees")],
+	logPath: join(homedir(), ".pi", "herdr-task.log"),
 };
 
 /** A list of paths: an array in the file, or a PATH-style separated string from env. */
@@ -33,9 +36,13 @@ const pathList: Validator<string[]> = (value) => {
 	return paths.length ? paths : undefined;
 };
 
+const path: Validator<string> = (value) =>
+	typeof value === "string" && value.trim() ? resolve(expandTilde(value.trim())) : undefined;
+
 export const schema: Schema<HerdrConfig> = {
 	repoRoots: { validate: pathList, env: "HERDR_REPO_ROOTS" },
 	worktreeRoots: { validate: pathList, env: "HERDR_WORKTREE_ROOTS" },
+	logPath: { validate: path, env: "HERDR_LOG_PATH" },
 };
 
 let cached: Promise<HerdrConfig> | undefined;

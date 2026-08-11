@@ -141,8 +141,9 @@ async function existingPiAgent(herdr: HerdrRunner, paneId: string): Promise<stri
 export async function ensurePiAgent(
 	name: string,
 	paneId: string,
+	task: string,
 	options: DispatchOptions = {},
-): Promise<string> {
+): Promise<{ agentName: string; launchedWithTask: boolean }> {
 	const herdr = options.herdr ?? realHerdr;
 	const sleep = options.sleep ?? defaultSleep;
 	const now = options.now ?? Date.now;
@@ -153,16 +154,16 @@ export async function ensurePiAgent(
 			if (existing === paneId) {
 				try {
 					await herdr(["agent", "rename", paneId, name]);
-					return name;
+					return { agentName: name, launchedWithTask: false };
 				} catch {
 					// Rename is cosmetic; the adopted agent still answers to its pane id.
 				}
 			}
-			return existing;
+			return { agentName: existing, launchedWithTask: false };
 		}
 		try {
-			const started = await herdr(["agent", "start", name, "--kind", "pi", "--pane", paneId]);
-			return started.agent.name;
+			const started = await herdr(["agent", "start", name, "--kind", "pi", "--pane", paneId, "--", task]);
+			return { agentName: started.agent.name, launchedWithTask: true };
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (!isTransientStartError(message) || now() >= deadline) throw error;
@@ -226,8 +227,20 @@ export async function dispatchHerdrTask(
 	const branch = `agent/${slug}`;
 
 	const worktree = await ensureWorktree(input.repoPath, branch, name, options);
-	const agentName = await ensurePiAgent(name, worktree.paneId, options);
-	await promptWithVerify(agentName, input.task, options);
+	const { agentName, launchedWithTask } = await ensurePiAgent(name, worktree.paneId, input.task, options);
+	const herdr = options.herdr ?? realHerdr;
+	if (launchedWithTask) {
+		try {
+			await herdr(["agent", "wait", agentName, "--until", "working", "--timeout", "30000"]);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (!message.includes("wait_timeout")) throw error;
+			const info = await herdr(["agent", "get", agentName]);
+			if (info.agent?.agent_status === "idle") await promptWithVerify(agentName, input.task, options);
+		}
+	} else {
+		await promptWithVerify(agentName, input.task, options);
+	}
 
 	return {
 		agentName,

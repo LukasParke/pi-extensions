@@ -6,6 +6,7 @@ import { cleanupHerdrTask } from "../src/cleanup.ts";
 import { defaultConfig, herdrConfig, type HerdrConfig } from "../src/config.ts";
 import { dispatchHerdrTask, parsePrUrl } from "../src/dispatch.ts";
 import { knownRepos, resolveRepo, worktreeBaseRepo, worktreeTrust } from "../src/repos.ts";
+import { getHerdrTaskStatus } from "../src/status.ts";
 
 // Task herdr-managed pi agents in repo worktrees.
 //
@@ -28,8 +29,6 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("project_trust", async (event) => {
 		const config = await herdrConfig();
-		const inWorktreeRoot = config.worktreeRoots.some((root) => event.cwd.startsWith(root + "/"));
-		if (!inWorktreeRoot) return { trusted: "undecided" as const };
 		const base = await worktreeBaseRepo(event.cwd);
 		return { trusted: worktreeTrust(event.cwd, base, config) };
 	});
@@ -81,13 +80,26 @@ export default function (pi: ExtensionAPI) {
 			lines: Type.Optional(Type.Number({ description: "Terminal lines to read (default 60)" })),
 		}),
 		async execute(_id, params, signal) {
+			const config = await herdrConfig();
 			if (params.wait) {
 				const args = ["agent", "wait", params.agent];
 				if (params.timeout_ms) args.push("--timeout", String(params.timeout_ms));
-				await herdr(args);
+				try {
+					await herdr(args);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					if (!message.includes("agent_not_found")) throw error;
+				}
 			}
-			const info = await herdr(["agent", "get", params.agent]);
-			if (!info?.agent) throw new Error(`herdr returned no agent named "${params.agent}"`);
+			const status = await getHerdrTaskStatus({ agent: params.agent, worktreeRoots: config.worktreeRoots });
+			if (status.status === "gone") {
+				const text = status.matches
+					? `Agent "${params.agent}" is gone, but multiple worktrees match it:\n${status.matches.join("\n")}\nResolve the ambiguity before cleanup.`
+					: status.worktreePath
+						? `Agent "${params.agent}" is gone (herdr forgets agents when their workspace closes), but its worktree survives at ${status.worktreePath}. Verify its branch/PR, then herdr_task_cleanup to remove it.`
+						: `Agent "${params.agent}" is gone and no matching worktree was found under the configured roots.`;
+				return { content: [{ type: "text" as const, text }], details: status };
+			}
 			const output = await herdrText(
 				["agent", "read", params.agent, "--lines", String(params.lines ?? 60), "--format", "text"],
 				signal as AbortSignal | undefined,
@@ -96,10 +108,10 @@ export default function (pi: ExtensionAPI) {
 				content: [
 					{
 						type: "text",
-						text: `state: ${info.agent.agent_status}\ncwd: ${info.agent.cwd}\n\n--- recent output ---\n${output}`,
+						text: `state: ${status.status}\ncwd: ${status.cwd}\n\n--- recent output ---\n${output}`,
 					},
 				],
-				details: { status: info.agent.agent_status, cwd: info.agent.cwd },
+				details: status,
 			};
 		},
 	});
@@ -121,25 +133,21 @@ export default function (pi: ExtensionAPI) {
 			const config = await herdrConfig();
 			const result = await cleanupHerdrTask({ ...params, worktreeRoots: config.worktreeRoots });
 			if (!result.cleaned) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `Refusing cleanup of "${params.agent}" (${result.worktreePath}):\n- ${result.problems!.join("\n- ")}\n\nResolve these (or pass force to discard) and retry.`,
-						},
-					],
-					details: result,
-				};
+				let text: string;
+				if (result.reason === "nothing-found") {
+					text = `Agent "${params.agent}" is unknown to herdr and no matching worktree was found under the configured roots — nothing to clean up.`;
+				} else if (result.reason === "ambiguous") {
+					text = `Refusing cleanup of "${params.agent}": multiple worktrees match it:\n${result.matches!.join("\n")}\nResolve the ambiguity and retry.`;
+				} else {
+					text = `Refusing cleanup of "${params.agent}" (${result.worktreePath}):\n- ${result.problems!.join("\n- ")}\n\nResolve these (or pass force to discard) and retry.`;
+				}
+				return { content: [{ type: "text" as const, text }], details: result };
 			}
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `Cleaned up "${params.agent}": worktree ${result.worktreePath} and workspace ${result.workspaceId} removed. The pushed branch survives on the remote.`,
-					},
-				],
-				details: result,
-			};
+			const text =
+				result.removal === "herdr"
+					? `Cleaned up "${params.agent}": workspace ${result.workspaceId} and worktree ${result.worktreePath} removed. The pushed branch survives on the remote.`
+					: `Cleaned up "${params.agent}": worktree ${result.worktreePath} removed via git (workspace was already gone). The pushed branch survives on the remote.`;
+			return { content: [{ type: "text" as const, text }], details: result };
 		},
 	});
 
