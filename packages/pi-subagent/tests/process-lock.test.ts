@@ -104,6 +104,20 @@ describe("ProcessLockManager", () => {
     expect(after?.state).toBe("terminal");
   });
 
+  it("round-trips worktreeCwd on run records for machine-wide GC shielding", () => {
+    locks.writeRunRecord({
+      runId: "wt-run",
+      parentSessionKey: "s",
+      worktreeCwd: "/tmp/some-worktree/work",
+      process: currentProcessIdentity(),
+      startedAt: now,
+      state: "running",
+      updatedAt: now,
+    });
+    const records = locks.listRunRecords();
+    expect(records.find((r) => r.runId === "wt-run")?.worktreeCwd).toBe("/tmp/some-worktree/work");
+  });
+
   it("reports current process as alive", () => {
     expect(isProcessAlive(currentProcessIdentity())).toBe(true);
   });

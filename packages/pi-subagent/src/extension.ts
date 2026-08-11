@@ -641,8 +641,15 @@ function scheduleMaintenance(runtime: SessionRuntime): void {
       for (const id of run.childSessionIds) busy.add(id);
     }
     await sweepSessionsLifecycle(runtime.config.sessionDir, { keep, busy });
+    // Machine-wide worktree GC: this session's live worktrees plus every
+    // worktree recorded by a running run record (other concurrent Pi parents)
+    // are shielded; all containers under the global root are swept, not just
+    // this repo's, so repos the user stops visiting still get reclaimed.
     const liveWorktrees = runtime.registry.getLiveWorktreeCwds(runtime.key);
-    await runtime.worktrees.sweep(runtime.ctx.cwd, runtime.config.worktreeRetentionDays, liveWorktrees);
+    for (const record of runtime.locks.listRunRecords()) {
+      if (record.state === "running" && record.worktreeCwd) liveWorktrees.add(record.worktreeCwd);
+    }
+    await runtime.worktrees.sweepAll(runtime.ctx.cwd, runtime.config.worktreeRetentionDays, liveWorktrees);
   })().catch(() => { /* maintenance is best effort */ });
 }
 
@@ -1180,10 +1187,12 @@ export default function registerSubagent(pi: ExtensionAPI): void {
               // Keep the durable run record's childSessionId in sync the first
               // time we learn it (also used by orphan reclaim).
               if (partial.sessionId && partial.process) {
+                const taskRunId = specs.length > 1 ? `${runId}:${index}` : runId;
                 runtime.locks.writeRunRecord({
-                  runId: specs.length > 1 ? `${runId}:${index}` : runId,
+                  runId: taskRunId,
                   parentSessionKey: runtime.key,
                   childSessionId: partial.sessionId,
+                  worktreeCwd: partial.worktree?.cwd ?? runtime.locks.readRunRecord(taskRunId)?.worktreeCwd,
                   process: {
                     pid: partial.process.pid,
                     startTime: partial.process.startTime,

@@ -40,6 +40,8 @@ export interface RunProcessRecord {
   runId: string;
   parentSessionKey: string;
   childSessionId?: string;
+  /** Live worktree checkout of this run; shields it from machine-wide GC sweeps. */
+  worktreeCwd?: string;
   process: ProcessIdentity;
   startedAt: number;
   state: "running" | "terminal";

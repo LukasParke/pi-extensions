@@ -600,6 +600,9 @@ export class ChildRunner {
             runId: this.runId,
             parentSessionKey: this.parentSessionKey ?? "",
             childSessionId: result.sessionId,
+            // Worktree-isolated runs record their checkout so concurrent Pi
+            // processes' machine-wide GC sweeps can shield it while we live.
+            worktreeCwd: spec.isolation === "worktree" ? spec.cwd : undefined,
             process: {
               pid: identity.pid,
               startTime: identity.startTime,

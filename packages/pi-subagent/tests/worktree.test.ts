@@ -291,6 +291,128 @@ describe("WorktreeManager", () => {
     await mgr.forceRemove(handle);
   });
 
+  describe("sweepAll", () => {
+    let repo2: string;
+
+    beforeEach(async () => {
+      repo2 = await fs.mkdtemp(path.join(os.tmpdir(), "pi-subagent-git2-"));
+      await run("git", ["init"], repo2);
+      await run("git", ["config", "user.email", "test@example.com"], repo2);
+      await run("git", ["config", "user.name", "Test"], repo2);
+      await run("git", ["config", "commit.gpgsign", "false"], repo2);
+      await fs.writeFile(path.join(repo2, "other.md"), "other repo\n");
+      await run("git", ["add", "."], repo2);
+      await run("git", ["commit", "-m", "init"], repo2);
+    });
+
+    afterEach(async () => {
+      await fs.rm(repo2, { recursive: true, force: true });
+    });
+
+    async function age(cwd: string): Promise<void> {
+      const old = new Date(Date.now() - 3 * 24 * 60 * 60_000);
+      await fs.utimes(cwd, old, old);
+    }
+
+    it("sweeps containers of repos other than the current checkout", async () => {
+      const foreign = await mgr.create(repo2, "foreign-stale");
+      await age(foreign.cwd);
+
+      // Current checkout is `repo`; repo2's container must still be reclaimed.
+      const report = await mgr.sweepAll(repo);
+      expect(report.swept).toContain(path.resolve(repo2));
+      expect(report.removed).toContain(foreign.cwd);
+      await expect(fs.stat(foreign.cwd)).rejects.toThrow();
+      expect(report.orphanedContainers).toHaveLength(0);
+    });
+
+    it("applies the full safety model globally: archives unique work, shields keepPaths", async () => {
+      const changed = await mgr.create(repo2, "changed");
+      await fs.writeFile(path.join(changed.cwd, "keep.txt"), "work\n");
+      await age(changed.cwd);
+      const live = await mgr.create(repo2, "live");
+      await age(live.cwd); // aged but shielded by keepPaths
+
+      const report = await mgr.sweepAll(repo, 7, new Set([live.cwd]));
+      expect(report.removed).toContain(changed.cwd);
+      expect(report.archived).toHaveLength(1);
+      expect(await fs.readFile(report.archived[0]!, "utf8")).toContain("keep.txt");
+      expect(report.kept).toContain(live.cwd);
+      await fs.stat(live.cwd);
+      await mgr.forceRemove(live);
+    });
+
+    it("works without a current checkout", async () => {
+      const stale = await mgr.create(repo2, "no-current");
+      await age(stale.cwd);
+      const report = await mgr.sweepAll();
+      expect(report.removed).toContain(stale.cwd);
+    });
+
+    it("never deletes containers whose base repo is gone; reports them instead", async () => {
+      const orphan = await mgr.create(repo2, "orphaned");
+      await fs.writeFile(path.join(orphan.cwd, "unrecoverable.txt"), "only copy\n");
+      await age(orphan.cwd);
+      const container = mgr.repoRoot(repo2);
+      await fs.rm(repo2, { recursive: true, force: true });
+
+      const report = await mgr.sweepAll(repo);
+      expect(report.orphanedContainers).toContain(container);
+      await fs.stat(orphan.cwd); // untouched
+      expect(await fs.readFile(path.join(orphan.cwd, "unrecoverable.txt"), "utf8")).toBe("only copy\n");
+    });
+
+    it("removes empty containers (no worktrees, no archived patches) for gone repos", async () => {
+      const container = mgr.repoRoot(repo2);
+      await fs.mkdir(container, { recursive: true });
+      await fs.rm(repo2, { recursive: true, force: true });
+
+      const report = await mgr.sweepAll(repo);
+      await expect(fs.stat(container)).rejects.toThrow();
+      expect(report.orphanedContainers).not.toContain(container);
+    });
+
+    it("keeps containers that only hold archived patches for gone repos", async () => {
+      const dirty = await mgr.create(repo2, "dirty-then-gone");
+      await fs.writeFile(path.join(dirty.cwd, "work.txt"), "archived work\n");
+      await age(dirty.cwd);
+      // First sweep archives + reclaims while the base repo still exists.
+      const first = await mgr.sweep(repo2, 7, new Set());
+      expect(first.archived).toHaveLength(1);
+      const container = mgr.repoRoot(repo2);
+      await fs.rm(repo2, { recursive: true, force: true });
+
+      const report = await mgr.sweepAll(repo);
+      await fs.stat(first.archived[0]!); // patch survives
+      await fs.stat(container);
+      // Patch-only containers are not flagged: nothing is at risk in them.
+      expect(report.orphanedContainers).not.toContain(container);
+    });
+
+    it("resolves the base repo from the gitdir pointer when the marker file is missing", async () => {
+      const stale = await mgr.create(repo2, "no-marker");
+      await age(stale.cwd);
+      await fs.rm(path.join(path.dirname(stale.cwd), "base-repo"), { force: true });
+
+      const report = await mgr.sweepAll(repo);
+      // gitdir pointers store realpaths (macOS tmpdir is a /var → /private/var symlink).
+      const sweptReal = await Promise.all(report.swept.map((p) => fs.realpath(p).catch(() => p)));
+      expect(sweptReal).toContain(await fs.realpath(repo2));
+      expect(report.removed.some((p) => p.endsWith(path.join(path.basename(path.dirname(stale.cwd)), "work")))).toBe(true);
+      await expect(fs.stat(stale.cwd)).rejects.toThrow();
+    });
+
+    it("leaves foreign directories under the root untouched", async () => {
+      const foreign = path.join(root, "not-a-container");
+      await fs.mkdir(path.join(foreign, "stuff"), { recursive: true });
+      await fs.writeFile(path.join(foreign, "stuff", "data.txt"), "precious\n");
+
+      const report = await mgr.sweepAll(repo);
+      expect(await fs.readFile(path.join(foreign, "stuff", "data.txt"), "utf8")).toBe("precious\n");
+      expect(report.orphanedContainers).toContain(foreign);
+    });
+  });
+
   it("default create does not seed parent WIP", async () => {
     await makeDirtyParent();
     const handle = await mgr.create(repo, "no-wip");
