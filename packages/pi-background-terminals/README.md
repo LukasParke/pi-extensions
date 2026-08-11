@@ -26,7 +26,9 @@ an already-finished terminal **consumes** that result and suppresses the
 automatic message, so the same outcome is never delivered twice.
 
 Output is retained in memory (bounded per stream); status and completion
-messages show a truncated tail of what matters.
+messages show a truncated tail of what matters. While terminals are running,
+Pi's extension-status API exposes a terse count and `/ps` hint to custom
+footers such as `@parke.dev/pi-dashboard`.
 
 Ships with a [`background-terminals` skill](skills/background-terminals/SKILL.md)
 that teaches the model when to reach for these tools instead of `bash`.

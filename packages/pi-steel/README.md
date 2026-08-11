@@ -28,7 +28,9 @@ can get behind a login:
 
 Ships with a [`steel-browser` skill](skills/steel-browser/SKILL.md) that teaches
 the model when to use which tier and, critically, to discover selectors with
-`steel_read { mode: "forms" }` before acting.
+`steel_read { mode: "forms" }` before acting. A live persistent session also
+publishes a privacy-safe status (short id plus hostname, never URL paths or
+queries) for custom footers such as `@parke.dev/pi-dashboard`.
 
 ## Install
 

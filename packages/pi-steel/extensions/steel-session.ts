@@ -69,6 +69,19 @@ interface LiveSession {
 }
 let live: LiveSession | undefined;
 
+export function steelSessionStatus(session: LiveSession | undefined) {
+	if (!session) return undefined;
+	let host = "about:blank";
+	if (session.lastUrl) {
+		try {
+			host = new URL(session.lastUrl).hostname || "about:blank";
+		} catch {
+			host = "page";
+		}
+	}
+	return `● Steel ${session.id.slice(0, 8)} · ${host} · /steel-session`;
+}
+
 async function api(
 	config: SteelConfig,
 	route: string,
@@ -243,6 +256,18 @@ function imageMime(bytes: Buffer): string {
 }
 
 export default function (pi: ExtensionAPI) {
+	let uiCtx: ExtensionContext | undefined;
+	const refreshStatus = () => {
+		if (!uiCtx?.hasUI) return;
+		const status = steelSessionStatus(live);
+		uiCtx.ui.setStatus("steel", status ? uiCtx.ui.theme.fg("accent", status) : undefined);
+	};
+
+	pi.on("session_start", (_event, ctx) => {
+		uiCtx = ctx;
+		refreshStatus();
+	});
+
 	pi.registerTool({
 		name: "steel_session",
 		label: "Steel Session",
@@ -260,6 +285,7 @@ export default function (pi: ExtensionAPI) {
 			const config = await steelConfig();
 			if (params.action === "end") {
 				const id = await releaseSession(config);
+				refreshStatus();
 				return {
 					content: [
 						{ type: "text" as const, text: id ? `Released Steel session ${id}.` : "No live Steel session." },
@@ -297,6 +323,7 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 			const session = await ensureSession(config, signal);
+			refreshStatus();
 			return {
 				content: [
 					{
@@ -341,6 +368,7 @@ export default function (pi: ExtensionAPI) {
 			await waitForIdle(cdp);
 			if (params.waitMs) await new Promise((resolve) => setTimeout(resolve, params.waitMs));
 			session.lastUrl = params.url;
+			refreshStatus();
 			const data = await cdp.evaluate<any>(READ_SCRIPT("text", undefined));
 			return {
 				content: [{ type: "text" as const, text: await capped(renderRead(data), "page text") }],
@@ -380,6 +408,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			const session = await ensureSession(config, signal);
+			refreshStatus();
 			const cdp = session.cdp!;
 			const needsSelector = ["click", "type", "select"].includes(params.action);
 			if (needsSelector && !params.selector) {
@@ -477,6 +506,7 @@ export default function (pi: ExtensionAPI) {
 			await waitForIdle(cdp, 5000);
 			const url = await cdp.evaluate<string>("location.href").catch(() => undefined);
 			if (url) session.lastUrl = url;
+			refreshStatus();
 			return {
 				content: [{ type: "text" as const, text: `${summary}. Now at ${url ?? "unknown url"}.` }],
 				details: { action: params.action, selector: params.selector ?? null, url },
@@ -503,6 +533,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			const session = await ensureSession(config, signal);
+			refreshStatus();
 			const data = await session.cdp!.evaluate<any>(READ_SCRIPT(params.mode ?? "text", params.selector));
 			return {
 				content: [{ type: "text" as const, text: await capped(renderRead(data), "page content") }],
@@ -527,6 +558,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			const session = await ensureSession(config, signal);
+			refreshStatus();
 			const shot = await session.cdp!.send("Page.captureScreenshot", {
 				format: "png",
 				captureBeyondViewport: params.fullPage === true,
@@ -558,6 +590,8 @@ export default function (pi: ExtensionAPI) {
 	// A live Chromium must not outlive the Pi session that opened it. Release on
 	// shutdown; best-effort, never blocks exit for long.
 	pi.on("session_shutdown", async () => {
+		uiCtx?.ui.setStatus("steel", undefined);
+		uiCtx = undefined;
 		if (!live) return;
 		const config = await steelConfig();
 		await Promise.race([releaseSession(config), new Promise((resolve) => setTimeout(resolve, 5000))]);
@@ -569,6 +603,7 @@ export default function (pi: ExtensionAPI) {
 			if (args.trim() === "end") {
 				const config = await steelConfig();
 				const id = await releaseSession(config);
+				refreshStatus();
 				return ctx.ui.notify(id ? `Released Steel session ${id}` : "No live Steel session", "info");
 			}
 			if (!live) return ctx.ui.notify("No live Steel session", "info");

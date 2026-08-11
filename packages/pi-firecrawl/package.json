@@ -5,6 +5,15 @@
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-firecrawl#readme",
+  "bugs": {
+    "url": "https://github.com/LukasParke/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-firecrawl"
+  },
   "keywords": [
     "pi-package",
     "pi",

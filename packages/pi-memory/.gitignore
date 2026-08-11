@@ -1,0 +1,3 @@
+# Model assets are fetched and bundled for releases, not committed.
+models/*.onnx
+models/tokenizer.json

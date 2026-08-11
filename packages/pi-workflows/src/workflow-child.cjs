@@ -26,7 +26,15 @@ const vm = require("node:vm");
 const sendIpc = typeof process.send === "function" ? process.send.bind(process) : undefined;
 
 // Remove convenient bridges before compiling anything untrusted.
-for (const capability of ["getBuiltinModule", "binding", "_linkedBinding", "dlopen", "kill", "abort", "send"]) {
+for (const capability of [
+	"getBuiltinModule",
+	"binding",
+	"_linkedBinding",
+	"dlopen",
+	"kill",
+	"abort",
+	"send",
+]) {
 	try {
 		Object.defineProperty(process, capability, { value: undefined, writable: false, configurable: false });
 	} catch {
@@ -115,6 +123,21 @@ const BOOTSTRAP = String.raw`
     });
   }
 
+  /**
+   * Map over a dynamically discovered collection with bounded concurrency.
+   * Sugar over the same limiter parallel() uses — dominant dynamic-workflow shape.
+   */
+  async function pipeline(items, mapper, options = {}) {
+    if (!Array.isArray(items)) throw new Error("pipeline() expects an array of items");
+    if (typeof mapper !== "function") throw new Error("pipeline() expects a mapper function");
+    const requested = options && typeof options.concurrency === "number" ? Math.floor(options.concurrency) : 4;
+    if (!Number.isFinite(requested) || requested < 1) {
+      throw new Error("pipeline(): concurrency must be a positive integer");
+    }
+    const concurrency = Math.min(__MAX_CONCURRENCY__, requested);
+    return mapLimited(items, concurrency, (item) => mapper(item));
+  }
+
   function phase(title) {
     callHost("phase", JSON.stringify({ title: String(title) }));
   }
@@ -139,6 +162,7 @@ const BOOTSTRAP = String.raw`
   Object.defineProperties(globalThis, {
     agent: { value: requestAgent, writable: false, configurable: false },
     parallel: { value: parallel, writable: false, configurable: false },
+    pipeline: { value: pipeline, writable: false, configurable: false },
     phase: { value: phase, writable: false, configurable: false },
     args: { value: args, writable: false, configurable: false },
     __workflowCheck: {
@@ -215,7 +239,7 @@ function run(source, argsJson, maxConcurrency) {
 			// No eval / new Function / wasm: the script cannot synthesize code.
 			codeGeneration: { strings: false, wasm: false },
 		});
-		const bootstrap = BOOTSTRAP.replace(
+		const bootstrap = BOOTSTRAP.replaceAll(
 			"__MAX_CONCURRENCY__",
 			String(Number.isSafeInteger(maxConcurrency) && maxConcurrency > 0 ? maxConcurrency : 4),
 		);
@@ -223,7 +247,7 @@ function run(source, argsJson, maxConcurrency) {
 
 		const workflow = vm.compileFunction(
 			`"use strict";\nreturn (async function workflow() {\n${source}\n})();`,
-			["agent", "parallel", "phase", "args"],
+			["agent", "parallel", "pipeline", "phase", "args"],
 			{ filename: "workflow-script.js", parsingContext: context },
 		);
 		context.__workflowBody = workflow;
@@ -235,7 +259,7 @@ function run(source, argsJson, maxConcurrency) {
         const workflowBody = globalThis.__workflowBody;
         delete globalThis.__workflowBody;
         globalThis.__workflowPromise = Promise.resolve(
-          workflowBody(agent, parallel, phase, args),
+          workflowBody(agent, parallel, pipeline, phase, args),
         ).then(async (value) => {
           await Promise.resolve();
           const pending = __workflowCheck();

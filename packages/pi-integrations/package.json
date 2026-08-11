@@ -1,0 +1,69 @@
+{
+  "name": "@parke.dev/pi-integrations",
+  "version": "0.1.0",
+  "description": "Git, GitHub, Slack, Linear and Notion integrations for the Pi coding agent",
+  "type": "module",
+  "license": "MIT",
+  "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-integrations#readme",
+  "bugs": {
+    "url": "https://github.com/LukasParke/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-integrations"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "github",
+    "slack",
+    "linear",
+    "notion",
+    "git",
+    "integration",
+    "parke.dev"
+  ],
+  "files": [
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@parke.dev/pi-git": "^0.1.0",
+    "@parke.dev/pi-github": "^0.1.0",
+    "@parke.dev/pi-linear": "^0.1.0",
+    "@parke.dev/pi-notion": "^0.1.0",
+    "@parke.dev/pi-slack": "^0.1.0"
+  },
+  "bundledDependencies": [
+    "@parke.dev/pi-git",
+    "@parke.dev/pi-github",
+    "@parke.dev/pi-linear",
+    "@parke.dev/pi-notion",
+    "@parke.dev/pi-slack"
+  ],
+  "pi": {
+    "extensions": [
+      "./node_modules/@parke.dev/pi-git/extensions",
+      "./node_modules/@parke.dev/pi-github/extensions",
+      "./node_modules/@parke.dev/pi-linear/extensions",
+      "./node_modules/@parke.dev/pi-notion/extensions",
+      "./node_modules/@parke.dev/pi-slack/extensions"
+    ],
+    "skills": [
+      "./node_modules/@parke.dev/pi-git/skills",
+      "./node_modules/@parke.dev/pi-github/skills",
+      "./node_modules/@parke.dev/pi-linear/skills",
+      "./node_modules/@parke.dev/pi-notion/skills",
+      "./node_modules/@parke.dev/pi-slack/skills"
+    ]
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

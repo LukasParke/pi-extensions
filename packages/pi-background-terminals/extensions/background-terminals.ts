@@ -36,7 +36,7 @@ const RESULT_STDOUT_LINES = 40;
 const RESULT_STDERR_LINES = 20;
 
 const RESULT_MESSAGE_TYPE = "background-terminal-result";
-const WIDGET_KEY = "background-terminals";
+const UI_KEY = "background-terminals";
 /**
  * Quiet window after the agent goes idle before delivering settled results.
  *
@@ -50,6 +50,10 @@ const DELIVERY_QUIET_MS = 250;
 
 const glyph = (status: TerminalSnapshot["status"]): string =>
 	status === "running" ? "●" : status === "done" ? "✓" : status === "killed" ? "⊘" : "✗";
+
+export function backgroundTerminalStatus(running: number) {
+	return running > 0 ? `● ${running} background terminal${running === 1 ? "" : "s"} · /ps` : undefined;
+}
 
 function describe(snapshot: TerminalSnapshot): string {
 	const age = formatElapsed(snapshot.createdAt, snapshot.settledAt);
@@ -119,12 +123,14 @@ export default function (pi: ExtensionAPI) {
 	const pending = new Map<string, TerminalSnapshot>();
 	let uiCtx: ExtensionContext | undefined;
 
-	const refreshWidget = () => {
+	const refreshUi = () => {
 		if (!uiCtx?.hasUI) return;
 		const running = manager.list().filter((entry) => entry.status === "running");
-		if (!running.length) return uiCtx.ui.setWidget(WIDGET_KEY, undefined);
+		const status = backgroundTerminalStatus(running.length);
+		uiCtx.ui.setStatus(UI_KEY, status ? uiCtx.ui.theme.fg("warning", status) : undefined);
+		if (!running.length) return uiCtx.ui.setWidget(UI_KEY, undefined);
 		uiCtx.ui.setWidget(
-			WIDGET_KEY,
+			UI_KEY,
 			running.map((entry) => `● ${entry.id} ${entry.title} (${formatElapsed(entry.createdAt)})`),
 		);
 	};
@@ -174,7 +180,7 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	manager.onSettle((snapshot, consumed) => {
-		refreshWidget();
+		refreshUi();
 		if (consumed) return; // already shown via bg_status / bg_kill
 		pending.set(snapshot.id, snapshot);
 		// Deliberately no flush here — agent_settled drives delivery.
@@ -182,14 +188,16 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		uiCtx = ctx;
-		refreshWidget();
+		refreshUi();
 	});
 	// The agent has stopped working: now it is safe to hand over any results it
 	// did not already collect itself, and a followUp can actually be acted on.
 	pi.on("agent_settled", async () => scheduleFlush());
 	pi.on("session_shutdown", async () => {
 		pending.clear();
-		uiCtx?.ui.setWidget(WIDGET_KEY, undefined);
+		uiCtx?.ui.setStatus(UI_KEY, undefined);
+		uiCtx?.ui.setWidget(UI_KEY, undefined);
+		uiCtx = undefined;
 		// A dev server must not outlive the session that started it.
 		await manager.disposeAll();
 	});
@@ -214,7 +222,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params: any, _signal, _onUpdate, ctx) {
 			const cwd = path.resolve(ctx.cwd, params.working_dir ?? ".");
 			const snapshot = manager.start({ command: params.command, title: params.title, cwd });
-			refreshWidget();
+			refreshUi();
 			return {
 				content: [
 					{
@@ -315,7 +323,7 @@ export default function (pi: ExtensionAPI) {
 					lines.push(`${id}: ${error instanceof Error ? error.message : String(error)}`);
 				}
 			}
-			refreshWidget();
+			refreshUi();
 			return {
 				content: [{ type: "text" as const, text: lines.join("\n") }],
 				details: { killed: params.ids.length },
@@ -330,7 +338,7 @@ export default function (pi: ExtensionAPI) {
 			if (argv[0] === "kill" && argv[1]) {
 				try {
 					const snapshot = await manager.kill(argv[1]);
-					refreshWidget();
+					refreshUi();
 					return ctx.ui.notify(`${snapshot.id} ${snapshot.status}`, "info");
 				} catch (error) {
 					return ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");

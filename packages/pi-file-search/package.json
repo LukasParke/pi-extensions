@@ -1,10 +1,19 @@
 {
   "name": "@parke.dev/pi-file-search",
   "version": "0.1.0",
-  "description": "First-class fd and rg tools for the pi coding agent, with automatic binary provisioning",
+  "description": "First-class fd and rg tools for the pi coding agent (uses system or agent-bin binaries; no automatic download)",
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-file-search#readme",
+  "bugs": {
+    "url": "https://github.com/LukasParke/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-file-search"
+  },
   "keywords": [
     "pi-package",
     "pi",

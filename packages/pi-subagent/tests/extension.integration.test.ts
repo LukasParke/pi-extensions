@@ -1,0 +1,703 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import register from "../src/extension.js";
+import { RUN_ENTRY_TYPE } from "../src/persistence.js";
+
+interface Harness {
+  tool: any;
+  waitTool: any;
+  commands: Map<string, any>;
+  handlers: Map<string, Function>;
+  entries: any[];
+  ctx: any;
+  pi: any;
+  sentMessages: Array<{ message: any; options?: any }>;
+}
+
+function rootAssistant(cost: number) {
+  return {
+    type: "message", id: `root-${cost}`, parentId: null, timestamp: new Date().toISOString(),
+    message: {
+      role: "assistant", content: [], provider: "p", api: "x", model: "m", stopReason: "stop", timestamp: Date.now(),
+      usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, totalTokens: 150, cost: { input: cost / 2, output: cost / 2, cacheRead: 0, cacheWrite: 0, total: cost } },
+    },
+  };
+}
+
+function harness(): Harness {
+  const handlers = new Map<string, Function>();
+  const entries: any[] = [rootAssistant(0.2)];
+  let tool: any;
+  let waitTool: any;
+  const commands = new Map<string, any>();
+  const ui = {
+    theme: { fg: (_c: string, text: string) => text, bold: (text: string) => text },
+    setStatus: vi.fn(), notify: vi.fn(), setEditorText: vi.fn(),
+    setWidget: vi.fn(), custom: vi.fn(),
+  };
+  const ctx = {
+    cwd: process.cwd(), hasUI: false, ui, model: { provider: "fake", id: "model" },
+    sessionManager: {
+      getSessionFile: () => "/tmp/root-session.jsonl",
+      getSessionId: () => "root-session",
+      getBranch: () => entries,
+    },
+  };
+  const sentMessages: any[] = [];
+  const pi = {
+    on: (name: string, fn: Function) => handlers.set(name, fn),
+    // Two tools register (`subagent` + `subagent_wait`); keep the main one as
+    // `tool` and expose the wait front-end separately.
+    registerTool: (definition: any) => {
+      if (definition.name === "subagent_wait") waitTool = definition;
+      else tool = definition;
+    },
+    registerCommand: (name: string, options: any) => { commands.set(name, options); },
+    registerMessageRenderer: vi.fn(),
+    registerEntryRenderer: vi.fn(),
+    sendMessage: (message: any, options?: any) => { sentMessages.push({ message, options }); },
+    appendEntry: (customType: string, data: unknown) => entries.push({
+      type: "custom", customType, data, id: `e-${entries.length}`, parentId: null, timestamp: new Date().toISOString(),
+    }),
+    getAllTools: () => ["read", "grep", "find", "ls", "bash", "edit", "write"].map((name) => ({ name })),
+    getActiveTools: () => ["read"],
+    getThinkingLevel: () => "off",
+  };
+  register(pi as any);
+  return { get tool() { return tool; }, get waitTool() { return waitTool; }, commands, handlers, entries, ctx, pi, sentMessages } as unknown as Harness;
+}
+
+async function execute(h: Harness, params: any, signal?: AbortSignal, update = vi.fn()) {
+  return h.tool.execute("call", params, signal, update, h.ctx);
+}
+
+function runId(text: string): string {
+  const match = text.match(/[0-9a-f]{8}-[0-9a-f-]{27}/i);
+  if (!match) throw new Error(`No run id in: ${text}`);
+  return match[0];
+}
+
+describe("extension end-to-end wiring", () => {
+  let bin: string;
+  let originalPath: string | undefined;
+  let originalMode: string | undefined;
+  let originalDelay: string | undefined;
+
+  let originalBin: string | undefined;
+  let originalWidget: string | undefined;
+  let originalNotifications: string | undefined;
+
+
+  beforeEach(async () => {
+    originalPath = process.env.PATH;
+    originalMode = process.env.FAKE_PI_MODE;
+    originalDelay = process.env.FAKE_PI_DELAY_MS;
+    originalBin = process.env.PI_SUBAGENT_BIN;
+    originalWidget = process.env.PI_SUBAGENT_WIDGET;
+    originalNotifications = process.env.PI_SUBAGENT_NOTIFICATIONS;
+
+    bin = await fs.mkdtemp(path.join(os.tmpdir(), "pi-subagent-bin-"));
+    const fake = path.join(path.dirname(fileURLToPath(import.meta.url)), "helpers/fake-pi.mjs");
+    const script = `#!/bin/sh\nexec "${process.execPath}" "${fake}" "$@"\n`;
+    const piPath = path.join(bin, "pi");
+    await fs.writeFile(piPath, script, { mode: 0o755 });
+    // Prefer the explicit bin resolver (locks in the fake even when argv[1] points at vitest).
+    process.env.PI_SUBAGENT_BIN = piPath;
+    process.env.PATH = `${bin}:${originalPath}`;
+    process.env.FAKE_PI_MODE = "success";
+    delete process.env.FAKE_PI_DELAY_MS;
+    delete process.env.PI_SUBAGENT_WIDGET;
+    delete process.env.PI_SUBAGENT_NOTIFICATIONS;
+
+    // Force re-resolution under the new env for any cached launch state.
+    const { _resetLaunchCacheForTests } = await import("../src/launch.js");
+    _resetLaunchCacheForTests();
+  });
+
+  afterEach(async () => {
+    process.env.PATH = originalPath;
+    if (originalMode === undefined) delete process.env.FAKE_PI_MODE; else process.env.FAKE_PI_MODE = originalMode;
+    if (originalDelay === undefined) delete process.env.FAKE_PI_DELAY_MS; else process.env.FAKE_PI_DELAY_MS = originalDelay;
+    if (originalBin === undefined) delete process.env.PI_SUBAGENT_BIN; else process.env.PI_SUBAGENT_BIN = originalBin;
+    if (originalWidget === undefined) delete process.env.PI_SUBAGENT_WIDGET; else process.env.PI_SUBAGENT_WIDGET = originalWidget;
+    if (originalNotifications === undefined) delete process.env.PI_SUBAGENT_NOTIFICATIONS; else process.env.PI_SUBAGENT_NOTIFICATIONS = originalNotifications;
+
+    const { _resetLaunchCacheForTests } = await import("../src/launch.js");
+    _resetLaunchCacheForTests();
+    await fs.rm(bin, { recursive: true, force: true });
+  });
+
+  it("runs foreground, persists usage, and reports root/subagent/combined cost", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    const result = await execute(h, { task: "hello", profile: "explore" });
+    expect(result.isError).not.toBe(true);
+    expect(result.content[0].text).toBe("Hello world!");
+    const terminal = h.entries.find((entry) => entry.customType === RUN_ENTRY_TYPE && entry.data.type === "terminal");
+    expect(terminal.data.data.results[0].usage.cost).toBe(0.001);
+    const status = await execute(h, { action: "status" });
+    expect(status.content[0].text).toContain("root $0.2000");
+    expect(status.content[0].text).toContain("subagents $0.0010");
+    expect(status.content[0].text).toContain("combined $0.2010");
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("includes provider usage in combined totals while a run is still active", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_MODE = "pause-after-message";
+    const started = await execute(h, { task: "live cost", profile: "explore", async: true });
+    const id = runId(started.content[0].text);
+    await vi.waitFor(() => {
+      const run = h.entries.find((entry) => entry.customType === RUN_ENTRY_TYPE && entry.data.id === id && entry.data.type === "checkpoint" && entry.data.data.results?.[0]?.usage?.cost > 0);
+      expect(run).toBeTruthy();
+    });
+    const status = await execute(h, { action: "status", id });
+    expect(status.content[0].text).toContain("subagents $0.0010");
+    expect(status.content[0].text).toContain("combined $0.2010");
+    await execute(h, { action: "wait", id });
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("attaches native Pi usage to foreground delivery exactly once", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    const result = await execute(h, { task: "hello", profile: "explore" });
+    // fake-pi bills 10 in / 5 out / $0.001 per child; Pi ≥ #6671 folds this
+    // usage object into footer, /session, and RPC session totals.
+    expect(result.usage).toEqual({
+      input: 10, output: 5, cacheRead: 0, cacheWrite: 0, reasoning: 1, totalTokens: 15,
+      cost: { input: 0.0004, output: 0.0006, cacheRead: 0, cacheWrite: 0, total: 0.001 },
+    });
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("attaches native usage on wait delivery, never on replay or status", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_DELAY_MS = "80";
+    const started = await execute(h, { task: "async", profile: "explore", async: true });
+    expect(started.usage).toBeUndefined();
+    const id = runId(started.content[0].text);
+    const waited = await execute(h, { action: "wait", id });
+    expect(waited.usage?.cost.total).toBeCloseTo(0.001);
+    expect(waited.usage?.totalTokens).toBe(15);
+    // Replay and status must not re-bill the same run.
+    const duplicate = await execute(h, { action: "wait", id });
+    expect(duplicate.usage).toBeUndefined();
+    const status = await execute(h, { action: "status", id });
+    expect(status.usage).toBeUndefined();
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("folds a child's nested toolResult usage into delivered usage and ledger", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_MODE = "nested-usage";
+    const result = await execute(h, { task: "spawn grandchild", profile: "explore" });
+    // assistant $0.001 (10/5) + grandchild toolResult $0.003 (100/40/10/5).
+    expect(result.usage?.cost.total).toBeCloseTo(0.004);
+    expect(result.usage?.totalTokens).toBe(170);
+    const status = await execute(h, { action: "status" });
+    expect(status.content[0].text).toContain("subagents $0.0040");
+    expect(status.content[0].text).toContain("combined $0.2040");
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("supports async wait exactly once and streams partial updates", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_DELAY_MS = "80";
+    const update = vi.fn();
+    const started = await execute(h, { task: "async", profile: "explore", async: true }, undefined, update);
+    const id = runId(started.content[0].text);
+    const live = await execute(h, { action: "status", id });
+    expect(live.content[0].text).toContain(id.slice(0, 8));
+    const waited = await execute(h, { action: "wait", id });
+    expect(waited.content[0].text).toBe("Hello world!");
+    expect(update).toHaveBeenCalled();
+    const duplicate = await execute(h, { action: "wait", id });
+    expect(duplicate.content[0].text).toContain("already delivered");
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("wait is interruptible without cancelling the background run", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_DELAY_MS = "200";
+    const started = await execute(h, { task: "slow", profile: "explore", async: true });
+    const id = runId(started.content[0].text);
+
+    const abort = new AbortController();
+    const waiting = execute(h, { action: "wait", id }, abort.signal);
+    setTimeout(() => abort.abort(), 20);
+    const interrupted = await waiting;
+    expect(interrupted.content[0].text).toContain("Wait aborted");
+    expect(interrupted.content[0].text).toContain("continues in the background");
+
+    // The run was NOT cancelled or delivered: a later wait still delivers once.
+    const delivered = await execute(h, { action: "wait", id });
+    expect(delivered.content[0].text).toBe("Hello world!");
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("rejects concurrent direct resume and permits fork", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_DELAY_MS = "150";
+    const first = await execute(h, { task: "continue", resume: "child-existing", profile: "explore", async: true });
+    const firstId = runId(first.content[0].text);
+    await expect(execute(h, { task: "also continue", resume: "child-existing", profile: "explore", async: true }))
+      .rejects.toThrow(firstId);
+    const fork = await execute(h, { task: "fork", resume: "child-existing", fork_resume: true, profile: "explore" });
+    expect(fork.isError).not.toBe(true);
+    await execute(h, { action: "wait", id: firstId });
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("throws failures so Pi marks tool results as errors", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    await expect(execute(h, { action: "status", id: "missing" })).rejects.toThrow("not found");
+    process.env.FAKE_PI_MODE = "error";
+    await expect(execute(h, { task: "fail", profile: "explore" })).rejects.toThrow();
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("renderers return real Component objects", async () => {
+    const h = harness();
+    const theme = h.ctx.ui.theme;
+    const call = h.tool.renderCall({ task: "x" }, theme, { expanded: false });
+    expect(typeof call.render).toBe("function");
+    expect(call.render(80)).toEqual(expect.any(Array));
+    const rendered = h.tool.renderResult(
+      { content: [{ type: "text", text: "ok" }], details: { mode: "single", results: [] } },
+      { expanded: false, isPartial: false }, theme, {},
+    );
+    expect(typeof rendered.render).toBe("function");
+    expect(rendered.render(80)).toEqual(expect.any(Array));
+  });
+
+  it("shutdown cancels and awaits live work without cross-session append", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_MODE = "signal";
+    const started = await execute(h, { task: "sleep", profile: "explore", async: true });
+    const id = runId(started.content[0].text);
+    await h.handlers.get("session_shutdown")!();
+    const terminal = h.entries.find((entry) => entry.customType === RUN_ENTRY_TYPE && entry.data.id === id && entry.data.type === "terminal");
+    expect(terminal).toBeTruthy();
+    expect(["cancelled", "failed"]).toContain(terminal.data.data.state);
+  });
+
+  it("steers a running background child mid-run", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_MODE = "steer-echo";
+    process.env.FAKE_PI_PAUSE_MS = "3000";
+    const started = await execute(h, { task: "steerable work", profile: "explore", async: true });
+    const id = runId(started.content[0].text);
+    // Wait until the child has produced its first message (steerable window).
+    await vi.waitFor(async () => {
+      const steered = await execute(h, { action: "steer", id, message: "pivot to plan B" });
+      expect(steered.content[0].text).toMatch(/Steering message queued/i);
+    }, { timeout: 4_000, interval: 100 });
+    const waited = await execute(h, { action: "wait", id });
+    expect(waited.content[0].text).toContain("steered: pivot to plan B");
+    delete process.env.FAKE_PI_PAUSE_MS;
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("steer on a finished run fails with guidance", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    const done = await execute(h, { task: "quick", profile: "explore", async: true });
+    const id = runId(done.content[0].text);
+    await execute(h, { action: "wait", id });
+    await expect(execute(h, { action: "steer", id, message: "too late" })).rejects.toThrow(/not running/i);
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("labels tasks from description and applies per-profile config defaults", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    const result = await execute(h, { task: "hello", description: "Greet the world", profile: "explore" });
+    expect(result.isError).not.toBe(true);
+    expect(result.details.results[0].label).toBe("Greet the world");
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("synthesis adds a fan-in result ahead of parallel outputs", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    const result = await execute(h, {
+      tasks: [
+        { task: "scan a", description: "Scan A" },
+        { task: "scan b", description: "Scan B" },
+      ],
+      synthesis: "Merge both scans into one brief",
+    });
+    expect(result.isError).not.toBe(true);
+    const labels = result.details.results.map((r: any) => r.label);
+    expect(labels[0]).toBe("synthesis");
+    expect(labels).toContain("Scan A");
+    expect(labels).toContain("Scan B");
+    // Synthesis child received the fan-in prompt sections (fake echoes fixed text,
+    // so just assert the synthesis result completed and is first in delivery).
+    expect(result.details.results[0].state).toBe("completed");
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("context:'fork' spawns the child with --fork <parent session file>", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    // The parent session file must exist for the fork preflight.
+    await fs.writeFile("/tmp/root-session.jsonl", "{}\n");
+    const result = await execute(h, { task: "continue our discussion", context: "fork", profile: "explore" });
+    expect(result.isError).not.toBe(true);
+    expect(result.content[0].text).toBe("Hello world!");
+    await h.handlers.get("session_shutdown")!();
+    await fs.rm("/tmp/root-session.jsonl", { force: true });
+  });
+
+  it("resolves named agent files end-to-end through the tool", async () => {
+    // Agent files live in the harness cwd (process.cwd()) — use a temp project dir.
+    const project = await fs.mkdtemp(path.join(os.tmpdir(), "pi-subagent-agentproj-"));
+    await fs.mkdir(path.join(project, ".pi", "agents"), { recursive: true });
+    await fs.writeFile(
+      path.join(project, ".pi", "agents", "scout.md"),
+      "---\ndescription: Fast recon\nprofile: explore\nmax_turns: 7\n---\nYou are a scout. Be terse.\n",
+    );
+    const h = harness();
+    h.ctx.cwd = project;
+    await h.handlers.get("session_start")!({}, h.ctx);
+
+    // Bare status advertises the catalog for runtime discovery.
+    const status = await execute(h, { action: "status" });
+    expect(status.content[0].text).toContain("scout: Fast recon");
+
+    // Running with agent:'scout' applies the persona defaults.
+    const result = await execute(h, { task: "map the code", agent: "scout" });
+    expect(result.isError).not.toBe(true);
+    expect(result.details.results[0].label).toBe("scout");
+    expect(result.details.results[0].profile).toBe("explore");
+
+    // Unknown agent fails with guidance.
+    await expect(execute(h, { task: "x", agent: "ghost" })).rejects.toThrow(/scout/);
+
+    await h.handlers.get("session_shutdown")!();
+    await fs.rm(project, { recursive: true, force: true });
+  });
+
+  it("notifies the parent when a background run completes (batched followUp)", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    const started = await execute(h, { task: "bg work", profile: "explore", async: true });
+    const id = runId(started.content[0].text);
+    // Run finishes; batcher holds successes briefly, then flushes.
+    await vi.waitFor(() => {
+      const terminal = h.entries.find((entry) => entry.customType === RUN_ENTRY_TYPE && entry.data.id === id && entry.data.type === "terminal");
+      expect(terminal).toBeTruthy();
+    });
+    await vi.waitFor(() => {
+      expect(h.sentMessages.length).toBeGreaterThan(0);
+    }, { timeout: 5_000 });
+    const notification = h.sentMessages[0]!;
+    expect(notification.message.customType).toBe("subagent-completion");
+    expect(notification.message.content).toContain(id.slice(0, 8));
+    expect(notification.options?.deliverAs).toBe("followUp");
+    expect(notification.options?.triggerTurn).toBe(true);
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("suppresses the notification when wait already delivered the run", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_DELAY_MS = "100";
+    const started = await execute(h, { task: "bg work", profile: "explore", async: true });
+    const id = runId(started.content[0].text);
+    // Wait consumes the result before the batcher flushes.
+    await execute(h, { action: "wait", id });
+    await new Promise((resolve) => setTimeout(resolve, 2_600));
+    expect(h.sentMessages).toHaveLength(0);
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("foreground runs never notify", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    await execute(h, { task: "fg work", profile: "explore" });
+    await new Promise((resolve) => setTimeout(resolve, 2_600));
+    expect(h.sentMessages).toHaveLength(0);
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("skips batched completion messages when notifications are off", async () => {
+    process.env.PI_SUBAGENT_NOTIFICATIONS = "off";
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    const started = await execute(h, { task: "bg silent", profile: "explore", async: true });
+    const id = runId(started.content[0].text);
+    await vi.waitFor(() => {
+      const terminal = h.entries.find((entry) => entry.customType === RUN_ENTRY_TYPE && entry.data.id === id && entry.data.type === "terminal");
+      expect(terminal).toBeTruthy();
+    });
+    // Default batcher debounce is 2s; wait past that to ensure nothing would flush.
+    await new Promise((resolve) => setTimeout(resolve, 2_600));
+    expect(h.sentMessages).toHaveLength(0);
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("renders no ambient widget when widget mode is off", async () => {
+    process.env.PI_SUBAGENT_WIDGET = "off";
+    const h = harness();
+    h.ctx.hasUI = true;
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_MODE = "pause-after-message";
+    const started = await execute(h, { task: "bg visually quiet", profile: "explore", async: true });
+    const id = runId(started.content[0].text);
+    // Let the run checkpoint so footer/widget refresh would normally fire.
+    await vi.waitFor(() => {
+      const run = h.entries.find((entry) => entry.customType === RUN_ENTRY_TYPE && entry.data.id === id && entry.data.type === "checkpoint");
+      expect(run).toBeTruthy();
+    });
+    // Allow a refresh tick; timer would paint with background mode on.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const painted = h.ctx.ui.setWidget.mock.calls.filter((call: unknown[]) => call[0] === "subagent" && call[1] != null);
+    expect(painted).toHaveLength(0);
+    await execute(h, { action: "wait", id });
+    await h.handlers.get("session_shutdown")!();
+  });
+
+
+  it("delivers validated structured output as JSON end-to-end", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_MODE = "schema-good";
+    const result = await execute(h, {
+      task: "audit files",
+      profile: "explore",
+      output_schema: { type: "object", required: ["files", "risk"] },
+    });
+    expect(result.isError).not.toBe(true);
+    // Delivery is the machine-readable JSON, not the narrative preamble.
+    expect(JSON.parse(result.content[0].text)).toEqual({ files: ["a.ts"], risk: "low" });
+    expect(result.details.results[0].structuredOutput).toEqual({ files: ["a.ts"], risk: "low" });
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("schema failure ends partial with the raw text still delivered", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_MODE = "schema-bad";
+    const result = await execute(h, {
+      task: "audit files",
+      profile: "explore",
+      output_schema: { type: "object", required: ["files"] },
+    });
+    expect(result.isError).not.toBe(true); // partial, not failed
+    expect(result.content[0].text).toContain("prose");
+    expect(result.details.results[0].structuredError).toBeTruthy();
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("rejects worktree actions on runs without changed worktrees", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    const done = await execute(h, { task: "no trees", profile: "explore", async: true });
+    const id = runId(done.content[0].text);
+    await execute(h, { action: "wait", id });
+    await expect(execute(h, { action: "diff", id })).rejects.toThrow(/no changed worktrees/i);
+    await expect(execute(h, { action: "apply", id })).rejects.toThrow(/no changed worktrees/i);
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("enforces parent spawn allowlist and agent spawns frontmatter", async () => {
+    const project = await fs.mkdtemp(path.join(os.tmpdir(), "pi-subagent-spawns-"));
+    await fs.mkdir(path.join(project, ".pi", "agents"), { recursive: true });
+    await fs.writeFile(
+      path.join(project, ".pi", "agents", "reviewer.md"),
+      "---\ndescription: Review only\nprofile: review\nspawns: false\n---\nReview carefully.\n",
+    );
+    await fs.writeFile(
+      path.join(project, ".pi", "agents", "scout.md"),
+      "---\ndescription: Scout\nprofile: explore\nspawns: reviewer\n---\nBe terse.\n",
+    );
+
+    const originalSpawns = process.env.PI_SUBAGENT_SPAWNS;
+    delete process.env.PI_SUBAGENT_SPAWNS;
+
+    try {
+      const h = harness();
+      h.ctx.cwd = project;
+      await h.handlers.get("session_start")!({}, h.ctx);
+
+      // Restricted persona spawns successfully; its own spawns field rides to the child.
+      const scouted = await execute(h, { task: "map", agent: "scout" });
+      expect(scouted.isError).not.toBe(true);
+      expect(scouted.details.results[0].label).toBe("scout");
+
+      // Runtime parent policy: only reviewer allowed (agentless and scout rejected).
+      process.env.PI_SUBAGENT_SPAWNS = "reviewer";
+      await expect(execute(h, { task: "agentless" })).rejects.toThrow(/allowlist|agentless/i);
+      await expect(execute(h, { task: "x", agent: "scout" })).rejects.toThrow(/allowlist/i);
+      const allowed = await execute(h, { task: "review", agent: "reviewer" });
+      expect(allowed.isError).not.toBe(true);
+      expect(allowed.details.results[0].label).toBe("reviewer");
+
+      // Disabled policy rejects all new spawns and names the restriction.
+      process.env.PI_SUBAGENT_SPAWNS = "";
+      await expect(execute(h, { task: "x", agent: "reviewer" })).rejects.toThrow(/disabled/i);
+
+      await h.handlers.get("session_shutdown")!();
+    } finally {
+      if (originalSpawns === undefined) delete process.env.PI_SUBAGENT_SPAWNS;
+      else process.env.PI_SUBAGENT_SPAWNS = originalSpawns;
+      await fs.rm(project, { recursive: true, force: true });
+    }
+  });
+
+  it("does not register the subagent tool when spawn policy is disabled at boot", async () => {
+    const originalSpawns = process.env.PI_SUBAGENT_SPAWNS;
+    process.env.PI_SUBAGENT_SPAWNS = "";
+    try {
+      const h = harness();
+      expect(h.tool).toBeUndefined();
+    } finally {
+      if (originalSpawns === undefined) delete process.env.PI_SUBAGENT_SPAWNS;
+      else process.env.PI_SUBAGENT_SPAWNS = originalSpawns;
+    }
+  });
+
+  it("surfaces resumable session ids in bare and run-specific status", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    const result = await execute(h, { task: "sess", profile: "explore" });
+    expect(result.isError).not.toBe(true);
+    const terminal = h.entries.find((entry) => entry.customType === RUN_ENTRY_TYPE && entry.data.type === "terminal");
+    const id = terminal?.data?.id as string;
+    expect(id).toMatch(/^[0-9a-f-]{36}$/i);
+    // Fake-pi emits a fixed child session id.
+    const bare = await execute(h, { action: "status" });
+    expect(bare.content[0].text).toMatch(/session test-ses \(resumable\)/);
+    const specific = await execute(h, { action: "status", id });
+    expect(specific.content[0].text).toContain("session test-session-123");
+    expect(specific.content[0].text).not.toMatch(/\(resumable\)/);
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("subagent_wait delivers a background run like action:wait", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    expect(h.waitTool.name).toBe("subagent_wait");
+
+    const started = await execute(h, { task: "bg", profile: "explore", async: true });
+    const id = runId(started.content[0].text);
+
+    const delivered = await h.waitTool.execute("call", { id }, undefined, vi.fn(), h.ctx);
+    expect(delivered.isError).not.toBe(true);
+    expect(delivered.content[0].text).toBe("Hello world!");
+
+    // Delivery is consumed exactly once, shared with action:wait.
+    const again = await execute(h, { action: "wait", id });
+    expect(again.content[0].text).toMatch(/already delivered/);
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("subagent_wait timeout leaves the run alive and collectable", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_DELAY_MS = "300";
+    const started = await execute(h, { task: "slow", profile: "explore", async: true });
+    const id = runId(started.content[0].text);
+
+    const timedOut = await h.waitTool.execute("call", { id, timeout_ms: 20 }, undefined, vi.fn(), h.ctx);
+    expect(timedOut.isError).not.toBe(true);
+    expect(timedOut.content[0].text).toMatch(/timed out after 20ms/);
+    expect(timedOut.content[0].text).toMatch(/NOT cancelled/);
+
+    // Timing out must not consume the result: it still delivers afterwards.
+    const delivered = await h.waitTool.execute("call", { id }, undefined, vi.fn(), h.ctx);
+    expect(delivered.content[0].text).toBe("Hello world!");
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("/btw answers via a model-hidden custom entry, not an LLM message", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+
+    const btw = h.commands.get("btw");
+    expect(btw).toBeTruthy();
+
+    const before = h.sentMessages.length;
+    await btw.handler("what does this repo do?", h.ctx);
+
+    // The answer lands as a custom entry (appendEntry => excluded from LLM context).
+    const btwEntries = h.entries.filter((entry) => entry.customType === "subagent-btw");
+    expect(btwEntries.length).toBe(2); // running, then done
+    expect(btwEntries[0].data.state).toBe("running");
+    expect(btwEntries[1].data.state).toBe("done");
+    expect(btwEntries[1].data.answer).toBe("Hello world!");
+    expect(btwEntries[1].data.label).toBe("what does this repo do?");
+
+    // Critically: nothing was pushed into the model's context.
+    expect(h.sentMessages.length).toBe(before);
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("/btw without a question requires dialog-capable UI", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    const btw = h.commands.get("btw");
+
+    // harness ctx has hasUI: false (print-mode equivalent)
+    await btw.handler("", h.ctx);
+    expect(h.ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("/btw needs a question"), "error");
+    expect(h.entries.some((entry) => entry.customType === "subagent-btw")).toBe(false);
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it("action:plan dry-runs validation without spawning a run", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+
+    const planned = await execute(h, {
+      action: "plan",
+      tasks: [
+        { task: "Scan auth", description: "Auth scan", profile: "explore" },
+        { task: "Scan db", description: "DB scan", profile: "explore", model: "fake/model-b" },
+      ],
+    });
+    expect(planned.isError).not.toBe(true);
+    expect(planned.content[0].text).toMatch(/Plan \(dry-run, nothing spawned\)/);
+    expect(planned.content[0].text).toMatch(/Auth scan/);
+    expect(planned.content[0].text).toMatch(/tools=\[/);
+    expect(planned.details.plan).toHaveLength(2);
+    expect(planned.details.plan[0]).toMatchObject({
+      label: "Auth scan",
+      profile: "explore",
+      access: "RO",
+    });
+    expect(planned.details.plan[0].tools).toEqual(expect.arrayContaining(["read"]));
+    expect(planned.details.plan[1].model).toBe("fake/model-b");
+
+    const status = await execute(h, { action: "status" });
+    expect(status.content[0].text).toMatch(/No subagent runs/);
+
+    // Same shared-cwd writer error as a real spawn.
+    await expect(
+      execute(h, {
+        action: "plan",
+        tasks: [
+          { task: "Edit A", profile: "general", tools: ["edit", "read"] },
+          { task: "Edit B", profile: "general", tools: ["write", "read"] },
+        ],
+      }),
+    ).rejects.toThrow(/worktree|allow_shared_writes/i);
+
+    await h.handlers.get("session_shutdown")!();
+  });
+});

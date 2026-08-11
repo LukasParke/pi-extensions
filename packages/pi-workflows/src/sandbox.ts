@@ -35,6 +35,12 @@ export interface AgentRequestOptions {
 	model?: unknown;
 	thinking?: unknown;
 	profile?: unknown;
+	/** "workflow" (default shared lane) or "worktree" (independent writer). */
+	isolation?: unknown;
+	maxTurns?: unknown;
+	maxCost?: unknown;
+	timeoutMs?: unknown;
+	fallbackModels?: unknown;
 }
 
 export interface AgentRunResult {
@@ -42,6 +48,17 @@ export interface AgentRunResult {
 	output: string;
 	structured?: unknown;
 	error?: string;
+	usage?: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		reasoning?: number;
+		cost: number;
+		turns: number;
+		contextTokens?: number;
+	};
+	worktreeBranch?: string;
 }
 
 export interface SandboxOptions {
@@ -103,7 +120,19 @@ function terminate(child: ChildProcess): void {
 function sanitizeOptions(value: unknown): AgentRequestOptions {
 	if (!isRecord(value)) return {};
 	const out: AgentRequestOptions = {};
-	for (const key of ["label", "phase", "schema", "model", "thinking", "profile"] as const) {
+	for (const key of [
+		"label",
+		"phase",
+		"schema",
+		"model",
+		"thinking",
+		"profile",
+		"isolation",
+		"maxTurns",
+		"maxCost",
+		"timeoutMs",
+		"fallbackModels",
+	] as const) {
 		if (value[key] !== undefined) out[key] = value[key];
 	}
 	return out;
@@ -175,7 +204,12 @@ export function runWorkflowSandbox(options: SandboxOptions): Promise<unknown> {
 			if (error) reject(error);
 			else resolve(value);
 		};
-		const onAbort = () => finish(new Error("Workflow was cancelled"));
+		const onAbort = () => {
+			const reason = options.signal.reason;
+			finish(
+				new Error(reason instanceof Error ? reason.message : String(reason ?? "Workflow was cancelled")),
+			);
+		};
 
 		options.signal.addEventListener("abort", onAbort, { once: true });
 		if (options.signal.aborted) return onAbort();

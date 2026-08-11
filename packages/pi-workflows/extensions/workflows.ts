@@ -1,156 +1,262 @@
 /**
  * Workflows — model-authored multi-agent orchestration.
  *
- * The `workflow` tool takes a JavaScript program written by the model and runs
- * it in a locked-down sandbox. The script fans work out to isolated child
- * agents and can branch on what they return:
- *
- *   phase("Discover")
- *   const found = await agent("List every file lacking X", { schema: {...} })
- *
- *   phase("Audit")
- *   const results = await parallel(
- *     found.structured.files.map(f => () => agent(`Audit ${f}`)),
- *     { concurrency: 4 },
- *   )
- *
- *   if (!results.every(r => r.ok)) return { status: "partial", results }
- *   return { status: "ok", results }
- *
- * Why this exists when `subagent { tasks: [...] }` already does fan-out: the
- * shape of a workflow can depend on results. Map-reduce over a set discovered
- * at runtime, escalation ladders (cheap model, then stronger on failure),
- * review→fix→re-review loops, consensus with tie-break. None of those can be
- * expressed as a fixed task list, and doing them from the parent costs a turn
- * and a context window per step.
- *
- * Two layers of isolation, and they are different things:
- *
- *  - The **script** runs under Node `--permission` with no fs/net/spawn, in a
- *    `vm` context with a null-prototype global and code generation disabled.
- *    See lib/workflow-sandbox.ts and lib/workflow-child.cjs.
- *  - Each **agent call** is executed by the `subagent` runner, so children
- *    inherit our worktree isolation, budgets, profiles, retries and structured
- *    output. This is the deliberate difference from the reference
- *    implementation, whose workflow children run with ambient parent tool
- *    access and no worktree — meaning parallel writers there can corrupt each
- *    other. Here a writing workflow gets a worktree per child.
- *
- * Artifacts land in ~/.pi/agent/workflows/<runId>/ so a run can be inspected
- * after the fact. There is no resume: a failed workflow is re-run.
+ * The `workflow` tool runs a JavaScript program in a locked-down sandbox and
+ * fans each agent() call out through `@parke.dev/pi-subagent/sdk`. Background
+ * registry, journal replay, shared worktree lane, approval, saved definitions,
+ * and Ultracode policy all live in this package — no Pi core changes.
  */
 
-import * as fs from "node:fs/promises";
-import { createRequire } from "node:module";
-import * as os from "node:os";
-import * as path from "node:path";
-import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { requestLaunchApproval } from "../src/approval.ts";
+import { coerceArgs, prepareWorkflowArguments } from "../src/args.ts";
+import { workflowConfig } from "../src/config.ts";
+import { argsHashOf, listRecentSummaries, readDefinition, runDir, sourceHashOf } from "../src/journal.ts";
 import {
-	type AgentRequestOptions,
-	type AgentRunResult,
-	runWorkflowSandbox,
-	safeStringify,
-} from "../src/sandbox.ts";
-import { THINKING, VALID_PROFILES, workflowConfig } from "../src/config.ts";
-
-interface AgentRecord {
-	id: number;
-	label: string;
-	phase?: string;
-	model: string;
-	ok: boolean;
-	error?: string;
-	outputBytes: number;
-	startedAt: number;
-	endedAt?: number;
-	/** Branch holding a writer's changes, when its worktree ended up modified. */
-	worktreeBranch?: string;
-}
-
-function workflowsDir(): string {
-	// getAgentDir() respects PI_AGENT_DIR and rebranded distributions.
-	return path.join(getAgentDir(), "workflows");
-}
+	isTerminalState,
+	type LiveWorkflowRun,
+	type WorkflowTerminal,
+	WorkflowRunRegistry,
+} from "../src/registry.ts";
+import { executeWorkflow, loadResumeSource, newRunId } from "../src/runner.ts";
+import { safeStringify } from "../src/sandbox.ts";
+import { listSavedWorkflows, resolveSavedWorkflow, saveWorkflow } from "../src/saved.ts";
+// Stable boundary module (re-exports the planned `@parke.dev/pi-subagent/sdk` surface).
+import { emptyUsage } from "../src/subagent-sdk.ts";
+import {
+	COMPLETION_TYPE,
+	ENTRY_TYPE,
+	formatRunLine,
+	openWorkflowsOverlay,
+	refreshWorkflowUi,
+	WIDGET_KEY,
+} from "../src/ui.ts";
+import { createUltracodeState, registerUltracode } from "../src/ultracode.ts";
+import { formatUsageLine } from "../src/usage.ts";
 
 const str = (value: unknown, fallback = ""): string =>
 	typeof value === "string" && value.trim() ? value.trim() : fallback;
 
-/**
- * Resolve `runTasks` from the pi-subagent package.
- *
- * `runTasks` (the orchestrator), not `runSubagent` (a bare child process): only
- * the orchestrator honours `isolation: "worktree"`, by creating the worktree
- * before launch and finalizing it after. `runSubagent` silently ignores the
- * field, which would put every parallel writer in the same checkout — exactly
- * the corruption this tool claims to prevent.
- *
- * The package ships TypeScript source with no `exports` map, so the module
- * cannot be reached by bare subpath specifier. Resolving its `package.json`
- * through `createRequire` finds the install wherever npm actually put it (local
- * node_modules, a workspace symlink, a global pi package dir) instead of
- * guessing at hardcoded home-directory paths. `PI_SUBAGENT_SRC` remains as an
- * escape hatch for a checkout that is not installed as a dependency at all.
- */
-type RunSubagent = (specs: unknown[], options: { signal?: AbortSignal }) => Promise<{ results: any[] }>;
-/**
- * Cache the in-flight *promise*, not the resolved function. Concurrent agent()
- * calls (the normal case inside parallel()) would otherwise each start their own
- * `import()` of the same module: the second caller can observe a half-evaluated
- * module and get `runSubagent` before its class declarations are initialized,
- * failing with "Cannot access 'ChildRunner' before initialization". One shared
- * promise means one evaluation; a failed load clears the cache so it can retry.
- */
-let runnerCache: Promise<RunSubagent> | undefined;
-
-function loadRunner(): Promise<RunSubagent> {
-	if (!runnerCache) {
-		runnerCache = loadRunnerUncached().catch((error: unknown) => {
-			runnerCache = undefined;
-			throw error;
-		});
-	}
-	return runnerCache;
-}
-
-async function loadRunnerUncached(): Promise<RunSubagent> {
-	const candidates: string[] = [];
-	if (process.env.PI_SUBAGENT_SRC) {
-		candidates.push(path.join(process.env.PI_SUBAGENT_SRC, "src/orchestrator.ts"));
-	}
-	try {
-		// Resolve the dependency wherever it really is, rather than assuming a path.
-		const require = createRequire(import.meta.url);
-		const root = path.dirname(require.resolve("@parke.dev/pi-subagent/package.json"));
-		candidates.push(path.join(root, "src/orchestrator.ts"));
-	} catch {
-		// Not installed as a resolvable dependency; PI_SUBAGENT_SRC may still work.
-	}
-
-	const failures: string[] = [];
-	for (const candidate of candidates) {
-		try {
-			const module = await import(candidate);
-			if (typeof module.runTasks === "function") return module.runTasks as RunSubagent;
-			failures.push(`${candidate}: no runTasks export`);
-		} catch (error) {
-			failures.push(`${candidate}: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
-		}
-	}
-	throw new Error(
-		[
-			"workflow needs @parke.dev/pi-subagent to execute agent() calls, but could not load it.",
-			"Install it with: pi install npm:@parke.dev/pi-subagent",
-			"Or set PI_SUBAGENT_SRC to a local checkout's package root.",
-			candidates.length
-				? `Tried:\n${failures.map((line) => `  ${line}`).join("\n")}`
-				: "No candidate paths were resolvable.",
-		].join("\n"),
-	);
+function sessionKeyOf(ctx: ExtensionContext) {
+	return ctx.sessionManager?.getSessionFile?.() ?? ctx.cwd ?? "default";
 }
 
 export default async function (pi: ExtensionAPI) {
 	const config = await workflowConfig();
+	const registry = new WorkflowRunRegistry();
+	const ultracode = createUltracodeState(config.defaultSize);
+	let activeSessionKey = "default";
+	let widgetCtx: ExtensionContext | undefined;
+
+	const paint = () => {
+		if (!widgetCtx?.ui) return;
+		refreshWorkflowUi(
+			(key, content) => widgetCtx!.ui.setWidget(key, content),
+			(key, content) =>
+				widgetCtx!.ui.setStatus(key, content ? widgetCtx!.ui.theme.fg("warning", content) : undefined),
+			registry,
+			activeSessionKey,
+		);
+	};
+	registry.subscribe((run) => {
+		paint();
+		if (isTerminalState(run.state) && !registry.isShuttingDown) {
+			void deliverCompletion(pi, registry, run);
+		}
+	});
+
+	registerUltracode(pi, ultracode, config);
+
+	pi.registerEntryRenderer(ENTRY_TYPE, (entry, _opts, theme) => {
+		const data = (entry.data ?? {}) as {
+			runId?: string;
+			state?: string;
+			label?: string;
+			phase?: string;
+			counts?: string;
+			cost?: string;
+		};
+		const line =
+			theme.fg("accent", "workflow") +
+			` ${data.runId ?? "?"} ${data.label ?? ""} [${data.state ?? "?"}] ${data.phase ?? ""} ${data.counts ?? ""} ${data.cost ?? ""}`.trim();
+		return {
+			render: () => [line],
+			invalidate() {},
+		};
+	});
+
+	pi.on("session_start", (_event, ctx) => {
+		registry.resetForSession();
+		activeSessionKey = sessionKeyOf(ctx);
+		widgetCtx = ctx;
+		paint();
+	});
+
+	pi.on("session_shutdown", async () => {
+		widgetCtx?.ui.setStatus(WIDGET_KEY, undefined);
+		widgetCtx?.ui.setWidget(WIDGET_KEY, undefined);
+		widgetCtx = undefined;
+		await registry.shutdown();
+	});
+
+	pi.on("agent_settled", () => {
+		// Deliver background completions once the parent is idle.
+		for (const run of registry.undeliveredTerminal(activeSessionKey)) {
+			void deliverCompletion(pi, registry, run);
+		}
+	});
+
+	const launch = async (options: {
+		script: string;
+		description?: string;
+		args?: unknown;
+		name?: string;
+		ctx: ExtensionContext;
+		signal?: AbortSignal;
+		background: boolean;
+		resumeFrom?: string;
+		preApproved?: boolean;
+		runId?: string;
+	}) => {
+		const runId = options.runId ?? newRunId();
+		const label = str(options.description, options.name ?? "workflow");
+		const agentDir = getAgentDir();
+		const sk = sessionKeyOf(options.ctx);
+		activeSessionKey = sk;
+		widgetCtx = options.ctx;
+
+		const approval = await requestLaunchApproval({
+			config,
+			request: {
+				label,
+				description: options.description,
+				scriptPreview: options.script,
+				maxAgentRequests: config.maxAgentRequests,
+				maxConcurrency: config.maxConcurrency,
+				agentMaxCost: config.agentMaxCost,
+				agentMaxTurns: config.agentMaxTurns,
+				workflowTimeoutMs: config.workflowTimeoutMs,
+				writersPossible: /profile\s*:\s*["']general["']|isolation\s*:\s*["']worktree["']/.test(
+					options.script,
+				),
+				savedName: options.name,
+				preApproved: options.preApproved,
+			},
+			ctx: options.ctx,
+		});
+		if (!approval.ok) throw new Error(approval.reason);
+
+		const existing = registry.get(runId);
+		if (existing && !isTerminalState(existing.state))
+			throw new Error(`Workflow run ${runId} is still active`);
+
+		if (options.script.length > 100 && countAgentCallsHint(options.script) >= config.largeRunWarnAgents) {
+			options.ctx.ui.notify(
+				`Large workflow warning: script may exceed ~${config.largeRunWarnAgents} agent calls (hard cap ${config.maxAgentRequests}).`,
+				"warning",
+			);
+		}
+
+		const controller = new AbortController();
+		const onOuter = () => controller.abort(new Error("Workflow cancelled"));
+		if (!options.background) options.signal?.addEventListener("abort", onOuter, { once: true });
+		const timeout = setTimeout(
+			() => controller.abort(new Error("Workflow timed out")),
+			config.workflowTimeoutMs,
+		);
+		timeout.unref?.();
+
+		const artifactPath = options.resumeFrom ?? runDir(agentDir, runId);
+
+		const promise = executeWorkflow({
+			runId,
+			label,
+			source: options.script,
+			args: options.args,
+			cwd: options.ctx.cwd,
+			agentDir,
+			config,
+			signal: controller.signal,
+			ctx: options.ctx,
+			activeTools: pi.getActiveTools(),
+			resumeFrom: options.resumeFrom,
+			workflowName: options.name,
+			onProgress: (progress) => {
+				registry.update(runId, {
+					phase: progress.phase,
+					agentCount: progress.agentCount,
+					completedAgents: progress.completedAgents,
+					failedAgents: progress.failedAgents,
+					usage: progress.usage,
+					state: progress.state,
+				});
+			},
+		}).finally(() => {
+			clearTimeout(timeout);
+			if (!options.background) options.signal?.removeEventListener("abort", onOuter);
+		});
+
+		const live: LiveWorkflowRun = {
+			runId,
+			sessionKey: sk,
+			label,
+			state: "running",
+			startedAt: Date.now(),
+			agentCount: 0,
+			completedAgents: 0,
+			failedAgents: 0,
+			usage: emptyUsage(),
+			artifactPath,
+			delivered: false,
+			claimed: false,
+			controller,
+			promise: promise.then((exec): WorkflowTerminal => ({
+				runId,
+				state: exec.state,
+				result: exec.result,
+				failure: exec.failure,
+				summary: exec.summary,
+			})),
+			sourceHash: sourceHashOf(options.script),
+			argsHash: argsHashOf(options.args),
+			cwd: options.ctx.cwd,
+			workflowName: options.name,
+		};
+		registry.register(live);
+
+		pi.appendEntry(ENTRY_TYPE, {
+			runId,
+			state: "running",
+			label,
+			phase: "starting",
+			counts: "0/0",
+			artifactPath,
+		});
+
+		if (!options.background) {
+			const terminal = await live.promise;
+			registry.claim(runId);
+			if (registry.markDelivered(runId)) appendTerminalEntry(pi, terminal);
+			return formatTerminalToolResult(terminal);
+		}
+
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: [
+						`Workflow started: ${runId}`,
+						`label: ${label}`,
+						`artifacts: ${artifactPath}`,
+						"Use workflow action status/wait/cancel or /workflows to inspect.",
+					].join("\n"),
+				},
+			],
+			details: { runId, label, state: "running", artifactPath },
+		};
+	};
 
 	pi.registerTool({
 		name: "workflow",
@@ -163,288 +269,406 @@ export default async function (pi: ExtensionAPI) {
 			"review->fix->re-review loops, or consensus with a tie-break. For a fixed set of independent tasks,",
 			"use `subagent` with `tasks` instead — it is simpler and cheaper.",
 			"",
+			"Actions: start (default) | status | wait | cancel | resume | rerun | list.",
+			"Start with either `script` (inline body) or `name` (saved workflow). Never pass filesystem paths.",
+			"",
 			"Available inside the script (no imports, no require, no fs, no network):",
-			"  phase(title)                        mark progress",
-			"  await agent(prompt, options?)       run one child agent; resolves {ok, output, structured?, error?} and NEVER throws",
-			`  await parallel([() => agent(...)])  run thunks concurrently (max ${config.maxConcurrency})`,
-			"  args                                the JSON you passed as `args`",
-			"  return value                        becomes the tool result (must be JSON-serializable)",
+			"  phase(title)                              mark progress",
+			"  await agent(prompt, options?)             run one child; resolves {ok, output, structured?, error?, usage?}",
+			`  await parallel([() => agent(...)])        concurrent thunks (max ${config.maxConcurrency})`,
+			`  await pipeline(items, x => agent(...))    map a discovered collection (max ${config.maxConcurrency})`,
+			"  args                                      structured invocation data",
+			"  return value                              tool result (JSON-serializable)",
 			"",
-			"agent() options: { label, phase, model, thinking, profile, schema }.",
-			"Pass `schema` (a JSON Schema) to get validated `structured` output back.",
-			"profile 'explore'/'review' are read-only; 'general' can write and each writer gets its own git worktree.",
+			"agent() options: { label, phase, model, thinking, profile, schema, isolation, maxTurns, maxCost, timeoutMs, fallbackModels }.",
+			"isolation: 'workflow' (default shared lane) | 'worktree' (independent writer).",
+			"profile 'explore'/'review' are read-only; 'general' writes on the shared workflow worktree (serialized).",
 			"",
-			`Limits: ${config.maxAgentRequests} agent calls per run, concurrency ${config.maxConcurrency}, ${config.agentMaxTurns} turns and $${config.agentMaxCost} per agent.`,
-			"Every agent() call must be awaited. There is no resume: a failed run is re-run.",
+			`Limits: ${config.maxAgentRequests} agent calls, concurrency ${config.maxConcurrency}, ${config.agentMaxTurns} turns and $${config.agentMaxCost} per agent.`,
+			"Background by default: start returns a run id; completion is delivered as a follow-up.",
 		].join("\n"),
 		parameters: Type.Object(
 			{
-				script: Type.String({
-					minLength: 1,
-					description:
-						"JavaScript body (not a module). Use await at top level, call phase()/agent()/parallel(), and `return` a JSON-serializable summary.",
-				}),
-				description: Type.Optional(
-					Type.String({ description: "Short label for this run, shown in /workflows." }),
+				action: Type.Optional(
+					Type.String({
+						description: "start | status | wait | cancel | resume | rerun | list (default start)",
+					}),
 				),
+				script: Type.Optional(
+					Type.String({
+						description: "JavaScript body (not a module). Required for start unless `name` is set.",
+					}),
+				),
+				name: Type.Optional(
+					Type.String({
+						description: "Saved workflow name (resolved only in trusted global/project definition dirs).",
+					}),
+				),
+				description: Type.Optional(Type.String({ description: "Short label for this run." })),
 				args: Type.Optional(
-					Type.String({ description: "JSON string made available to the script as `args`." }),
+					Type.Unknown({ description: "Structured args object (or legacy JSON string) exposed as `args`." }),
+				),
+				id: Type.Optional(Type.String({ description: "Run id for status/wait/cancel/resume/rerun." })),
+				async: Type.Optional(
+					Type.Boolean({
+						description: "If false, block until the run finishes. Default: config backgroundByDefault.",
+					}),
+				),
+				timeout_ms: Type.Optional(
+					Type.Number({ description: "For wait: max ms to block (default no extra limit)." }),
 				),
 			},
 			{ additionalProperties: false },
 		),
-		async execute(_id, params: any, signal, onUpdate, ctx: ExtensionContext) {
-			const runId = `wf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-			const label = str(params.description, "workflow");
-			const startedAt = Date.now();
+		prepareArguments: prepareWorkflowArguments,
+		async execute(_toolCallId, params, signal, onUpdate, ctx) {
+			const action = str(params.action, "start").toLowerCase();
 
-			let parsedArgs: unknown;
-			if (params.args !== undefined) {
-				try {
-					parsedArgs = JSON.parse(params.args);
-				} catch (error) {
-					throw new Error(
-						`args must be a JSON string: ${error instanceof Error ? error.message : String(error)}`,
-					);
-				}
+			if (action === "list") {
+				const live = registry.list(sessionKeyOf(ctx));
+				const recent = await listRecentSummaries(getAgentDir(), 10);
+				const lines = [
+					"Live:",
+					...(live.length ? live.map(formatRunLine) : ["  (none)"]),
+					"",
+					"Recent artifacts:",
+					...(recent.length
+						? recent.map(
+								(s) =>
+									`  ${s.state === "completed" ? "✓" : "✗"} ${s.runId} ${s.label} — ${s.agentCount} agents ${s.failure ? `(${s.failure})` : ""}`,
+							)
+						: ["  (none)"]),
+				];
+				return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { live, recent } };
 			}
 
-			const records: AgentRecord[] = [];
-			let currentPhase: string | undefined;
-			const phases: string[] = [];
-
-			const report = () => {
-				const done = records.filter((record) => record.endedAt).length;
-				const failed = records.filter((record) => record.endedAt && !record.ok).length;
+			if (action === "status") {
+				const run = requireRun(registry, params.id);
 				onUpdate?.({
+					content: [{ type: "text", text: formatRunLine(run) }],
+					details: registry.toSummary(run),
+				} as never);
+				return {
+					content: [{ type: "text" as const, text: formatRunLine(run) }],
+					details: registry.toSummary(run),
+				};
+			}
+
+			if (action === "cancel") {
+				const result = registry.cancel(str(params.id));
+				if (!result.ok) throw new Error(result.error);
+				return {
 					content: [
 						{
-							type: "text",
-							text: [
-								`${label} — ${currentPhase ?? "starting"}`,
-								`agents: ${done}/${records.length} done${failed ? `, ${failed} failed` : ""}`,
-							].join("\n"),
+							type: "text" as const,
+							text: result.alreadyDone
+								? `Run ${result.run.runId} already ${result.run.state}`
+								: `Cancelled ${result.run.runId}`,
 						},
 					],
-					details: { runId, phase: currentPhase, agents: records.length, done, failed },
-				} as never);
-			};
-
-			// Workflow-wide timeout, layered over the caller's signal.
-			const controller = new AbortController();
-			const onOuterAbort = () => controller.abort();
-			signal?.addEventListener("abort", onOuterAbort, { once: true });
-			const timeout = setTimeout(() => controller.abort(), config.workflowTimeoutMs);
-			timeout.unref?.();
-
-			/**
-			 * Execute one agent() call through the subagent runner, so it inherits
-			 * worktrees, budgets and profile enforcement. Resolves {ok:false} on
-			 * failure rather than throwing: the script branches on `ok`.
-			 */
-			const onAgent = async (
-				prompt: string,
-				options: AgentRequestOptions,
-				agentSignal: AbortSignal,
-			): Promise<AgentRunResult> => {
-				const id = records.length + 1;
-				const model = str(options.model, config.defaultModel ?? ctx.model?.id ?? "");
-				const thinking = THINKING.has(String(options.thinking))
-					? String(options.thinking)
-					: config.defaultThinking;
-				const profile = VALID_PROFILES.has(String(options.profile))
-					? String(options.profile)
-					: config.defaultProfile;
-				const record: AgentRecord = {
-					id,
-					label: str(options.label, `agent-${id}`),
-					phase: str(options.phase, currentPhase ?? ""),
-					model,
-					ok: false,
-					outputBytes: 0,
-					startedAt: Date.now(),
+					details: registry.toSummary(result.run),
 				};
-				records.push(record);
-				report();
-
-				try {
-					const run = await (
-						await loadRunner()
-					)(
-						[
-							{
-								task: prompt,
-								label: record.label,
-								model,
-								thinking: thinking as never,
-								profile: profile as never,
-								// Read-only profiles get a read-only tool set; a writer gets a
-								// worktree so parallel writers cannot corrupt each other.
-								tools: profile === "general" ? undefined : ["read", "grep", "find", "ls"],
-								canWrite: profile === "general",
-								isolation: profile === "general" ? "worktree" : "shared",
-								cwd: ctx.cwd,
-								timeoutMs: config.agentTimeoutMs,
-								maxTurns: config.agentMaxTurns,
-								maxCost: config.agentMaxCost,
-								...(options.schema !== undefined
-									? { outputSchema: options.schema as Record<string, unknown> }
-									: {}),
-							},
-						] as never[],
-						{ signal: agentSignal },
-					);
-					const result = run.results[0];
-					if (!result) throw new Error("subagent orchestrator returned no result");
-
-					record.endedAt = Date.now();
-					const output = String(result.finalOutput ?? result.liveText ?? "");
-					record.outputBytes = Buffer.byteLength(output, "utf8");
-					record.ok = result.state === "completed" || result.state === "partial";
-					if (!record.ok) record.error = result.errorMessage ?? result.state;
-					// A writer's edits live on its own branch, not in ctx.cwd. Record it so
-					// the caller can find the work (subagent action:'diff'/'apply').
-					if (result.worktree?.changed) record.worktreeBranch = String(result.worktree.branch);
-					report();
-					return {
-						ok: record.ok,
-						output,
-						...(result.structuredOutput !== undefined ? { structured: result.structuredOutput } : {}),
-						...(record.ok ? {} : { error: record.error }),
-					};
-				} catch (error) {
-					record.endedAt = Date.now();
-					record.error = error instanceof Error ? error.message : String(error);
-					report();
-					return { ok: false, output: "", error: record.error };
-				}
-			};
-
-			let result: unknown;
-			let failure: string | undefined;
-			try {
-				result = await runWorkflowSandbox({
-					source: params.script,
-					args: parsedArgs,
-					cwd: ctx.cwd,
-					signal: controller.signal,
-					maxAgentRequests: config.maxAgentRequests,
-					maxConcurrency: config.maxConcurrency,
-					onAgent,
-					onPhase: (title) => {
-						currentPhase = title;
-						phases.push(title);
-						report();
-					},
-				});
-			} catch (error) {
-				failure = error instanceof Error ? error.message : String(error);
-			} finally {
-				clearTimeout(timeout);
-				signal?.removeEventListener("abort", onOuterAbort);
 			}
 
-			// Persist artifacts before returning so a failed run is still inspectable.
-			const dir = path.join(workflowsDir(), runId);
-			let artifactNote = "";
-			try {
-				await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-				await fs.writeFile(path.join(dir, "script.js"), params.script, { mode: 0o600 });
-				if (params.args !== undefined)
-					await fs.writeFile(path.join(dir, "args.json"), params.args, { mode: 0o600 });
-				await fs.writeFile(
-					path.join(dir, "workflow.json"),
-					safeStringify(
-						{
-							runId,
-							label,
-							startedAt,
-							endedAt: Date.now(),
-							phases,
-							failure: failure ?? null,
-							agents: records,
-						},
-						1024 * 1024,
-					),
-					{ mode: 0o600 },
-				);
-				if (failure === undefined) {
-					await fs.writeFile(path.join(dir, "result.json"), safeStringify(result, 1024 * 1024), {
-						mode: 0o600,
+			if (action === "wait") {
+				const run = requireRun(registry, params.id);
+				const ms = typeof params.timeout_ms === "number" ? params.timeout_ms : undefined;
+				const terminal = await waitForRun(run, ms, signal);
+				registry.claim(run.runId);
+				if (registry.markDelivered(run.runId)) appendTerminalEntry(pi, terminal);
+				return formatTerminalToolResult(terminal);
+			}
+
+			if (action === "resume" || action === "rerun") {
+				const id = str(params.id);
+				if (!id) throw new Error(`${action} requires id`);
+				const loaded = await loadResumeSource(getAgentDir(), id);
+				// Also allow prefix via live registry artifact path.
+				const live = registry.get(id);
+				const dir = loaded?.dir ?? live?.artifactPath;
+				const definition = loaded?.definition ?? (dir ? await readDefinition(dir) : undefined);
+				if (!definition || !dir) throw new Error(`Unknown workflow run: ${id}`);
+
+				if (action === "resume") {
+					return launch({
+						script: definition.source,
+						description: definition.identity.label,
+						args: definition.args,
+						name: definition.identity.workflowName,
+						ctx,
+						signal,
+						background: params.async !== false && config.backgroundByDefault,
+						resumeFrom: dir,
+						preApproved: true,
+						runId: definition.identity.runId,
 					});
 				}
-				artifactNote = `\nartifacts: ${dir}`;
-			} catch {
-				artifactNote = "\n(artifacts could not be written)";
+				// rerun from scratch with same source/args
+				return launch({
+					script: definition.source,
+					description: definition.identity.label,
+					args: definition.args,
+					name: definition.identity.workflowName,
+					ctx,
+					signal,
+					background: params.async !== false && config.backgroundByDefault,
+					preApproved: true,
+				});
 			}
 
-			const summary = [
-				`${label} — ${records.length} agent call(s) in ${phases.length || 1} phase(s), ${(
-					(Date.now() - startedAt) /
-					1000
-				).toFixed(1)}s`,
-				...records.map(
-					(record) =>
-						`  ${record.ok ? "✓" : "✗"} ${record.label}${record.phase ? ` [${record.phase}]` : ""} ${record.model}` +
-						`${record.error ? ` — ${record.error}` : ""}` +
-						`${record.worktreeBranch ? ` — changes on branch ${record.worktreeBranch}` : ""}`,
-				),
-				...(records.some((record) => record.worktreeBranch)
-					? [
-							"",
-							"Writers ran in isolated worktrees: their edits are on the branches above, not in this checkout.",
-						]
-					: []),
-			].join("\n");
+			// start
+			const argsResult = coerceArgs(params.args);
+			if (!argsResult.ok) throw new Error(argsResult.error);
 
-			if (failure !== undefined) {
-				// Throw so pi marks the tool failed, but keep the per-agent detail:
-				// paid work already done should not be invisible.
-				throw new Error(`Workflow failed: ${failure}\n\n${summary}${artifactNote}`);
+			let script = typeof params.script === "string" ? params.script : undefined;
+			let name = typeof params.name === "string" ? params.name : undefined;
+			let description = typeof params.description === "string" ? params.description : undefined;
+			let preApproved = false;
+
+			if (name) {
+				const saved = await resolveSavedWorkflow({
+					name,
+					cwd: ctx.cwd,
+					projectTrusted: ctx.isProjectTrusted(),
+					agentDir: getAgentDir(),
+				});
+				if (!saved) throw new Error(`Unknown saved workflow "${name}" (name-based resolution only)`);
+				script = saved.script;
+				description = description ?? saved.description ?? saved.name;
+				preApproved = saved.defaults?.preApproved === true;
 			}
 
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `${summary}${artifactNote}\n\nresult:\n${safeStringify(result, 256 * 1024)}`,
-					},
-				],
-				details: { runId, label, phases, agents: records, dir },
-			};
+			if (!script?.trim()) throw new Error("start requires script or name");
+
+			const background = typeof params.async === "boolean" ? params.async : config.backgroundByDefault;
+
+			return launch({
+				script,
+				description,
+				args: argsResult.args,
+				name,
+				ctx,
+				signal,
+				background,
+				preApproved,
+			});
 		},
 	});
 
 	pi.registerCommand("workflows", {
-		description: "List recent workflow runs and where their artifacts are",
-		handler: async (_args: string, ctx: ExtensionContext) => {
-			try {
-				const entries = await fs.readdir(workflowsDir(), { withFileTypes: true });
-				const runs = entries
-					.filter((entry) => entry.isDirectory())
-					.map((entry) => entry.name)
-					.sort()
-					.reverse()
-					.slice(0, 15);
-				if (!runs.length) return ctx.ui.notify("No workflow runs yet", "info");
-				const lines: string[] = [];
-				for (const run of runs) {
-					try {
-						const meta = JSON.parse(
-							await fs.readFile(path.join(workflowsDir(), run, "workflow.json"), "utf8"),
-						);
-						const ok = meta.failure ? "✗" : "✓";
-						lines.push(
-							`${ok} ${run} ${meta.label} — ${meta.agents?.length ?? 0} agents${meta.failure ? ` (${meta.failure})` : ""}`,
-						);
-					} catch {
-						lines.push(`? ${run}`);
-					}
+		description: "List/inspect workflow runs (overlay when UI available)",
+		handler: async (args, ctx) => {
+			const parts = (args ?? "").trim().split(/\s+/).filter(Boolean);
+			const sub = (parts[0] ?? "").toLowerCase();
+
+			if (sub === "save") {
+				const name = parts[1];
+				if (!name) return ctx.ui.notify("Usage: /workflows save <name> [global|project]", "info");
+				// Save most recent live/completed script from artifacts.
+				const recent = registry.list(sessionKeyOf(ctx))[0] ?? undefined;
+				const dir = recent?.artifactPath;
+				const definition = dir ? await readDefinition(dir) : undefined;
+				if (!definition) return ctx.ui.notify("No recent workflow script to save", "warning");
+				const scope = parts[2] === "project" ? "project" : "global";
+				if (scope === "project" && !ctx.isProjectTrusted()) {
+					return ctx.ui.notify("Project is not trusted; save to global or trust the project", "warning");
 				}
-				ctx.ui.notify([`${workflowsDir()}`, ...lines].join("\n"), "info");
-			} catch {
-				ctx.ui.notify("No workflow runs yet", "info");
+				const path = await saveWorkflow({
+					name,
+					script: definition.source,
+					description: definition.identity.label,
+					scope,
+					cwd: ctx.cwd,
+					agentDir: getAgentDir(),
+				});
+				return ctx.ui.notify(`Saved ${name} → ${path}`, "info");
+			}
+
+			if (sub === "saved") {
+				const saved = await listSavedWorkflows({
+					cwd: ctx.cwd,
+					projectTrusted: ctx.isProjectTrusted(),
+					agentDir: getAgentDir(),
+				});
+				if (!saved.length) return ctx.ui.notify("No saved workflows", "info");
+				return ctx.ui.notify(
+					saved.map((s) => `${s.name} (${s.scope}) ${s.description ?? ""}`).join("\n"),
+					"info",
+				);
+			}
+
+			if (sub === "cancel" && parts[1]) {
+				const result = registry.cancel(parts[1]);
+				return ctx.ui.notify(result.ok ? `cancel ${parts[1]}` : result.error, result.ok ? "info" : "error");
+			}
+
+			if (ctx.hasUI) {
+				await ctx.ui.custom(
+					(tui, theme, _kb, done) =>
+						openWorkflowsOverlay(tui, theme, done, {
+							list: () => registry.list(sessionKeyOf(ctx)),
+							cancel: (id) => {
+								registry.cancel(id);
+							},
+							notify: (message, type) => ctx.ui.notify(message, type),
+						}),
+					{ overlay: true, overlayOptions: { width: "80%", maxHeight: "70%" } },
+				);
+				return;
+			}
+
+			const live = registry.list(sessionKeyOf(ctx));
+			const recent = await listRecentSummaries(getAgentDir(), 15);
+			const lines = [
+				...live.map(formatRunLine),
+				...recent.map((s) => `${s.state === "completed" ? "✓" : "✗"} ${s.runId} ${s.label}`),
+			];
+			ctx.ui.notify(lines.length ? lines.join("\n") : "No workflow runs yet", "info");
+		},
+	});
+
+	// Named launch: /workflow <name>
+	pi.registerCommand("workflow", {
+		description: "Run a saved workflow by name",
+		handler: async (args, ctx) => {
+			const name = (args ?? "").trim().split(/\s+/)[0];
+			if (!name) return ctx.ui.notify("Usage: /workflow <saved-name>", "info");
+			const saved = await resolveSavedWorkflow({
+				name,
+				cwd: ctx.cwd,
+				projectTrusted: ctx.isProjectTrusted(),
+				agentDir: getAgentDir(),
+			});
+			if (!saved) return ctx.ui.notify(`Unknown saved workflow "${name}"`, "error");
+			try {
+				const result = await launch({
+					script: saved.script,
+					description: saved.description ?? saved.name,
+					name: saved.name,
+					ctx,
+					background: true,
+					preApproved: saved.defaults?.preApproved === true,
+				});
+				const text = result.content.map((c) => ("text" in c ? c.text : "")).join("\n");
+				ctx.ui.notify(text, "info");
+			} catch (error) {
+				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 			}
 		},
 	});
+}
+
+function requireRun(registry: WorkflowRunRegistry, id: unknown) {
+	const run = registry.get(str(id));
+	if (!run) throw new Error(`Unknown workflow run: ${String(id ?? "")}`);
+	return run;
+}
+
+async function waitForRun(run: LiveWorkflowRun, timeoutMs: number | undefined, signal?: AbortSignal) {
+	if (isTerminalState(run.state)) return run.promise;
+	if (timeoutMs === undefined) {
+		if (signal) {
+			return new Promise<WorkflowTerminal>((resolve, reject) => {
+				const onAbort = () => reject(new Error("wait aborted"));
+				signal.addEventListener("abort", onAbort, { once: true });
+				void run.promise.then(
+					(value) => {
+						signal.removeEventListener("abort", onAbort);
+						resolve(value);
+					},
+					(error) => {
+						signal.removeEventListener("abort", onAbort);
+						reject(error);
+					},
+				);
+			});
+		}
+		return run.promise;
+	}
+	return new Promise<WorkflowTerminal>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(`wait timed out after ${timeoutMs}ms`)), timeoutMs);
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(new Error("wait aborted"));
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
+		void run.promise.then(
+			(value) => {
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", onAbort);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", onAbort);
+				reject(error);
+			},
+		);
+	});
+}
+
+function appendTerminalEntry(pi: ExtensionAPI, terminal: WorkflowTerminal) {
+	// Installed pi appendEntry is (type, data) only; cost is recorded in the
+	// summary payload and tool-result details (native cost option lands in newer pi).
+	pi.appendEntry(ENTRY_TYPE, {
+		runId: terminal.runId,
+		state: terminal.state,
+		label: terminal.summary.label,
+		phase: terminal.summary.phase,
+		counts: `${terminal.summary.completedAgents}/${terminal.summary.agentCount}`,
+		cost: formatUsageLine(terminal.summary.usage),
+		usageCost: terminal.summary.usage.cost,
+		artifactPath: terminal.summary.artifactPath,
+	});
+}
+
+async function deliverCompletion(pi: ExtensionAPI, registry: WorkflowRunRegistry, run: LiveWorkflowRun) {
+	if (run.claimed || registry.isShuttingDown || !registry.markDelivered(run.runId)) return;
+	try {
+		const terminal = await run.promise;
+		if (registry.isShuttingDown || run.claimed) return;
+		appendTerminalEntry(pi, terminal);
+		const text = formatTerminalText(terminal);
+		pi.sendMessage(
+			{
+				customType: COMPLETION_TYPE,
+				content: text,
+				display: true,
+				details: { runId: terminal.runId, state: terminal.state },
+			},
+			{ deliverAs: "followUp", triggerTurn: true },
+		);
+	} catch {
+		/* already recorded on run */
+	}
+}
+
+function formatTerminalToolResult(terminal: WorkflowTerminal) {
+	return {
+		content: [{ type: "text" as const, text: formatTerminalText(terminal) }],
+		details: {
+			runId: terminal.runId,
+			state: terminal.state,
+			summary: terminal.summary,
+			result: terminal.result,
+		},
+	};
+}
+
+function formatTerminalText(terminal: WorkflowTerminal) {
+	const s = terminal.summary;
+	const lines = [
+		`Workflow ${terminal.runId} — ${terminal.state}`,
+		`${s.label} · ${s.completedAgents}/${s.agentCount} agents · ${formatUsageLine(s.usage, (s.endedAt ?? Date.now()) - s.startedAt)}`,
+		s.workflowBranch ? `workflow branch: ${s.workflowBranch}` : undefined,
+		s.failure ? `failure: ${s.failure}` : undefined,
+		`artifacts: ${s.artifactPath}`,
+		terminal.result !== undefined ? `result:\n${safeStringify(terminal.result, 256 * 1024)}` : undefined,
+	].filter(Boolean);
+	return lines.join("\n");
+}
+
+function countAgentCallsHint(script: string) {
+	const matches = script.match(/\bagent\s*\(/g);
+	return matches?.length ?? 0;
 }

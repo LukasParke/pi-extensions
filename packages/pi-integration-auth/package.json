@@ -1,0 +1,47 @@
+{
+  "name": "@parke.dev/pi-integration-auth",
+  "version": "0.1.0",
+  "description": "Shared credential resolution and secure local storage for Pi integration packages",
+  "type": "module",
+  "license": "MIT",
+  "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-integration-auth#readme",
+  "bugs": {
+    "url": "https://github.com/LukasParke/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-integration-auth"
+  },
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "integration",
+    "authentication",
+    "library",
+    "parke.dev"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "dependencies": {
+    "@parke.dev/pi-ext-config": "^0.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

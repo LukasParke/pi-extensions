@@ -94,6 +94,7 @@ input entirely, which is what makes the three-layer merge safe.
 | `readFile(schema, file)`                                 | read + sanitize one file; `{}` on missing or invalid |
 | `sanitize(schema, raw)`                                  | keep only recognized, valid keys                     |
 | `fromEnv(schema, env?)`                                  | read only the env vars the schema names              |
+| `piAgentDir(configDirName?)`                             | e.g. `~/.pi/agent`; honors `PI_CODING_AGENT_DIR`     |
 | `piConfigDir(configDirName?)`                            | e.g. `~/.pi`                                         |
 | `configFilePath(name, configDirName?)`                   | e.g. `~/.pi/steel.json`                              |
 | `expandTilde(path)`                                      | `~/x` → `/home/you/x`                                |

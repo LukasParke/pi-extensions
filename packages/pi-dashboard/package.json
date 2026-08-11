@@ -1,0 +1,62 @@
+{
+  "name": "@parke.dev/pi-dashboard",
+  "version": "0.1.0",
+  "description": "Optional header/footer dashboard for the Pi coding agent: cwd, model, context, full session cost, tok/s, git, and PR",
+  "type": "module",
+  "license": "MIT",
+  "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-dashboard#readme",
+  "bugs": {
+    "url": "https://github.com/LukasParke/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-dashboard"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "dashboard",
+    "footer",
+    "header",
+    "tui",
+    "theme",
+    "parke.dev"
+  ],
+  "files": [
+    "extensions",
+    "src",
+    "themes",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/dashboard.ts"
+    ],
+    "themes": [
+      "./themes"
+    ]
+  },
+  "dependencies": {
+    "@parke.dev/pi-ext-config": "^0.1.0",
+    "@parke.dev/pi-git": "^0.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

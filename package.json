@@ -18,11 +18,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "format": "prettier --write \"packages/**/*.{ts,md,json}\" \"*.{json,md}\"",
-    "format:check": "prettier --check \"packages/**/*.{ts,md,json}\" \"*.{json,md}\"",
+    "format": "prettier --write \"packages/**/*.{ts,md,json}\" \"*.{json,md}\" --ignore-path .prettierignore",
+    "format:check": "prettier --check \"packages/**/*.{ts,md,json}\" \"*.{json,md}\" --ignore-path .prettierignore",
     "check": "npm run typecheck && npm run format:check && npm test",
-    "pack:check": "npm pack --dry-run --workspaces",
-    "release:check": "npm run check && npm run pack:check"
+    "pack:check": "npm pack --dry-run --workspaces --if-present && node scripts/check-integration-bundle.mjs",
+    "release:check": "npm run check && npm run pack:check",
+    "release:plan": "node scripts/release.mjs plan",
+    "release:publish": "node scripts/release.mjs publish"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.82.0",

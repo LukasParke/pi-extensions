@@ -1,0 +1,60 @@
+{
+  "name": "@parke.dev/pi-notion",
+  "version": "0.1.0",
+  "description": "Notion page search, reading and append tools for the Pi coding agent",
+  "type": "module",
+  "license": "MIT",
+  "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-notion#readme",
+  "bugs": {
+    "url": "https://github.com/LukasParke/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-notion"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "notion",
+    "integration",
+    "extension",
+    "parke.dev"
+  ],
+  "files": [
+    "extensions",
+    "src",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./tui": "./src/tui.ts"
+  },
+  "main": "./src/index.ts",
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "dependencies": {
+    "@parke.dev/pi-integration-http": "^0.1.0",
+    "@parke.dev/pi-integration-auth": "^0.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

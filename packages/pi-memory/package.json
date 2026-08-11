@@ -1,0 +1,74 @@
+{
+  "name": "@parke.dev/pi-memory",
+  "version": "0.1.0",
+  "description": "Local semantic long-term memory engine and tools for the Pi coding agent",
+  "type": "module",
+  "license": "MIT",
+  "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-memory#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-memory"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "memory",
+    "semantic-search",
+    "sqlite",
+    "extension",
+    "parke.dev"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./ops": {
+      "types": "./dist/ops/index.d.ts",
+      "import": "./dist/ops/index.js",
+      "default": "./dist/ops/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "extensions",
+    "skills",
+    "src",
+    "models",
+    "prompts",
+    "README.md",
+    "LICENSE",
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/memory.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "dependencies": {
+    "onnxruntime-node": "^1.27.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig/build.json",
+    "prepack": "npm run build"
+  }
+}

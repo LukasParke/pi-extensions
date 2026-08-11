@@ -5,6 +5,15 @@
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-ask-user#readme",
+  "bugs": {
+    "url": "https://github.com/LukasParke/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-ask-user"
+  },
   "keywords": [
     "pi-package",
     "pi",
@@ -16,6 +25,7 @@
   ],
   "files": [
     "extensions",
+    "skills",
     "README.md",
     "LICENSE"
   ],
@@ -25,6 +35,9 @@
   "pi": {
     "extensions": [
       "./extensions/ask-user.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "peerDependencies": {

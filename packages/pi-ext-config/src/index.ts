@@ -39,10 +39,13 @@ export type Validator<T> = (value: unknown) => T | undefined;
  * its parent is the config dir extension config files live beside. Verified
  * against pi's own `ENV_AGENT_DIR`; do not guess this variable's name.
  */
-export function piConfigDir(configDirName = ".pi"): string {
+export function piAgentDir(configDirName = ".pi"): string {
 	const fromEnv = process.env.PI_CODING_AGENT_DIR?.trim();
-	if (fromEnv) return path.dirname(path.resolve(expandTilde(fromEnv)));
-	return path.join(os.homedir(), configDirName);
+	return fromEnv ? path.resolve(expandTilde(fromEnv)) : path.join(os.homedir(), configDirName, "agent");
+}
+
+export function piConfigDir(configDirName = ".pi"): string {
+	return path.dirname(piAgentDir(configDirName));
 }
 
 /** Path to a named extension config file, e.g. `~/.pi/steel.json`. */

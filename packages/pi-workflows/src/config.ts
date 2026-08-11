@@ -7,13 +7,17 @@
  * hardcoding a model that may not exist for the installing user.
  */
 
-import { load, nonEmptyString, number, oneOf, type Schema } from "@parke.dev/pi-ext-config";
+import { boolean, load, nonEmptyString, number, oneOf, type Schema } from "@parke.dev/pi-ext-config";
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 const PROFILES = ["explore", "review", "general"] as const;
+const APPROVAL_MODES = ["auto", "always", "never"] as const;
+const SIZES = ["small", "medium", "large", "unrestricted"] as const;
 
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export type Profile = (typeof PROFILES)[number];
+export type ApprovalMode = (typeof APPROVAL_MODES)[number];
+export type WorkflowSize = (typeof SIZES)[number];
 
 export interface WorkflowConfig {
 	/**
@@ -31,6 +35,19 @@ export interface WorkflowConfig {
 	workflowTimeoutMs: number;
 	maxAgentRequests: number;
 	maxConcurrency: number;
+	/**
+	 * Launch approval:
+	 * - `auto` — prompt in interactive UI; fail closed without UI
+	 * - `always` — always require UI confirm (fail closed without UI)
+	 * - `never` — skip approval (trusted automation only)
+	 */
+	approval: ApprovalMode;
+	/** When true, tool launches return immediately and run in the background. */
+	backgroundByDefault: boolean;
+	/** Advisory size guideline injected into Ultracode policy. */
+	defaultSize: WorkflowSize;
+	/** Warn when a run's agent budget exceeds this (still subject to hard cap). */
+	largeRunWarnAgents: number;
 }
 
 export const defaultConfig: WorkflowConfig = {
@@ -42,6 +59,10 @@ export const defaultConfig: WorkflowConfig = {
 	workflowTimeoutMs: 45 * 60_000,
 	maxAgentRequests: 32,
 	maxConcurrency: 4,
+	approval: "auto",
+	backgroundByDefault: true,
+	defaultSize: "medium",
+	largeRunWarnAgents: 15,
 };
 
 export const schema: Schema<WorkflowConfig> = {
@@ -56,6 +77,10 @@ export const schema: Schema<WorkflowConfig> = {
 	// turns one tool call into an unbounded fan-out of paid agents.
 	maxAgentRequests: { validate: number(1, 200), env: "PI_WORKFLOW_MAX_AGENTS" },
 	maxConcurrency: { validate: number(1, 16), env: "PI_WORKFLOW_MAX_CONCURRENCY" },
+	approval: { validate: oneOf(APPROVAL_MODES), env: "PI_WORKFLOW_APPROVAL" },
+	backgroundByDefault: { validate: boolean, env: "PI_WORKFLOW_BACKGROUND" },
+	defaultSize: { validate: oneOf(SIZES), env: "PI_WORKFLOW_SIZE" },
+	largeRunWarnAgents: { validate: number(1, 200), env: "PI_WORKFLOW_LARGE_WARN" },
 };
 
 let cached: Promise<WorkflowConfig> | undefined;
@@ -71,3 +96,12 @@ export function resetConfigCache(): void {
 
 export const THINKING = new Set<string>(THINKING_LEVELS);
 export const VALID_PROFILES = new Set<string>(PROFILES);
+export const VALID_SIZES = new Set<string>(SIZES);
+
+/** Advisory generation targets for Ultracode — not hard limits. */
+export const SIZE_GUIDELINES: Record<WorkflowSize, { agents: number; label: string }> = {
+	small: { agents: 5, label: "prefer under 5 agent calls" },
+	medium: { agents: 15, label: "prefer under 15 agent calls" },
+	large: { agents: 50, label: "prefer under 50 agent calls" },
+	unrestricted: { agents: Number.POSITIVE_INFINITY, label: "no generation target (hard cap still applies)" },
+};

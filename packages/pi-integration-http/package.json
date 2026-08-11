@@ -1,0 +1,40 @@
+{
+  "name": "@parke.dev/pi-integration-http",
+  "version": "0.1.0",
+  "description": "Shared bounded-retry HTTP client for Pi integration packages",
+  "type": "module",
+  "license": "MIT",
+  "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-integration-http#readme",
+  "bugs": {
+    "url": "https://github.com/LukasParke/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-integration-http"
+  },
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "integration",
+    "http",
+    "library",
+    "parke.dev"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}
