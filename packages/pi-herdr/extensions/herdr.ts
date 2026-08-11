@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { herdr, herdrText } from "../src/cli.ts";
+import { cleanupHerdrTask } from "../src/cleanup.ts";
 import { defaultConfig, herdrConfig, type HerdrConfig } from "../src/config.ts";
 import { dispatchHerdrTask, parsePrUrl } from "../src/dispatch.ts";
 import { knownRepos, resolveRepo, worktreeBaseRepo, worktreeTrust } from "../src/repos.ts";
@@ -60,7 +61,7 @@ export default function (pi: ExtensionAPI) {
 				content: [
 					{
 						type: "text",
-						text: `Dispatched agent "${result.agentName}" in ${result.worktreePath} (branch ${result.branch}). Check with herdr_task_status.`,
+						text: `Dispatched agent "${result.agentName}" in ${result.worktreePath} (branch ${result.branch}). Check with herdr_task_status. When its completion criteria are fully verified (e.g. PR opened and green), tear it down with herdr_task_cleanup — if sentinel tools are available, register a watch on \`herdr agent get ${result.agentName}\` reaching done/idle so you are woken to verify and clean up instead of polling.`,
 					},
 				],
 				details: result,
@@ -99,6 +100,45 @@ export default function (pi: ExtensionAPI) {
 					},
 				],
 				details: { status: info.agent.agent_status, cwd: info.agent.cwd },
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: "herdr_task_cleanup",
+		label: "Herdr Task Cleanup",
+		description:
+			"Tear down a finished herdr-dispatched agent: removes its worktree and workspace. Refuses unless the work is verifiably safe to discard — agent settled, no uncommitted changes, no unpushed commits — because the checkout is deleted (the pushed branch survives). Call after verifying the task's completion criteria (PR opened/merged, CI green). Use force only to discard abandoned work.",
+		parameters: Type.Object({
+			agent: Type.String({ description: "Agent name (or pane id) from herdr_task" }),
+			force: Type.Optional(
+				Type.Boolean({
+					description: "Skip safety checks and discard uncommitted/unpushed work (default false)",
+				}),
+			),
+		}),
+		async execute(_id, params) {
+			const config = await herdrConfig();
+			const result = await cleanupHerdrTask({ ...params, worktreeRoots: config.worktreeRoots });
+			if (!result.cleaned) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Refusing cleanup of "${params.agent}" (${result.worktreePath}):\n- ${result.problems!.join("\n- ")}\n\nResolve these (or pass force to discard) and retry.`,
+						},
+					],
+					details: result,
+				};
+			}
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Cleaned up "${params.agent}": worktree ${result.worktreePath} and workspace ${result.workspaceId} removed. The pushed branch survives on the remote.`,
+					},
+				],
+				details: result,
 			};
 		},
 	});

@@ -1,6 +1,6 @@
 ---
 name: herdr
-description: Dispatch long-running tasks to pi agents in herdr-managed worktrees via herdr_task, and monitor them with herdr_task_status. Use when work should run in its own worktree and pane outside this session — a feature build, a PR review, a repo-wide chore — and when checking on an agent dispatched earlier.
+description: Dispatch long-running tasks to pi agents in herdr-managed worktrees via herdr_task, monitor them with herdr_task_status, and safely remove finished worktrees with herdr_task_cleanup. Use when work should run in its own worktree and pane outside this session — a feature build, a PR review, a repo-wide chore — when checking on a dispatched agent, or when cleaning one up after its completion criteria pass.
 ---
 
 # Herdr task dispatch
@@ -43,6 +43,33 @@ herdr_task_status { agent: "fix-ci", wait: true }     — block until it settles
 
 States: `working` (busy), `blocked` (asking a question — read the output, then
 answer with `herdr agent prompt` via bash), `idle`/`done` (turn finished).
+
+If Sentinel tools are available, register `sentinel_watch` against
+`herdr agent get <name>` reaching `idle` or `done`. Go idle and let Sentinel
+wake the session instead of spending model turns polling.
+
+## Verify and clean up
+
+An idle/done agent means its turn ended, not that the task's gate passed. Read
+its output and verify the actual completion criteria: inspect the diff/result,
+confirm the PR was opened or merged as required, and wait for required CI,
+reviews, or deployments.
+
+Then clean up:
+
+```
+herdr_task_cleanup { agent: "fix-ci" }
+```
+
+Cleanup only removes configured Herdr worktrees. It refuses with a list of
+problems if the agent is working/blocked, the checkout is dirty, commits are
+unpushed, or the branch has no upstream. Resolve those problems and retry.
+Use `force: true` only to discard deliberately abandoned work. Cleanup removes
+the Herdr worktree and workspace together; if the workspace is already missing,
+it falls back to Git removal and pruning from the base repo. The pushed branch
+remains on the remote.
+
+Lifecycle: **dispatch → monitor/wake → verify the gate → cleanup**.
 
 ## Slash commands
 

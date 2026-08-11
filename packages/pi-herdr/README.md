@@ -16,10 +16,11 @@ it (`herdr worktree create`, `herdr agent start/prompt/wait/get/read`,
 
 ## Tools
 
-| Tool                | Purpose                                                                                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `herdr_task`        | Dispatch a self-contained task to a new pi agent in its own worktree, branch (`agent/<name>`), and pane           |
-| `herdr_task_status` | Check a dispatched agent: lifecycle state (working/idle/done/blocked) and recent terminal output; `wait` to block |
+| Tool                 | Purpose                                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `herdr_task`         | Dispatch a self-contained task to a new pi agent in its own worktree, branch (`agent/<name>`), and pane           |
+| `herdr_task_status`  | Check a dispatched agent: lifecycle state (working/idle/done/blocked) and recent terminal output; `wait` to block |
+| `herdr_task_cleanup` | Safely close a finished agent's workspace and remove its dispatched-task worktree                                 |
 
 Dispatch is fire-and-forget and resilient:
 
@@ -32,6 +33,28 @@ Dispatch is fire-and-forget and resilient:
 - The prompt is submitted with `--wait --until working` and verified: pi
   silently drops prompts sent during startup, so a stalled prompt is re-sent
   unless the agent is already working.
+
+## Lifecycle
+
+Dispatch → verify → cleanup:
+
+1. Dispatch with `herdr_task`.
+2. Monitor with `herdr_task_status`. If
+   [`@parke.dev/pi-sentinel`](../pi-sentinel) is installed, use
+   `sentinel_watch` on `herdr agent get <name>` so the session wakes when the
+   agent reaches `done` or `idle` instead of polling model turns.
+3. Verify the task's real completion gate: review the result, confirm the PR
+   exists, and wait for required CI/reviews/deployments.
+4. Call `herdr_task_cleanup` only after those criteria pass.
+
+Cleanup refuses non-Herdr worktrees. Without `force`, it also refuses agents
+that are still working/blocked, dirty checkouts, unpushed commits, and branches
+with no upstream. A refusal lists every problem to resolve. `force` bypasses
+those safety checks for deliberately abandoned work. Cleanup asks Herdr to
+remove the worktree and its workspace together. If that workspace is already
+missing, it closes it best-effort, removes the orphaned checkout with Git from
+the base repo, and prunes stale worktree metadata. The pushed branch remains on
+the remote.
 
 ## Slash commands
 
@@ -72,7 +95,7 @@ expanded.
 ## Skills
 
 - `herdr` — teaches the model when to dispatch via `herdr_task` versus the
-  `subagent` tool, and how to monitor dispatched agents.
+  `subagent` tool, and how to monitor, verify, and clean up dispatched agents.
 - `herdr-pi-orchestration` — the operator runbook for long-running Pi
   orchestrators in herdr worktrees: brief-on-disk pattern, prompt-swallow
   guard, stacked-PR delegation, and monitoring pitfalls.

@@ -66,7 +66,7 @@ function canonicalize(path: string): string {
 }
 
 /** True containment, immune to `..` segments and prefix-sharing siblings. */
-function isInside(child: string, parent: string): boolean {
+export function isPathInside(child: string, parent: string): boolean {
 	const rel = relative(canonicalize(parent), canonicalize(child));
 	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
@@ -82,7 +82,7 @@ export function worktreeTrust(
 	baseRepo: string | undefined,
 	options: { worktreeRoots: string[]; repoRoots: string[] },
 ): TrustDecision {
-	const inWorktreeRoot = options.worktreeRoots.some((root) => isInside(cwd, root));
+	const inWorktreeRoot = options.worktreeRoots.some((root) => isPathInside(cwd, root));
 	if (!inWorktreeRoot || !baseRepo) return "undecided";
-	return options.repoRoots.some((root) => isInside(baseRepo, root)) ? "yes" : "undecided";
+	return options.repoRoots.some((root) => isPathInside(baseRepo, root)) ? "yes" : "undecided";
 }
