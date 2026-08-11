@@ -362,7 +362,15 @@ Notes on behavior:
   `<repo-container>/_patches/` and the directory is reclaimed immediately.
   Branches holding commits that exist on no other ref are never deleted.
   `diff`/`apply`/`discard` transparently fall back to the archived patch when
-  the directory is already gone. Live runs are never swept.
+  the directory is already gone. Live runs are never swept: the current
+  session's live worktrees plus any worktree recorded on a running run record
+  (concurrent Pi processes) are shielded machine-wide.
+- Startup GC sweeps **every** repo container under `worktreeDir`, not just the
+  current checkout's, so repos you stop visiting are still reclaimed. A
+  container whose base repo no longer exists is kept and reported, never
+  deleted — its worktrees' object stores lived inside the deleted repo, so
+  unique work cannot be distinguished from a pristine checkout, let alone
+  archived. Empty containers (no worktrees, no archived patches) are removed.
 - Child session transcripts are likewise distilled on lifecycle: when a run is
   over and nothing on the parent branch references its session, the transcript
   is reduced to a small `.digest.json` (task, final output, model, usage,

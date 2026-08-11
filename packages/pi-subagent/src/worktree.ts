@@ -32,6 +32,13 @@ export interface SweepReport {
   archived: string[];
 }
 
+export interface GlobalSweepReport extends SweepReport {
+  /** Base repos that were swept (resolved from containers + the current checkout). */
+  swept: string[];
+  /** Containers whose base repo is gone; kept untouched — see sweepAll policy. */
+  orphanedContainers: string[];
+}
+
 export interface CreateWorktreeOptions {
   /** Seed the worktree with the parent checkout's uncommitted WIP (default false). */
   includeWip?: boolean;
@@ -53,6 +60,7 @@ export interface WorktreeApplyResult {
 }
 
 const WIP_PATCH_FILE = "wip.patch";
+const BASE_REPO_FILE = "base-repo";
 const WIP_UNTRACKED_FILE = "wip-untracked.txt";
 const BASE_COMMIT_FILE = "base-commit";
 /** Archived unique work of reclaimed worktrees, per repo container. */
@@ -90,7 +98,9 @@ export class WorktreeManager {
   ) {}
 
   async isGitRepo(cwd: string, signal?: AbortSignal): Promise<boolean> {
-    const result = await this.execFn("git", ["rev-parse", "--is-inside-work-tree"], cwd, signal);
+    // Spawn rejects (ENOENT) when cwd itself no longer exists — not a repo.
+    const result = await this.execFn("git", ["rev-parse", "--is-inside-work-tree"], cwd, signal)
+      .catch(() => ({ code: 1, stdout: "", stderr: "" }));
     return result.code === 0 && result.stdout.trim() === "true";
   }
 
@@ -230,7 +240,7 @@ export class WorktreeManager {
       const result = await this.execFn("git", ["worktree", "add", "-b", branch, cwd, baseCommit], baseCwd, signal);
       if (result.code !== 0) throw new Error(result.stderr.trim() || "git worktree add failed");
       // Markers let sweep() find the owning repo and diff base for orphaned directories.
-      await fs.writeFile(path.join(root, "base-repo"), `${path.resolve(baseCwd)}\n`, "utf8").catch(() => {});
+      await fs.writeFile(path.join(root, BASE_REPO_FILE), `${path.resolve(baseCwd)}\n`, "utf8").catch(() => {});
       await fs.writeFile(path.join(root, BASE_COMMIT_FILE), `${baseCommit}\n`, "utf8").catch(() => {});
 
       let wipPatch: string | undefined;
@@ -563,12 +573,25 @@ export class WorktreeManager {
     keepPaths: ReadonlySet<string> = new Set(),
     now = Date.now(),
   ): Promise<SweepReport> {
+    return this.sweepContainer(baseCwd, this.repoRoot(baseCwd), keepPaths, now);
+  }
+
+  /**
+   * Sweep one container against its base repo. Split from `sweep()` because a
+   * container's on-disk path may differ from `repoRoot(baseCwd)` when the base
+   * path was recovered through a symlink-resolving gitdir pointer.
+   */
+  private async sweepContainer(
+    baseCwd: string,
+    container: string,
+    keepPaths: ReadonlySet<string>,
+    now: number,
+  ): Promise<SweepReport> {
     const report: SweepReport = { pruned: false, removed: [], kept: [], archived: [] };
     if (!(await this.isGitRepo(baseCwd))) return report;
     const pruned = await this.execFn("git", ["worktree", "prune"], baseCwd).catch(() => ({ code: 1 } as ExecResult));
     report.pruned = pruned.code === 0;
 
-    const container = this.repoRoot(baseCwd);
     const entries = await fs.readdir(container, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
@@ -646,6 +669,84 @@ export class WorktreeManager {
         await this.forceRemove(handle).catch(() => {});
       }
       report.removed.push(cwd);
+    }
+    return report;
+  }
+
+  /**
+   * Base repo of a container, from any worktree's create-time marker or its
+   * linked `.git` gitdir pointer. A marker is trusted only when the base's
+   * container hash round-trips (rejects moved repos / foreign directories);
+   * a gitdir pointer only when its admin dir under the base still exists
+   * (hashes cannot round-trip — git stores realpaths, containers may not).
+   */
+  private async resolveContainerBase(container: string): Promise<string | undefined> {
+    const entries = await fs.readdir(container, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name === PATCHES_DIR) continue;
+      const root = path.join(container, entry.name);
+      const marker = await fs.readFile(path.join(root, BASE_REPO_FILE), "utf8").then((raw) => raw.trim()).catch(() => "");
+      if (marker && this.repoRoot(marker) === container && (await this.isGitRepo(marker))) return marker;
+      const gitFile = await fs.readFile(path.join(root, "work", ".git"), "utf8").catch(() => "");
+      const gitdir = /^gitdir:\s*(.+?)\s*$/m.exec(gitFile)?.[1];
+      const linked = gitdir?.split(`${path.sep}.git${path.sep}worktrees${path.sep}`)[0];
+      if (!linked || linked === gitdir) continue;
+      const adminDir = await fs.stat(gitdir!).catch(() => undefined);
+      if (adminDir?.isDirectory() && (await this.isGitRepo(linked))) return linked;
+    }
+    return undefined;
+  }
+
+  /**
+   * Machine-wide lifecycle sweep: every repo container under the worktree root,
+   * not just the current checkout's. Each container's base repo is resolved via
+   * `resolveContainerBase` and reclaimed with the exact `sweep()` safety model
+   * (archive-then-remove, unreachable branches kept, keepPaths + min-age shields).
+   *
+   * Policy for containers whose base repo no longer exists: **keep, never
+   * delete**. The worktree's object store lives inside the deleted base repo,
+   * so we cannot diff, archive, or even distinguish unique work from a pristine
+   * checkout — removal could destroy the only remaining copy. They are reported
+   * in `orphanedContainers` so the owner can delete them deliberately. Only
+   * containers holding neither worktrees nor archived patches are removed.
+   */
+  async sweepAll(
+    currentCwd?: string,
+    keepPaths: ReadonlySet<string> = new Set(),
+    now = Date.now(),
+  ): Promise<GlobalSweepReport> {
+    const report: GlobalSweepReport = { pruned: false, removed: [], kept: [], archived: [], swept: [], orphanedContainers: [] };
+    const sweptContainers = new Set<string>();
+    const sweepBase = async (baseCwd: string, container: string) => {
+      if (sweptContainers.has(container)) return;
+      sweptContainers.add(container);
+      report.swept.push(path.resolve(baseCwd));
+      const sub = await this.sweepContainer(path.resolve(baseCwd), container, keepPaths, now);
+      report.pruned = report.pruned || sub.pruned;
+      report.removed.push(...sub.removed);
+      report.kept.push(...sub.kept);
+      report.archived.push(...sub.archived);
+    };
+    if (currentCwd) await sweepBase(currentCwd, this.repoRoot(currentCwd)).catch(() => {});
+
+    const containers = await fs.readdir(this.rootDir, { withFileTypes: true }).catch(() => []);
+    for (const entry of containers) {
+      if (!entry.isDirectory()) continue;
+      const container = path.join(this.rootDir, entry.name);
+      if (sweptContainers.has(container)) continue;
+      const baseCwd = await this.resolveContainerBase(container);
+      if (baseCwd) {
+        await sweepBase(baseCwd, container).catch(() => {});
+        continue;
+      }
+      const contents = await fs.readdir(container).catch(() => []);
+      const worktreeEntries = contents.filter((name) => name !== PATCHES_DIR);
+      const patches = await fs.readdir(path.join(container, PATCHES_DIR)).catch(() => []);
+      if (!worktreeEntries.length && !patches.length) {
+        await fs.rm(container, { recursive: true, force: true }).catch(() => {});
+        continue;
+      }
+      if (worktreeEntries.length) report.orphanedContainers.push(container);
     }
     return report;
   }

@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Machine-wide worktree GC
+
+- Startup maintenance now sweeps every repo container under `worktreeDir` via
+  `WorktreeManager.sweepAll()`, not just the current checkout's — stale
+  containers for repos you stop visiting are finally reclaimed. Each
+  container's base repo is resolved from the create-time `base-repo` marker or
+  the linked worktree's gitdir pointer, then swept with the existing `sweep()`
+  safety model (archive unique work, never delete unreachable branches, 1h
+  min-age, keepPaths shielding).
+- Containers whose base repo is gone are **kept and reported**
+  (`GlobalSweepReport.orphanedContainers`), never deleted: their object stores
+  lived inside the deleted repo, so unique work cannot be proven absent or
+  archived. Empty leftovers (no worktrees, no archived patches) are removed.
+- Run process records now carry `worktreeCwd` so live worktree-isolated runs
+  from **other concurrent Pi processes** are shielded from the global sweep,
+  same as this session's live runs.
+- Known limitation: `pi-workflows` reuses `WorktreeManager` with the default
+  root (its worktrees land in the same containers and are reclaimed by the
+  global sweep) but writes run records to a separate lock root, so its live
+  worktrees are shielded only by the 1h min-age window, not by run records.
+
 ## 0.8.0
 
 ### Lifecycle-driven storage GC (no more wall-clock retention)

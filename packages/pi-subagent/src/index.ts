@@ -14,6 +14,7 @@ export type { GetPiCommand, RunnerOptions } from "./runner.js";
 export { WorktreeManager } from "./worktree.js";
 export type {
   CreateWorktreeOptions,
+  GlobalSweepReport,
   SweepReport,
   WorktreeApplyResult,
   WorktreeDiffResult,
