@@ -24,6 +24,8 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
+      # Trusted publishing (OIDC) requires npm >= 11.5.1
+      - run: npm install -g npm@latest
       - run: npm ci
       - name: Cache embedding model
         uses: actions/cache@v4

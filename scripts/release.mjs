@@ -42,7 +42,7 @@ const [command = "plan", requested = process.env.RELEASE_PACKAGE] = process.argv
 
 function publishedVersion(name) {
 	try {
-		return execFileSync("npm", ["view", name, "version", "--json"], {
+		return execFileSync("npm", ["view", name, "version", "--json", "--prefer-online"], {
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "ignore"],
 		})
@@ -67,7 +67,15 @@ function assertPublishedWorkspaceDependencies(pkg) {
 	for (const dependency of pkg.dependencies) {
 		const workspace = byName.get(dependency);
 		if (!workspace) continue;
-		const published = publishedVersion(workspace.name);
+		// Retry to ride out registry propagation lag right after a publish.
+		let published;
+		for (let attempt = 0; attempt < 60; attempt++) {
+			published = publishedVersion(workspace.name);
+			if (published === workspace.version) break;
+			if (attempt === 0)
+				console.log(`Waiting for ${workspace.name}@${workspace.version} to appear on npm...`);
+			execFileSync("sleep", ["5"]);
+		}
 		if (published !== workspace.version) {
 			throw new Error(
 				`${pkg.name} depends on ${workspace.name}@${workspace.version}, but npm has ${published ?? "no published version"}. Publish ${workspace.slug} first.`,
@@ -92,6 +100,10 @@ if (command === "plan") {
 
 if (command === "publish") {
 	const pkg = select(requested);
+	if (publishedVersion(pkg.name) === pkg.version) {
+		console.log(`${pkg.name}@${pkg.version} already published; skipping.`);
+		process.exit(0);
+	}
 	assertPublishedWorkspaceDependencies(pkg);
 	console.log(`Publishing ${pkg.name}@${pkg.version} from packages/${basename(pkg.dir)}`);
 	const env = { ...process.env };
