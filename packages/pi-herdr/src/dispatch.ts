@@ -8,7 +8,7 @@
  */
 
 import { herdr as realHerdr } from "./cli.ts";
-import { assertAgentName } from "./repos.ts";
+import { type NameGenerator, resolveHerdrTaskName } from "./names.ts";
 
 /** Runs a herdr command and returns the parsed `result` from its envelope. */
 export type HerdrRunner = (args: string[]) => Promise<any>;
@@ -19,6 +19,8 @@ export interface DispatchOptions {
 	/** How long to keep retrying transient agent-start failures, ms. */
 	startDeadlineMs?: number;
 	now?: () => number;
+	/** Optional model-backed name for omitted `name`. Explicit names never use this. */
+	generateName?: NameGenerator;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -30,17 +32,7 @@ export function parsePrUrl(text: string): { org: string; repo: string; num: stri
 	return match ? { org: match[1], repo: match[2], num: match[3] } : undefined;
 }
 
-export function slugify(text: string): string {
-	const slug = text
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, 40)
-		.replace(/-+$/, "");
-	// Herdr agent names must match [a-z][a-z0-9_-]*; never emit an empty or
-	// digit-leading slug (e.g. an all-punctuation or non-Latin task title).
-	return /^[a-z]/.test(slug) ? slug : `task-${slug || Date.now().toString(36)}`.slice(0, 40);
-}
+export { slugify } from "./names.ts";
 
 /**
  * Agent-start failures that resolve themselves: the pane is still checking
@@ -223,10 +215,8 @@ export async function dispatchHerdrTask(
 	input: { repoPath: string; task: string; name?: string },
 	options: DispatchOptions = {},
 ): Promise<HerdrTaskResult> {
-	const slug = slugify(input.name ?? input.task);
-	const name = input.name ?? slug;
-	assertAgentName(name);
-	const branch = `agent/${slug}`;
+	const name = await resolveHerdrTaskName(input, input.name === undefined ? options.generateName : undefined);
+	const branch = `agent/${name}`;
 
 	const worktree = await ensureWorktree(input.repoPath, branch, name, options);
 	const { agentName, launchedWithTask } = await ensurePiAgent(name, worktree.paneId, input.task, options);

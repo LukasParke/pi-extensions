@@ -67,16 +67,19 @@ describe("slugify", () => {
 		expect(slugify("--hello world--")).toBe("hello-world");
 	});
 
-	it("caps at 40 characters without a trailing dash", () => {
-		const slug = slugify(`${"a".repeat(39)}-tail`);
-		expect(slug.length).toBeLessThanOrEqual(40);
+	it("caps at 32 characters without a trailing dash", () => {
+		const slug = slugify(`${"a".repeat(31)}-tail`);
+		expect(slug.length).toBeLessThanOrEqual(32);
 		expect(slug.endsWith("-")).toBe(false);
 	});
 
 	it("never returns an empty or digit-leading slug (herdr requires [a-z] first)", () => {
 		for (const input of ["???", "日本語のタスク", "42 fix the thing", ""]) {
-			expect(slugify(input), input).toMatch(/^[a-z][a-z0-9_-]*$/);
-			expect(slugify(input).length).toBeLessThanOrEqual(40);
+			expect(
+				slugify(input, () => 0xabcdef),
+				input,
+			).toMatch(/^[a-z][a-z0-9_-]{0,31}$/);
+			expect(slugify(input, () => 0xabcdef).length).toBeLessThanOrEqual(32);
 		}
 		expect(slugify("42 fix the thing")).toBe("task-42-fix-the-thing");
 	});
@@ -452,16 +455,99 @@ describe("dispatchHerdrTask", () => {
 		expect(calls.some((call) => call[1] === "prompt")).toBe(true);
 	});
 
-	it.each(["", ".", "..", "with/slash", "with\\slash"])(
+	it.each(["", ".", "..", "with/slash", "with\\slash", "Fix-Thing", "1leading", "has space", "a".repeat(33)])(
 		"rejects invalid explicit agent name %j before creating a worktree",
 		async (name) => {
 			const { run, calls } = fakeHerdr({});
 			await expect(
 				dispatchHerdrTask({ repoPath: "/repo", task: "Fix the thing", name }, { herdr: run, ...noSleep }),
-			).rejects.toThrow("non-empty path segment");
+			).rejects.toThrow(
+				"agent name must start with a lowercase letter and contain only lowercase letters, digits, '-' or '_' (1-32 characters)",
+			);
 			expect(calls).toEqual([]);
 		},
 	);
+
+	it("uses a generated omitted name for agent start, worktree label, and branch", async () => {
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": (args) => ({ agent: { name: args[2] } }),
+			"agent wait": () => ({}),
+		});
+		const generateName = async () => "agent-name-limit";
+		const result = await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "Fix and land the confirmed invalid_agent_name regression" },
+			{ herdr: run, generateName, ...noSleep },
+		);
+		const started = calls.find((call) => call[1] === "start");
+		const created = calls.find((call) => call[1] === "create");
+		expect(started?.[2]).toBe("agent-name-limit");
+		expect(created?.[created.indexOf("--label") + 1]).toBe("agent-name-limit");
+		expect(created?.[created.indexOf("--branch") + 1]).toBe("agent/agent-name-limit");
+		expect(result.agentName).toBe("agent-name-limit");
+		expect(result.branch).toBe("agent/agent-name-limit");
+	});
+
+	it("normalizes overlong model output and falls back when generation fails", async () => {
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": (args) => ({ agent: { name: args[2] } }),
+			"agent wait": () => ({}),
+		});
+		const first = await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "Add clickable transcript file paths" },
+			{
+				herdr: run,
+				generateName: async () => "`Clickable File Paths!!` because that is the subject",
+				...noSleep,
+			},
+		);
+		expect(first.agentName).toBe("clickable-file-paths");
+		const second = await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "Add CI caching for Node builds" },
+			{
+				herdr: run,
+				generateName: async () => {
+					throw new Error("no auth");
+				},
+				...noSleep,
+			},
+		);
+		expect(second.agentName).toBe("add-ci-caching-for-node-builds");
+		expect(second.branch).toBe("agent/add-ci-caching-for-node-builds");
+		expect(calls.filter((call) => call[1] === "start")).toHaveLength(2);
+	});
+
+	it("does not generate a name when an explicit name is provided", async () => {
+		const { run } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": (args) => ({ agent: { name: args[2] } }),
+			"agent wait": () => ({}),
+		});
+		let generated = 0;
+		const result = await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "Fix the thing", name: "fix-thing" },
+			{
+				herdr: run,
+				generateName: async () => {
+					generated += 1;
+					return "should-not-run";
+				},
+				...noSleep,
+			},
+		);
+		expect(generated).toBe(0);
+		expect(result.agentName).toBe("fix-thing");
+	});
 
 	it("derives the branch and agent name from the task when no name is given", async () => {
 		const { run } = fakeHerdr({
@@ -478,5 +564,29 @@ describe("dispatchHerdrTask", () => {
 		);
 		expect(result.branch).toBe("agent/add-ci-caching-for-node-builds");
 		expect(result.agentName).toBe("add-ci-caching-for-node-builds");
+	});
+
+	it("starts a long omitted-name task with one Herdr-valid identifier for agent, label, and branch", async () => {
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": (args) => ({ agent: { name: args[2] } }),
+			"agent wait": () => ({}),
+		});
+		const result = await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "backport patch review this set of patch" },
+			{ herdr: run, ...noSleep },
+		);
+		const started = calls.find((call) => call[0] === "agent" && call[1] === "start");
+		const created = calls.find((call) => call[0] === "worktree" && call[1] === "create");
+		const name = started?.[2];
+		expect(name).toMatch(/^[a-z][a-z0-9_-]{0,31}$/);
+		expect(name?.length).toBeLessThanOrEqual(32);
+		expect(created?.[created.indexOf("--label") + 1]).toBe(name);
+		expect(created?.[created.indexOf("--branch") + 1]).toBe(`agent/${name}`);
+		expect(result.agentName).toBe(name);
+		expect(result.branch).toBe(`agent/${name}`);
 	});
 });

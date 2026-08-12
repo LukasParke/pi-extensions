@@ -180,6 +180,51 @@ describe("cleanupHerdrTask", () => {
 		expect(calls).toContainEqual(["git", "-C", "/home/luke/github/app", "worktree", "remove", cwd]);
 	});
 
+	it("looks up a live pane id without searching orphans by that id", async () => {
+		const { herdr, git, calls } = setup();
+		let searched = 0;
+		await expect(
+			cleanupHerdrTask(
+				{ agent: "w7:p3", worktreeRoots: [worktreeRoot] },
+				{
+					herdr,
+					git,
+					findOrphan: () => {
+						searched += 1;
+						return cwd;
+					},
+				},
+			),
+		).resolves.toMatchObject({ cleaned: true, removal: "herdr" });
+		expect(searched).toBe(0);
+		expect(calls[0]).toEqual(["agent", "get", "w7:p3"]);
+	});
+
+	it("does not search orphans when a gone pane id has no live agent", async () => {
+		const { herdr, git } = setup({ agentNotFound: true });
+		let searched = 0;
+		await expect(
+			cleanupHerdrTask(
+				{ agent: "w7:p3", worktreeRoots: [worktreeRoot] },
+				{
+					herdr,
+					git,
+					findOrphan: () => {
+						searched += 1;
+						return cwd;
+					},
+				},
+			),
+		).resolves.toEqual({
+			cleaned: false,
+			reason: "nothing-found",
+			workspaceId: null,
+			worktreePath: null,
+		});
+		expect(searched).toBe(0);
+		expect(git).not.toHaveBeenCalled();
+	});
+
 	it("passes --force to the git fallback before the worktree path", async () => {
 		const { herdr, git, calls } = setup({ agentNotFound: true });
 		await cleanupHerdrTask(
