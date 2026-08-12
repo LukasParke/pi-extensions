@@ -10,12 +10,15 @@ pitfalls at the bottom are each things that actually went wrong.
 
 ## 0. Preconditions
 
+The Pi system prompt must identify the session as Herdr-managed. Herdr provides
+`HERDR_ENV=1` plus non-empty `HERDR_SOCKET_PATH` and `HERDR_PANE_ID`; the
+packaged extension keeps control tools unavailable otherwise.
+
 ```bash
-test "${HERDR_ENV:-}" = 1   # must be inside a Herdr-managed pane
-herdr --skill                # authoritative CLI usage; re-read if unsure
+herdr --skill # authoritative CLI usage; re-read if unsure
 ```
 
-Never control Herdr from outside Herdr. Never run `herdr server stop`.
+Keep Herdr control inside a managed session. Never run `herdr server stop`.
 
 ## 1. Create the worktree + workspace in one step
 

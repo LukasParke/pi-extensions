@@ -4,6 +4,12 @@ import { Type } from "typebox";
 import { herdr, herdrText } from "../src/cli.ts";
 import { cleanupHerdrTask } from "../src/cleanup.ts";
 import { defaultConfig, herdrConfig, type HerdrConfig } from "../src/config.ts";
+import {
+	detectHerdrContext,
+	requireManagedHerdr,
+	withoutHerdrTools,
+	withHerdrContext,
+} from "../src/context.ts";
 import { dispatchHerdrTask, parsePrUrl } from "../src/dispatch.ts";
 import {
 	AGENT_NAME_PATTERN,
@@ -39,6 +45,15 @@ export default function (pi: ExtensionAPI) {
 		return { trusted: worktreeTrust(event.cwd, base, config) };
 	});
 
+	pi.on("session_start", () => {
+		if (detectHerdrContext().managed) return;
+		pi.setActiveTools(withoutHerdrTools(pi.getActiveTools()));
+	});
+
+	pi.on("before_agent_start", (event) => ({
+		systemPrompt: withHerdrContext(event.systemPrompt, detectHerdrContext()),
+	}));
+
 	pi.registerTool({
 		name: "herdr_task",
 		label: "Herdr Task",
@@ -60,6 +75,7 @@ export default function (pi: ExtensionAPI) {
 			),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			requireManagedHerdr();
 			const config = await herdrConfig();
 			const repoPath = await resolveRepo(params.repo, ctx.cwd, config.repoRoots);
 			const result = await dispatchHerdrTask({ repoPath, task: params.task, name: params.name });
@@ -87,6 +103,7 @@ export default function (pi: ExtensionAPI) {
 			lines: Type.Optional(Type.Number({ description: "Terminal lines to read (default 60)" })),
 		}),
 		async execute(_id, params, signal) {
+			requireManagedHerdr();
 			const config = await herdrConfig();
 			if (params.wait) {
 				const args = ["agent", "wait", params.agent];
@@ -140,6 +157,7 @@ export default function (pi: ExtensionAPI) {
 			),
 		}),
 		async execute(_id, params) {
+			requireManagedHerdr();
 			const config = await herdrConfig();
 			const result = await cleanupHerdrTask({ ...params, worktreeRoots: config.worktreeRoots });
 			if (!result.cleaned) {
@@ -161,7 +179,17 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	function ensureManagedCommand(ctx: ExtensionContext) {
+		if (detectHerdrContext().managed) return true;
+		ctx.ui.notify(
+			"Herdr is unavailable in this standalone Pi session. Use subagent or background terminals instead.",
+			"error",
+		);
+		return false;
+	}
+
 	async function dispatchReview(url: string, ctx: ExtensionContext): Promise<void> {
+		if (!ensureManagedCommand(ctx)) return;
 		const pr = parsePrUrl(url);
 		if (!pr) {
 			ctx.ui.notify("Usage: /review <github-pr-url>", "error");
@@ -211,6 +239,7 @@ export default function (pi: ExtensionAPI) {
 			return items.length > 0 ? items : null;
 		},
 		handler: async (args, ctx: ExtensionContext) => {
+			if (!ensureManagedCommand(ctx)) return;
 			let trimmed = (args ?? "").trim();
 			if (!trimmed) {
 				trimmed = ((await ctx.ui.editor("Herdr task — [repo-name] <task or PR URL>")) ?? "").trim();

@@ -7,14 +7,26 @@ git worktrees, from inside the [Pi coding agent](https://pi.dev).
 pi install npm:@parke.dev/pi-herdr
 ```
 
-## Prerequisite: the `herdr` CLI
+## Runtime context
 
-**The `herdr` CLI must be installed and on PATH.** Every operation shells out to
-it (`herdr worktree create`, `herdr agent start/prompt/wait/get/read`,
-`herdr pane list`). Without it the tools fail with a clear error and the
-`project_trust` hook stays inert.
+The extension treats Pi as Herdr-managed only when `HERDR_ENV=1` and Herdr
+provides non-empty socket and pane identifiers. Managed sessions keep the Herdr
+tools and commands available, and Pi's prompt includes safe workspace, tab, and
+pane identity when present.
 
-A herdr session owns one repo-level mission: a PR stack or substantial deliverable that must survive its dispatcher and remain human-visitable. Use subagents inside that session for inline research, parallel legs, clean-context reviews, and PR-sized units; do not give herdr work whose result the caller needs inline, or give subagents external deliverables that could be lost with their parent. See the bundled `herdr` skill for the full split.
+Standalone sessions remove the Herdr tools from Pi's active tool set and direct
+the model to `subagent` or background terminals instead. Commands and manually
+re-enabled tools also stop with a clear availability error. The independent
+`project_trust` hook remains active in both modes and preserves the trust rules
+below.
+
+Managed sessions require the `herdr` CLI on `PATH`; execution errors report when
+the server becomes unavailable after startup.
+
+A Herdr session owns one repo-level mission: a PR stack or substantial
+deliverable that must survive its dispatcher and remain human-visitable. Use
+subagents inside that session for inline research, parallel legs, clean-context
+reviews, and PR-sized units. See the bundled `herdr` skill for the full split.
 
 ## Tools
 
@@ -76,8 +88,9 @@ branch remains on the remote.
 
 ## Worktree trust
 
-A `project_trust` hook auto-trusts herdr worktrees so dispatched agents do not
-stall on pi's trust prompt: a directory under a configured worktree root
+A `project_trust` hook auto-trusts Herdr worktrees in managed and standalone
+Pi sessions so dispatched agents do not stall on Pi's trust prompt: a directory
+under a configured worktree root
 (default `~/.herdr/worktrees` and `~/.worktrees`) is trusted iff its **base
 repository** lives under a configured repo root (default `~/github` and
 `~/Development`). Everything else stays undecided and gets pi's normal prompt.
