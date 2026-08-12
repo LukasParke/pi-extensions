@@ -1,7 +1,7 @@
 {
   "name": "@parke.dev/pi-openrouter",
   "version": "0.1.0",
-  "description": "OpenRouter's three API surfaces (chat completions, responses, messages) as selectable pi providers, plus a benchmark harness comparing them",
+  "description": "Route OpenRouter models to their most efficient API surface, with selectable surface providers and a benchmark harness",
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",
@@ -20,6 +20,7 @@
     "pi-coding-agent",
     "openrouter",
     "provider",
+    "routing",
     "benchmark",
     "extension",
     "parke.dev"

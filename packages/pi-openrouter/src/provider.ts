@@ -6,6 +6,7 @@
 
 import { attributionHeaders, type OpenRouterConfig } from "./config.ts";
 import {
+	buildModel,
 	buildSurfaceModels,
 	providerId,
 	SURFACE_API,
@@ -14,6 +15,7 @@ import {
 	type ApiModel,
 	type Surface,
 } from "./catalog.ts";
+import { API_SURFACE, modelRoutingTable, resolveModelRoute } from "./routing.ts";
 
 const SURFACE_NAME = {
 	completions: "OpenRouter (Chat Completions)",
@@ -35,4 +37,23 @@ export function buildProviderConfig(surface: Surface, config: OpenRouterConfig, 
 
 export function buildAllProviders(config: OpenRouterConfig, apiModels: ApiModel[]) {
 	return SURFACES.map((surface) => buildProviderConfig(surface, config, apiModels));
+}
+
+export function buildRoutedProvider(config: OpenRouterConfig, apiModels: ApiModel[]) {
+	const byId = new Map(apiModels.map((model) => [model.id, model]));
+	const rules = modelRoutingTable(config.baseUrl);
+	return {
+		id: "openrouter",
+		name: "OpenRouter",
+		baseUrl: surfaceBaseUrl("completions", config.baseUrl),
+		apiKey: "$OPENROUTER_API_KEY",
+		api: SURFACE_API.completions,
+		headers: attributionHeaders(config),
+		models: config.models.flatMap((id) => {
+			const apiModel = byId.get(id);
+			if (!apiModel) return [];
+			const route = resolveModelRoute(id, rules);
+			return [{ ...buildModel(API_SURFACE[route.api], apiModel), ...route }];
+		}),
+	};
 }

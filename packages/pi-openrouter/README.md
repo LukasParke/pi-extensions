@@ -1,20 +1,20 @@
 # @parke.dev/pi-openrouter
 
-OpenRouter serves the same models over three API surfaces. This package
-registers all three as separate [pi](https://pi.dev) providers so you can pick
-the wire protocol per task — and ships the benchmark harness that measures
-what the choice actually costs you.
+OpenRouter serves the same models over three API surfaces. This package overrides
+pi's built-in `openrouter` provider and routes each model family to its most
+efficient surface automatically. It also keeps three explicit providers for
+benchmarking or manual selection.
 
-| Provider                 | Endpoint                   | pi-ai API            |
+| Provider                 | Routing / endpoint         | pi-ai API            |
 | ------------------------ | -------------------------- | -------------------- |
+| `openrouter`             | per-model family routing   | per-model            |
 | `openrouter-completions` | `/api/v1/chat/completions` | `openai-completions` |
 | `openrouter-responses`   | `/api/v1/responses`        | `openai-responses`   |
 | `openrouter-messages`    | `/api/v1/messages`         | `anthropic-messages` |
 
-All three are configured identically — same `$OPENROUTER_API_KEY`, same
-curated models with live cost metadata from the models API, same attribution
-headers — so the only variable is the protocol. `openrouter-completions`
-matches pi's built-in `openrouter` provider and acts as the control.
+All four use the same `$OPENROUTER_API_KEY`, curated models, live cost metadata,
+and attribution headers. Overriding `openrouter` is intentional: optimal routing
+works with existing model selections and requires no user config.
 
 ## Install
 
@@ -34,6 +34,45 @@ Metadata (pricing, context window, reasoning support) is fetched from
 `https://openrouter.ai/api/v1/models` at startup, with a pinned snapshot as
 offline fallback.
 
+## Automatic routing
+
+The exported routing table is ordered, so exact model exceptions can be added
+above family rules:
+
+| Model pattern | API                  | Why                                                                                                                                           |
+| ------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `anthropic/*` | `anthropic-messages` | Native `cache_control`; Opus 5 was 2.1× cheaper and reduced billable input from 3912 to 8 tokens with 2900 cache-read tokens                  |
+| `openai/*`    | `openai-responses`   | Native reasoning replay; GPT-5.2 cut cost 50% and wall time 44%, while GPT-5.6 Sol replayed reasoning 3/3 with the fastest wall time and TTFT |
+| `*`           | `openai-completions` | Compatibility fallback; Kimi K3 was cheapest here through implicit caching                                                                    |
+
+The policy comes from 54 live trials across two matrices. See
+[the first matrix](docs/BENCHMARK.md) and
+[the Opus 5 / GPT-5.6 Sol / Kimi K3 matrix](docs/BENCHMARK-2.md).
+
+### Override one model
+
+Pi applies `~/.pi/agent/models.json` above extension providers. Set `api` and
+`baseUrl` on a model with the same id to pin it to another surface:
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "models": [
+        {
+          "id": "openai/gpt-5.6-sol",
+          "api": "openai-completions",
+          "baseUrl": "https://openrouter.ai/api/v1"
+        }
+      ]
+    }
+  }
+}
+```
+
+For `anthropic-messages`, use `https://openrouter.ai/api` because pi's
+Anthropic client appends `/v1/messages`.
+
 ## Why this exists: reasoning preservation across tool calls
 
 Agent harnesses live and die on multi-turn tool loops. Reasoning models think
@@ -50,9 +89,10 @@ request depends on the API surface:
 
 ## Which API should you use?
 
-Measured with `scripts/benchmark.ts` (3 trials per surface, same
-deterministic 5-turn tool loop, reasoning `low`, real requests — see
-[docs/BENCHMARK.md](docs/BENCHMARK.md) for the full tables):
+Measured with `scripts/benchmark.ts` (3 trials per surface, the same
+deterministic tool loop, reasoning `low`, real requests — see
+[docs/BENCHMARK.md](docs/BENCHMARK.md) and
+[docs/BENCHMARK-2.md](docs/BENCHMARK-2.md) for the full tables):
 
 | `openai/gpt-5.2` | Cost     | Output tok | Wall  | Reasoning replayed |
 | ---------------- | -------- | ---------- | ----- | ------------------ |
@@ -79,11 +119,12 @@ blocks natively (3/3); completions did not replay (sonnet streams
 `reasoning.text`, not `reasoning.encrypted`), which cost nothing on this
 task but matters when thinking is heavier.
 
-**For open reasoning models, avoid completions.** With
-`moonshotai/kimi-k2-thinking`, messages ($0.00150) and responses ($0.00188)
-both replayed reasoning and were 2.1–2.6× cheaper and ~2× faster than
-completions ($0.00393), where the model re-thought every turn (1144 vs
-215–348 reasoning tokens).
+**Open model behavior varies by model.** In the first matrix,
+`moonshotai/kimi-k2-thinking` was 2.1–2.6× cheaper on messages/responses than
+completions because those surfaces replayed reasoning. In the second matrix,
+`moonshotai/kimi-k3` was cheapest on completions because implicit caching
+engaged there. The automatic fallback remains completions; pin exceptions when
+a model has repeatable evidence for another surface.
 
 Run your own numbers before committing a harness to a surface (the
 benchmark script requires [Bun](https://bun.sh); the extension itself does

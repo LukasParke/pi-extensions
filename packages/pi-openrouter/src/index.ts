@@ -13,7 +13,9 @@ export {
 export type { ApiModel, CatalogModel, Surface } from "./catalog.ts";
 export { attributionHeaders, defaultConfig, openrouterConfig, resetConfigCache } from "./config.ts";
 export type { OpenRouterConfig } from "./config.ts";
-export { buildAllProviders, buildProviderConfig } from "./provider.ts";
+export { buildAllProviders, buildProviderConfig, buildRoutedProvider } from "./provider.ts";
+export { API_SURFACE, modelRoutingTable, resolveModelRoute } from "./routing.ts";
+export type { RoutedApi, RoutingRule } from "./routing.ts";
 export {
 	createToolHarness,
 	mean,
