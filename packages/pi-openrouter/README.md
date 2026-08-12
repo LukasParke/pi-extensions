@@ -149,12 +149,12 @@ request for replayed reasoning items, not just response metadata.
   benchmark finding.
 - The messages surface uses the Anthropic SDK, which posts to `{base}/v1/messages`;
   the provider therefore registers `https://openrouter.ai/api` as its base.
-- Cache behavior depends on the model and surface: in the committed runs
-  gpt-5.2 recorded no cache activity on any surface (the prompt is below
-  OpenAI's minimum cacheable size), Claude hit `cache_control` caching on
-  completions/messages but not responses, and Kimi's implicit cache fired
-  everywhere. Inspect the cache columns for your model rather than
-  generalizing; real agent sessions with large system prompts will differ.
+- Cache behavior depends on the model and surface: in the committed runs,
+  gpt-5.2 recorded no cache activity, Claude hit `cache_control` on completions
+  and messages but not responses, Kimi K2 Thinking recorded cache reads on all
+  three surfaces, and Kimi K3 recorded them on completions only. Inspect the
+  generated cache columns rather than generalizing; real agent sessions with
+  larger prompts may behave differently.
 - Model metadata (`compat`, thinking level maps) is curated for the three
   default models. Other models get sane generic metadata from the models API,
   which may miss provider quirks.
