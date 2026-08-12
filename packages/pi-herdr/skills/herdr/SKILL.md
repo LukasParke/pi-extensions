@@ -49,8 +49,10 @@ herdr_task { task: "<complete self-contained prompt>", repo: "pi-extensions", na
 ```
 
 - Omit `repo` to use the current directory's repo.
-- `name` becomes the agent name and branch (`agent/<name>`); derived from the
-  task when omitted.
+- `name` becomes the agent name and branch (`agent/<name>`). It must already be a
+  Herdr name: lowercase start, `[a-z0-9_-]`, 1-32 characters. Omit it to generate a
+  short subject name from the task via the active model, falling back to a 32-character
+  slug if generation is unavailable or invalid. `/review` keeps `review-pr-<num>`.
 - Returns immediately with the agent name, worktree path, and branch.
 - Dispatch is resilient: an existing worktree/branch from a failed earlier
   dispatch is reused and an already-running pi in the pane is adopted.
@@ -62,6 +64,7 @@ herdr_task { task: "<complete self-contained prompt>", repo: "pi-extensions", na
 
 ```
 herdr_task_status { agent: "fix-ci" }                 — state + recent output
+herdr_task_status { agent: "w7:p3" }                  — same, by pane id
 herdr_task_status { agent: "fix-ci", wait: true }     — block until it settles
 ```
 

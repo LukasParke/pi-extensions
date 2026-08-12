@@ -78,9 +78,14 @@ describe("findOrphanWorktree", () => {
 		expect(findOrphanWorktree("missing", [join(root, "orphans")])).toBeUndefined();
 	});
 
-	it.each(["", ".", "..", "with/slash", "with\\slash"])("rejects invalid agent name %j", (name) => {
-		expect(() => findOrphanWorktree(name, [join(root, "orphans")])).toThrow("non-empty path segment");
-	});
+	it.each(["", ".", "..", "with/slash", "with\\slash", "Fix", "1bad", "a".repeat(33)])(
+		"rejects invalid agent name %j",
+		(name) => {
+			expect(() => findOrphanWorktree(name, [join(root, "orphans")])).toThrow(
+				"agent name must start with a lowercase letter and contain only lowercase letters, digits, '-' or '_' (1-32 characters)",
+			);
+		},
+	);
 });
 
 describe("resolveRepo", () => {

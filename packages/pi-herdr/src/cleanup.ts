@@ -2,9 +2,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { herdr as realHerdr } from "./cli.ts";
 import type { HerdrRunner } from "./dispatch.ts";
+import { assertAgentTarget, isAgentName } from "./names.ts";
 import {
 	AmbiguousOrphanWorktreeError,
-	assertAgentName,
 	baseRepoFromCommonDir,
 	findOrphanWorktree,
 	isPathInside,
@@ -39,7 +39,7 @@ export async function cleanupHerdrTask(
 	input: { agent: string; force?: boolean; worktreeRoots: string[] },
 	options: CleanupOptions = {},
 ): Promise<CleanupResult> {
-	assertAgentName(input.agent);
+	assertAgentTarget(input.agent);
 	const herdr = options.herdr ?? realHerdr;
 	const git = options.git ?? realGit;
 	let status: string;
@@ -55,7 +55,9 @@ export async function cleanupHerdrTask(
 		const message = error instanceof Error ? error.message : String(error);
 		if (!message.includes("agent_not_found")) throw error;
 		try {
-			const orphan = (options.findOrphan ?? findOrphanWorktree)(input.agent, input.worktreeRoots);
+			const orphan = isAgentName(input.agent)
+				? (options.findOrphan ?? findOrphanWorktree)(input.agent, input.worktreeRoots)
+				: undefined;
 			if (!orphan) {
 				return {
 					cleaned: false,

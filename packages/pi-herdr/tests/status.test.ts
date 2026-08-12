@@ -45,4 +45,34 @@ describe("getHerdrTaskStatus", () => {
 			),
 		).resolves.toEqual({ status: "gone", worktreePath: null });
 	});
+
+	it("looks up a live pane id without treating it as an agent name", async () => {
+		const herdr: HerdrRunner = async (args) => {
+			expect(args).toEqual(["agent", "get", "w7:p3"]);
+			return { agent: { agent_status: "idle", cwd: "/worktrees/app/agent-fix" } };
+		};
+		await expect(
+			getHerdrTaskStatus({ agent: "w7:p3", worktreeRoots: ["/worktrees"] }, { herdr }),
+		).resolves.toEqual({ status: "idle", cwd: "/worktrees/app/agent-fix" });
+	});
+
+	it("does not search orphans by pane id", async () => {
+		let searched = 0;
+		const herdr: HerdrRunner = async () => {
+			throw new Error("herdr agent get: agent_not_found: gone");
+		};
+		await expect(
+			getHerdrTaskStatus(
+				{ agent: "w7:p3", worktreeRoots: ["/worktrees"] },
+				{
+					herdr,
+					findOrphan: () => {
+						searched += 1;
+						return "/worktrees/app/agent-fix";
+					},
+				},
+			),
+		).resolves.toEqual({ status: "gone", worktreePath: null });
+		expect(searched).toBe(0);
+	});
 });

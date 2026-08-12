@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
+import { assertAgentName } from "./names.ts";
 
 const exec = promisify(execFile);
 
@@ -24,14 +25,6 @@ export function knownRepos(repoRoots: string[]): Map<string, string> {
 export class AmbiguousOrphanWorktreeError extends Error {
 	constructor(readonly matches: string[]) {
 		super(`Multiple orphaned worktrees match this agent:\n${matches.join("\n")}`);
-	}
-}
-
-export const AGENT_NAME_PATTERN = String.raw`^(?!\.{1,2}$)[^/\\]+$`;
-
-export function assertAgentName(agentName: string) {
-	if (!new RegExp(AGENT_NAME_PATTERN).test(agentName)) {
-		throw new Error("Agent name must be a non-empty path segment other than . or ..");
 	}
 }
 

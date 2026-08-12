@@ -30,11 +30,11 @@ reviews, and PR-sized units. See the bundled `herdr` skill for the full split.
 
 ## Tools
 
-| Tool                 | Purpose                                                                                                           |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `herdr_task`         | Dispatch a self-contained task to a new pi agent in its own worktree, branch (`agent/<name>`), and pane           |
-| `herdr_task_status`  | Check a dispatched agent: lifecycle state (working/idle/done/blocked) and recent terminal output; `wait` to block |
-| `herdr_task_cleanup` | Safely close a finished agent's workspace and remove its dispatched-task worktree                                 |
+| Tool                 | Purpose                                                                                                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `herdr_task`         | Dispatch a self-contained task to a new pi agent in its own worktree, branch (`agent/<name>`), and pane. Omit `name` to generate a short subject label (32-char slug fallback) |
+| `herdr_task_status`  | Check a dispatched agent: lifecycle state (working/idle/done/blocked) and recent terminal output; `wait` to block                                                              |
+| `herdr_task_cleanup` | Safely close a finished agent's workspace and remove its dispatched-task worktree                                                                                              |
 
 Dispatch is fire-and-forget and resilient:
 
@@ -82,7 +82,8 @@ branch remains on the remote.
 - `/herdr-task [repo-name] <task...>` — dispatch from the prompt line. The
   leading token is treated as a repo short name if it matches a known repo;
   otherwise the repo comes from the current directory. A bare GitHub PR URL
-  dispatches a review instead.
+  dispatches a review instead. Omitted names are model-generated subject labels
+  with a deterministic 32-character slug fallback.
 - `/review <github-pr-url>` — dispatch a `review-pr-<num>` agent that runs
   `/pr-review` on the PR from that repo's worktree.
 
