@@ -1,3 +1,4 @@
+import { NO_REPO_MESSAGE } from "@parke.dev/pi-github";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerSentinel } from "../extensions/sentinel.ts";
 import { SentinelManager } from "../src/manager.ts";
@@ -131,6 +132,13 @@ describe("sentinel extension delivery", () => {
 		await h.execute("sentinel_gate", { criteria: [{ name: "new", command: "wait" }] });
 		await vi.advanceTimersByTimeAsync(2_100);
 		expect(h.sentMessages).toHaveLength(0);
+	});
+
+	it("registers the native PR attachment tool", async () => {
+		const h = harness();
+		await expect(h.execute("sentinel_pr", { number: 1, repo: "invalid repo" })).rejects.toThrow(
+			NO_REPO_MESSAGE,
+		);
 	});
 
 	it("queues next-turn events without triggering a turn", async () => {

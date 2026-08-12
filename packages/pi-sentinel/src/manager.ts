@@ -1,13 +1,21 @@
 import { execFile, spawn } from "node:child_process";
 import { combinedOutput, evaluatePredicate, hashOutput, truncateOutput, updateGateState } from "./index.ts";
 import type { GateState, Predicate, ProbeResult } from "./index.ts";
+import {
+	formatPrEvent,
+	formatPrSnapshot,
+	prEventId,
+	prEvents,
+	prNeedsAction,
+	type PrSnapshot,
+} from "./pr.ts";
 
 const DEFAULT_INTERVAL_MS = 60_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 const STREAM_OUTPUT_BYTES = 1024 * 1024;
 export const MAX_STREAM_WATCHES = 4;
 
-export type SentinelKind = "watch" | "sleep";
+export type SentinelKind = "watch" | "sleep" | "pr";
 export type SentinelState = "waiting" | "running" | "passing" | "failing" | "failed" | "complete" | "timeout";
 export type WatchMode = "poll" | "stream";
 export type EventUrgency = "wake" | "next-turn";
@@ -22,6 +30,17 @@ export interface WatchOptions {
 	timeoutMs?: number;
 	wakeOnChange?: boolean;
 	urgency?: EventUrgency;
+	note?: string;
+}
+
+export interface PrOptions {
+	name: string;
+	repo: string;
+	number: number;
+	probe: () => Promise<PrSnapshot>;
+	initialSnapshot?: PrSnapshot;
+	intervalMs?: number;
+	timeoutMs?: number;
 	note?: string;
 }
 
@@ -102,6 +121,9 @@ interface Entry extends SentinelSnapshot {
 	running?: boolean;
 	wakeAt?: number;
 	stream?: StreamHandle;
+	prProbe?: () => Promise<PrSnapshot>;
+	prSnapshot?: PrSnapshot;
+	consecutiveFailures?: number;
 }
 
 interface GateEntry {
@@ -119,6 +141,11 @@ interface GateEntry {
 }
 
 export type ProbeRunner = (command: string, cwd: string) => Promise<ProbeResult>;
+
+function prState(snapshot: PrSnapshot): SentinelState {
+	if (snapshot.lifecycle === "merged" || snapshot.lifecycle === "closed") return "complete";
+	return prNeedsAction(snapshot) ? "failing" : "passing";
+}
 
 export function runProbe(command: string, cwd: string, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS) {
 	return new Promise<ProbeResult>((resolve) => {
@@ -227,7 +254,12 @@ export class SentinelManager {
 		this.idle = idle;
 		if (!idle || !this.active) return;
 		for (const entry of this.entries.values()) {
-			if (entry.mode !== "stream" && (entry.state === "waiting" || entry.state === "failing")) {
+			if (
+				entry.mode !== "stream" &&
+				(entry.state === "waiting" ||
+					(entry.state === "failing" && entry.kind !== "pr") ||
+					(entry.kind === "pr" && entry.prSnapshot === undefined && !entry.consecutiveFailures))
+			) {
 				this.scheduleEntry(entry, 0);
 			}
 		}
@@ -268,13 +300,39 @@ export class SentinelManager {
 		return this.snapshotEntry(entry);
 	}
 
+	attachPr(options: PrOptions) {
+		const name = options.name.trim();
+		if (!name) throw new Error("name must not be empty");
+		if (name === "gate") throw new Error('"gate" is reserved for the session gate');
+		if (this.entries.has(name)) throw new Error(`Sentinel ${name} already exists`);
+		const now = this.now();
+		const initial = options.initialSnapshot;
+		const entry: Entry = {
+			name,
+			kind: "pr",
+			note: options.note ?? `${options.repo}#${options.number}`,
+			state: initial ? prState(initial) : "waiting",
+			createdAt: now,
+			intervalMs: options.intervalMs ?? DEFAULT_INTERVAL_MS,
+			expiresAt: options.timeoutMs ? now + options.timeoutMs : undefined,
+			urgency: "wake",
+			prProbe: options.probe,
+			prSnapshot: initial,
+			lastOutput: initial ? formatPrSnapshot(initial) : undefined,
+		};
+		this.entries.set(name, entry);
+		this.scheduleEntry(entry, initial ? entry.intervalMs! : 0);
+		this.changed();
+		return this.snapshotEntry(entry);
+	}
+
 	sleep(name: string, wakeAt: number, note?: string) {
 		if (!Number.isFinite(wakeAt) || wakeAt <= this.now()) throw new Error("Sleep time must be in the future");
 		const normalized = name.trim();
 		if (!normalized) throw new Error("name must not be empty");
 		if (normalized === "gate") throw new Error('"gate" is reserved for the session gate');
 		const existing = this.entries.get(normalized);
-		if (existing?.kind === "watch") throw new Error(`Sentinel ${normalized} already exists`);
+		if (existing && existing.kind !== "sleep") throw new Error(`Sentinel ${normalized} already exists`);
 		if (existing) this.removeEntry(normalized, true);
 		const entry: Entry = {
 			name: normalized,
@@ -469,6 +527,7 @@ export class SentinelManager {
 		}
 		if (!this.idle) return;
 		if (entry.expiresAt && now >= entry.expiresAt) return this.expireEntry(entry);
+		if (entry.kind === "pr") return this.pollPr(entry);
 
 		entry.running = true;
 		entry.nextPollAt = undefined;
@@ -502,6 +561,48 @@ export class SentinelManager {
 		this.changed();
 	}
 
+	private async pollPr(entry: Entry) {
+		entry.running = true;
+		entry.nextPollAt = undefined;
+		try {
+			const snapshot = await entry.prProbe!();
+			entry.running = false;
+			if (!this.entries.has(entry.name)) return;
+			entry.lastOutput = formatPrSnapshot(snapshot);
+			entry.consecutiveFailures = 0;
+			const previous = entry.prSnapshot;
+			entry.prSnapshot = snapshot;
+			if (previous) {
+				for (const event of prEvents(previous, snapshot)) {
+					this.emit({
+						id: prEventId(entry.name, event),
+						source: entry.name,
+						urgency: "wake",
+						message: formatPrEvent(event),
+						details: { name: entry.name, type: event.type, pr: snapshot },
+					});
+				}
+			}
+			entry.state = prState(snapshot);
+			if (entry.state === "complete") {
+				entry.nextPollAt = undefined;
+			} else {
+				const untilExpiry = entry.expiresAt ? entry.expiresAt - this.now() : entry.intervalMs!;
+				this.scheduleEntry(entry, Math.min(entry.intervalMs!, untilExpiry));
+			}
+		} catch (error) {
+			entry.running = false;
+			if (!this.entries.has(entry.name)) return;
+			entry.state = "failing";
+			entry.lastOutput = truncateOutput(error instanceof Error ? error.message : String(error));
+			entry.consecutiveFailures = (entry.consecutiveFailures ?? 0) + 1;
+			const delay = entry.intervalMs! * 2 ** Math.min(entry.consecutiveFailures, 5);
+			const untilExpiry = entry.expiresAt ? entry.expiresAt - this.now() : delay;
+			this.scheduleEntry(entry, Math.min(delay, untilExpiry));
+		}
+		this.changed();
+	}
+
 	private emitWatchEvent(entry: Entry, action: string, details: Record<string, unknown>) {
 		this.emit({
 			id: `watch:${entry.name}:${details.status}`,
@@ -522,10 +623,10 @@ export class SentinelManager {
 		entry.state = "timeout";
 		entry.nextPollAt = undefined;
 		this.emit({
-			id: `watch:${entry.name}:timeout`,
+			id: `${entry.kind}:${entry.name}:timeout`,
 			source: entry.name,
 			urgency: entry.urgency ?? "wake",
-			message: `Sentinel watch "${entry.name}" timed out.\n${entry.lastOutput ?? "No output captured."}`,
+			message: `Sentinel ${entry.kind} "${entry.name}" timed out.\n${entry.lastOutput ?? "No output captured."}`,
 			details: { name: entry.name, status: "timeout" },
 		});
 		this.changed();
