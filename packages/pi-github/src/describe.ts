@@ -106,12 +106,14 @@ export const GITHUB_DESCRIPTION: GitHubDescription = {
 		{
 			id: "review",
 			description:
-				"Submit a review: comment, approve, or request changes. The user is asked to confirm. " +
+				"Submit a review. Default event is comment. approve is Luke-only and requires lukeApproved: true " +
+				"(and yes: true); GitHub would otherwise record the approval as the authenticated user (LukasParke). " +
 				"Requesting changes requires a body, because a blocked review with no explanation cannot be acted on.",
 			params: {
 				number: "the pull request number",
-				event: "one of comment | approve | request_changes",
+				event: "defaults to comment; approve is Luke-only",
 				body: "the review text; optional only for approve",
+				lukeApproved: "required with yes for approve; Luke's explicit opt-in",
 				repo: 'optional "owner/name"',
 			},
 		},

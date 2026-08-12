@@ -3,6 +3,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { HttpError } from "../src/api.ts";
+import { approveRefusal } from "../src/approve.ts";
 import { GITHUB_AUTH_REF, NO_TOKEN_MESSAGE, resolveToken } from "../src/auth.ts";
 import { withBlockedSignal } from "./blocked.ts";
 import { GitHubClient } from "../src/client.ts";
@@ -407,35 +408,55 @@ export default function github(pi: ExtensionAPI): void {
 		name: "github_review",
 		label: "GitHub review",
 		description:
-			"Submit a review on a pull request: comment, approve, or request changes. The user is asked to confirm first. " +
-			"Requesting changes needs a body. Merging is deliberately not available.",
+			"Submit a review on a pull request. Default event is comment. approve is Luke-only and requires " +
+			"lukeApproved: true (with yes: true). Requesting changes needs a body. Merging is deliberately not available.",
 		parameters: Type.Object({
 			number: Type.Number(),
-			event: StringEnum(["comment", "approve", "request_changes"] as const),
+			event: Type.Optional(
+				StringEnum(["comment", "approve", "request_changes"] as const, {
+					description: "Defaults to comment. approve is Luke-only and requires lukeApproved: true.",
+				}),
+			),
 			body: Type.Optional(Type.String({ description: "Review text. Required unless approving." })),
 			repo: repoParam(),
-			yes: Type.Optional(Type.Boolean()),
+			lukeApproved: Type.Optional(
+				Type.Boolean({
+					description:
+						'Luke-only opt-in for event: "approve". Required with yes: true. ' +
+						"GitHub records approvals as the authenticated user (LukasParke).",
+				}),
+			),
+			yes: Type.Optional(
+				Type.Boolean({
+					description: "Skip the confirmation. Required with lukeApproved for approve.",
+				}),
+			),
 		}),
 		async execute(_id, params, signal, _onUpdate, ctx) {
 			const p = params as {
 				number: number;
-				event: "comment" | "approve" | "request_changes";
+				event?: "comment" | "approve" | "request_changes";
 				body?: string;
 				repo?: string;
+				lukeApproved?: boolean;
 				yes?: boolean;
 			};
+			const kind = p.event ?? "comment";
+			const blocked = approveRefusal({
+				event: kind,
+				lukeApproved: p.lukeApproved,
+				yes: p.yes,
+			});
+			if (blocked !== undefined) return refuse(blocked);
+
 			const c = await context(p.repo, ctx);
 			if ("error" in c) return refuse(c.error);
 
 			const body = p.body ?? "";
 			const event =
-				p.event === "approve" ? "APPROVE" : p.event === "request_changes" ? "REQUEST_CHANGES" : "COMMENT";
+				kind === "approve" ? "APPROVE" : kind === "request_changes" ? "REQUEST_CHANGES" : "COMMENT";
 			const word =
-				p.event === "approve"
-					? "Approve"
-					: p.event === "request_changes"
-						? "Request changes on"
-						: "Comment on";
+				kind === "approve" ? "Approve" : kind === "request_changes" ? "Request changes on" : "Comment on";
 			const decision = await confirmWrite(
 				pi,
 				ctx,

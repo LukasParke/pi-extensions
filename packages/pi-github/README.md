@@ -12,16 +12,16 @@ Nothing else. If you have the GitHub CLI authenticated, there is no credential s
 
 ## What it does
 
-| Tool                                   | What it is for                                                                |
-| -------------------------------------- | ----------------------------------------------------------------------------- |
-| `github_prs`                           | What is open, what is failing, what needs review                              |
-| `github_pr`                            | One PR in full — body, diff, checks, reviews. Enough to review it in one call |
-| `github_issues`                        | Issues, filterable by label and assignee                                      |
-| `github_checks`                        | Why CI is red, for any branch, tag or SHA                                     |
-| `github_comment`                       | Comment on a PR or issue — **asks you first**                                 |
-| `github_review`                        | Approve, request changes, or comment — **asks you first**                     |
-| `github_status`                        | Whether it works, which credential, and what it will not do                   |
-| `github_connect` / `github_disconnect` | Store or remove a token, if you need one                                      |
+| Tool                                   | What it is for                                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `github_prs`                           | What is open, what is failing, what needs review                                                        |
+| `github_pr`                            | One PR in full — body, diff, checks, reviews. Enough to review it in one call                           |
+| `github_issues`                        | Issues, filterable by label and assignee                                                                |
+| `github_checks`                        | Why CI is red, for any branch, tag or SHA                                                               |
+| `github_comment`                       | Comment on a PR or issue — **asks you first**                                                           |
+| `github_review`                        | Comment (default), request changes, or approve (Luke-only: `lukeApproved` + `yes`) — **asks you first** |
+| `github_status`                        | Whether it works, which credential, and what it will not do                                             |
+| `github_connect` / `github_disconnect` | Store or remove a token, if you need one                                                                |
 
 **No repository argument needed** inside a checkout — it reads your `origin` remote.
 
@@ -75,6 +75,9 @@ see that the agent is waiting for a human. The signal is released when the dialo
 
 That last row matters: in print mode `ctx.ui.confirm` returns `false` without prompting, so a naive implementation would
 report "you declined" when nobody was ever asked. This one tells you which happened.
+
+`github_review` defaults to `comment`. `event: "approve"` is Luke-only: it needs `lukeApproved: true` and `yes: true`.
+An `Agent:` prefix on the body is not an agent vote — GitHub records the approval as the authenticated user (LukasParke).
 
 `github_connect` has **no** `yes` escape hatch, deliberately. A flag that skips confirmation on a credential-storing tool
 is one injected instruction away from an attacker's token being used for all your writes.
