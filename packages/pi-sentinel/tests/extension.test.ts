@@ -133,6 +133,11 @@ describe("sentinel extension delivery", () => {
 		expect(h.sentMessages).toHaveLength(0);
 	});
 
+	it("registers the native PR attachment tool", async () => {
+		const h = harness();
+		await expect(h.execute("sentinel_pr", { number: 1, repo: "invalid repo" })).rejects.toThrow();
+	});
+
 	it("queues next-turn events without triggering a turn", async () => {
 		vi.useFakeTimers();
 		const manager = new SentinelManager(async () => ({ exitCode: 0, stdout: "done", stderr: "" }));

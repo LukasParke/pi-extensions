@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { NO_REPO_MESSAGE, parseRepo, resolveRepo, resolveToken } from "@parke.dev/pi-github";
 import { SentinelManager } from "../src/manager.ts";
 import type {
 	EventUrgency,
@@ -9,6 +10,7 @@ import type {
 	WatchMode,
 } from "../src/manager.ts";
 import { validatePredicate } from "../src/index.ts";
+import { createGitHubPrProbe, formatPrSnapshot, prNeedsAction } from "../src/pr.ts";
 import type { Predicate } from "../src/index.ts";
 
 const UI_KEY = "sentinel";
@@ -66,7 +68,9 @@ function isActive(item: SentinelSnapshot) {
 export function sentinelStatus(items: SentinelSnapshot[], gate?: GateSnapshot) {
 	const watches = items.filter((item) => item.kind === "watch" && isActive(item)).length;
 	const sleeps = items.filter((item) => item.kind === "sleep" && isActive(item)).length;
+	const prs = items.filter((item) => item.kind === "pr" && isActive(item)).length;
 	const parts = [
+		prs ? `${prs} PR${prs === 1 ? "" : "s"}` : undefined,
 		watches ? `${watches} watch${watches === 1 ? "" : "es"}` : undefined,
 		sleeps ? `${sleeps} sleep${sleeps === 1 ? "" : "s"}` : undefined,
 		gate?.active
@@ -244,6 +248,62 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	});
 
 	pi.registerTool({
+		name: "sentinel_pr",
+		label: "Attach PR Sentinel",
+		description:
+			"Attach a GitHub pull request to this session. Authenticated polling wakes the agent for merge conflicts, broken CI, review feedback, and closure or merge. Supports private and internal repositories through GitHub credentials.",
+		parameters: Type.Object(
+			{
+				number: Type.Integer({ minimum: 1, description: "Pull request number." }),
+				repo: Type.Optional(
+					Type.String({
+						description: 'Repository as "owner/name". Defaults to the current checkout origin.',
+					}),
+				),
+				name: Type.Optional(Type.String({ description: "Unique sentinel name. Defaults to pr-N." })),
+				interval_s: Type.Optional(
+					Type.Number({ minimum: 10, description: "Poll interval. Defaults to 60 seconds." }),
+				),
+				timeout_s: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+				note: Type.Optional(Type.String()),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_id, params, _signal, _onUpdate, ctx) {
+			const repo = params.repo ? parseRepo(params.repo) : await resolveRepo(undefined, { cwd: ctx.cwd });
+			if (!repo) throw new Error(NO_REPO_MESSAGE);
+			const credential = await resolveToken();
+			if (!credential) {
+				throw new Error(
+					"No GitHub credential found. Run `gh auth login`, set GITHUB_TOKEN, or connect with the pi-github integration.",
+				);
+			}
+			const name = params.name ?? `pr-${params.number}`;
+			const probe = createGitHubPrProbe({ token: credential.token, repo, number: params.number });
+			const initialSnapshot = await probe();
+			const attached = manager.attachPr({
+				name,
+				repo: repo.slug,
+				number: params.number,
+				probe,
+				initialSnapshot,
+				intervalMs: params.interval_s === undefined ? undefined : params.interval_s * 1000,
+				timeoutMs: params.timeout_s === undefined ? undefined : params.timeout_s * 1000,
+				note: params.note,
+			});
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Attached ${repo.slug}#${params.number} as "${name}" using ${credential.detail}. Current state: ${formatPrSnapshot(initialSnapshot)}.${prNeedsAction(initialSnapshot) ? " Action is already required." : " Actionable updates wake the agent."}`,
+					},
+				],
+				details: attached,
+			};
+		},
+	});
+
+	pi.registerTool({
 		name: "sentinel_sleep",
 		label: "Sleep Sentinel",
 		description:
@@ -326,7 +386,8 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	pi.registerTool({
 		name: "sentinel_status",
 		label: "Sentinel Status",
-		description: "List watches, sleeps, and the session gate with state, output snippets, and poll ETAs.",
+		description:
+			"List attached PRs, watches, sleeps, and the session gate with state, output snippets, and poll ETAs.",
 		parameters: Type.Object({}, { additionalProperties: false }),
 		async execute() {
 			const snapshot = manager.snapshot();
@@ -341,7 +402,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 		name: "sentinel_cancel",
 		label: "Cancel Sentinel",
 		description:
-			'Cancel a named watch/sleep, cancel the session gate with name "gate", or cancel everything. Undelivered queued events from cancelled sentinels are dropped.',
+			'Cancel a named PR/watch/sleep, cancel the session gate with name "gate", or cancel everything. Undelivered queued events from cancelled sentinels are dropped.',
 		parameters: Type.Object(
 			{
 				name: Type.Optional(Type.String()),

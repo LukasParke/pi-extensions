@@ -57,25 +57,23 @@ and are limited to four concurrent watches.
 
 ## PR babysitting
 
-Use one blocking stream for checks:
+Attach the PR directly:
 
 ```json
-{
-  "name": "pr-checks",
-  "command": "gh pr checks 123 --watch",
-  "mode": "stream",
-  "timeout_s": 1800
-}
+{ "number": 123, "repo": "OWNER/REPO" }
 ```
 
-GitHub has no blocking unresolved-thread command, so poll that state through GraphQL:
+Omit `repo` inside its checkout. `sentinel_pr` uses authenticated GitHub GraphQL polling, so it
+works for private/internal repositories visible to `GITHUB_TOKEN`, `GH_TOKEN`, the pi-github stored
+credential, or `gh auth token`.
 
-```bash
-gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}' -F owner=OWNER -F repo=REPO -F number=123 --jq -e '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length == 0'
-```
+Attachment validates access and establishes a baseline. Later merge conflicts, broken CI, review
+comments, changes requested, and newly unresolved review threads wake the agent. Merge or closure completes the
+attachment. On each wakeup, inspect the reported PR, address the issue, push, then go idle again.
+Sentinel emits on transitions, not while the same condition remains red, and ignores the attached
+GitHub user's own new comments/reviews to avoid feedback loops.
 
-Register it as a poll watch, or use it as a gate criterion when review clearance is part of the
-definition of done. Criterion flips default to `next-turn`, while gate `ALL PASS` wakes immediately.
+Use a separate gate only when session completion requires sustained green checks or resolved reviews.
 Set `quiet_for_s: 600` when both CI and reviews must remain settled for ten minutes.
 
 ## Predicates
