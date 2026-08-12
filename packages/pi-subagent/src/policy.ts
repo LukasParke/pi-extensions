@@ -142,9 +142,8 @@ function normalizeTask(
     if (!lookup.agent) return { error: `Task ${index + 1}: ${lookup.error}` };
     agent = lookup.agent;
   }
-  if (!item.profile && !agent?.profile) {
-    return { error: profileRequirementError(index + 1) };
-  }
+  const profile = item.profile ?? agent?.profile;
+  if (!profile) return { error: profileRequirementError(index + 1) };
   if (item.output_mode && !item.output) return { error: `Task ${index + 1}: output_mode requires output` };
   if (item.fork_resume && !item.resume) return { error: `Task ${index + 1}: fork_resume requires resume` };
   if (item.timeout_ms !== undefined && (!Number.isInteger(item.timeout_ms) || item.timeout_ms < 1)) {
@@ -178,7 +177,6 @@ function normalizeTask(
     }
   }
 
-  const profile = item.profile ?? agent!.profile!;
   const requestedTools = item.tools ?? agent?.tools;
   const resolved = resolveTools(profile, requestedTools, parent.availableTools, parent.activeTools ?? parent.availableTools);
   if (resolved.error || !resolved.tools || resolved.canWrite === undefined) return { error: resolved.error ?? "Tool resolution failed" };
