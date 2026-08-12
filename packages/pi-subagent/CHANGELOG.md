@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Required task profiles
+
+- **Breaking:** spawned tasks must set `profile` to `explore`, `review`, or
+  `general`, unless a named agent persona declares one. Validation now explains
+  the three choices instead of silently selecting a mode default.
+
 ### Machine-wide worktree GC
 
 - Startup maintenance now sweeps every repo container under `worktreeDir` via

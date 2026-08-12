@@ -28,7 +28,7 @@ import { parseDepth, parseSpawnPolicy, SPAWNS_ENV_VAR, validateSubagentRequest, 
 import type { ChildRunner } from "./runner.js";
 import { ProcessLockManager } from "./process-lock.js";
 import { SessionScopedRunRegistry, snapshotFromLiveRun } from "./registry.js";
-import { SubagentParamsSchema, SubagentWaitParamsSchema, type SubagentParams, type SubagentWaitParams } from "./schema.js";
+import { profileSelectionError, SubagentParamsSchema, SubagentWaitParamsSchema, type SubagentParams, type SubagentWaitParams } from "./schema.js";
 import { BTW_ENTRY_TYPE, btwLabel, type BtwEntry } from "./btw.js";
 import { Semaphore } from "./semaphore.js";
 import type { RunSnapshot, TaskResult, TaskSpec, UsageStats } from "./types.js";
@@ -490,7 +490,7 @@ function guidelines(catalog?: Map<string, AgentDefinition>): string[] {
     "Delegate independent, read-heavy exploration or clean-context review; keep tightly coupled work in the parent.",
     "Prefer agent:'<name>' when a named agent matches the task — its persona prompt is usually better than an improvised one. Compose fields manually only when no agent fits.",
     "Give every task a short description label (3-5 words) so runs are scannable in UIs and result indexes.",
-    "Profiles: explore/review are strictly read-only (safe for fanout); general inherits the parent's active tools and may write. Single tasks default to general, parallel tasks to explore.",
+    "Every spawned task must choose a profile unless its named agent persona supplies one: explore for fast read-only recon/research, review for careful read-only code review, general for implementation that writes files/runs commands. Pick for the task's strengths; do not habitually mirror the parent.",
     "Parallel writers need isolation:'worktree' (each gets an isolated checkout; changed work lands on a branch). After a worktree run finishes, use action:'diff' to inspect, then 'apply' to bring changes into the main checkout or 'discard' to drop them.",
     "Set budgets: at max_turns/max_cost the child is steered to wrap up and given grace turns for a final answer (grace_turns tunes this); results end as 'partial' with wrappedUp:true when the child concluded. timeout_ms includes queue time; timeout results report the phase.",
     "Transient failures (provider errors, stalls, queue timeouts) retry automatically; pass fallback_models:['…'] to escalate models across attempts. Task-quality failures never retry.",
@@ -875,7 +875,8 @@ export default function registerSubagent(pi: ExtensionAPI): void {
         fail("Subagent runtime is not initialized for this session.");
       }
       if (!Value.Check(SubagentParamsSchema, params)) {
-        const errors = [...Value.Errors(SubagentParamsSchema, params)].slice(0, 5).map((error: any) => error.message).join("; ");
+        const profileError = profileSelectionError(params);
+        const errors = profileError ?? [...Value.Errors(SubagentParamsSchema, params)].slice(0, 5).map((error: any) => error.message).join("; ");
         fail(`Invalid parameters: ${errors}`);
       }
 

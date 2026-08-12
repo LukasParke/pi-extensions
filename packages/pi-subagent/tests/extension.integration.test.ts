@@ -130,6 +130,14 @@ describe("extension end-to-end wiring", () => {
     await fs.rm(bin, { recursive: true, force: true });
   });
 
+  it("rejects missing profiles with actionable guidance", async () => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    await expect(execute(h, { task: "hello" } as never)).rejects.toThrow(/field "profile".*explore.*review.*general/);
+    await expect(execute(h, { tasks: [{ task: "a", profile: "explore" }, { task: "b" }] } as never)).rejects.toThrow(/Task 2.*field "profile".*explore.*review.*general/);
+    await h.handlers.get("session_shutdown")!();
+  });
+
   it("runs foreground, persists usage, and reports root/subagent/combined cost", async () => {
     const h = harness();
     await h.handlers.get("session_start")!({}, h.ctx);
@@ -335,8 +343,8 @@ describe("extension end-to-end wiring", () => {
     await h.handlers.get("session_start")!({}, h.ctx);
     const result = await execute(h, {
       tasks: [
-        { task: "scan a", description: "Scan A" },
-        { task: "scan b", description: "Scan B" },
+        { task: "scan a", profile: "explore", description: "Scan A" },
+        { task: "scan b", profile: "explore", description: "Scan B" },
       ],
       synthesis: "Merge both scans into one brief",
     });
@@ -542,7 +550,7 @@ describe("extension end-to-end wiring", () => {
 
       // Runtime parent policy: only reviewer allowed (agentless and scout rejected).
       process.env.PI_SUBAGENT_SPAWNS = "reviewer";
-      await expect(execute(h, { task: "agentless" })).rejects.toThrow(/allowlist|agentless/i);
+      await expect(execute(h, { task: "agentless", profile: "explore" })).rejects.toThrow(/allowlist|agentless/i);
       await expect(execute(h, { task: "x", agent: "scout" })).rejects.toThrow(/allowlist/i);
       const allowed = await execute(h, { task: "review", agent: "reviewer" });
       expect(allowed.isError).not.toBe(true);

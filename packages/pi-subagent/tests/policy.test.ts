@@ -23,7 +23,7 @@ describe("policy", () => {
 
   it("rejects depth overflow", () => {
     const res = validateSubagentRequest(
-      { task: "x" },
+      { task: "x", profile: "general" },
       { ...parent, depth: 2 },
       { maxDepth: 2 },
     );
@@ -31,8 +31,15 @@ describe("policy", () => {
     if (!res.ok) expect(res.error).toMatch(/depth/i);
   });
 
-  it("normalizes single task with parent model/thinking inheritance", () => {
-    const res = validateSubagentRequest({ task: "Find usages of Foo" }, parent);
+  it("requires a deliberate single-task profile and preserves parent model/thinking inheritance", () => {
+    const missing = validateSubagentRequest({ task: "Find usages of Foo" } as never, parent);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.error).toContain('field "profile"');
+      expect(missing.error).toMatch(/explore.*review.*general/);
+    }
+
+    const res = validateSubagentRequest({ task: "Find usages of Foo", profile: "general" }, parent);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.mode).toBe("single");
@@ -57,10 +64,18 @@ describe("policy", () => {
     expect(safe.tasks[0]!.canWrite).toBe(false);
   });
 
-  it("defaults parallel tasks to explore", () => {
+  it("requires deliberate profiles for parallel tasks", () => {
+    const missing = validateSubagentRequest({ tasks: [{ task: "A", profile: "explore" }, { task: "B" }] } as never, parent);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.error).toContain("Task 2");
+      expect(missing.error).toContain('field "profile"');
+      expect(missing.error).toMatch(/explore.*review.*general/);
+    }
+
     const res = validateSubagentRequest(
       {
-        tasks: [{ task: "A" }, { task: "B" }],
+        tasks: [{ task: "A", profile: "explore" }, { task: "B", profile: "explore" }],
       },
       parent,
     );
@@ -119,8 +134,8 @@ describe("policy", () => {
     const res = validateSubagentRequest(
       {
         tasks: [
-          { task: "A", output: "out.md" },
-          { task: "B", output: "out.md" },
+          { task: "A", profile: "explore", output: "out.md" },
+          { task: "B", profile: "explore", output: "out.md" },
         ],
       },
       parent,
@@ -131,14 +146,14 @@ describe("policy", () => {
 
   it("requires output when output_mode set", () => {
     const res = validateSubagentRequest(
-      { task: "A", output_mode: "file-only" },
+      { task: "A", profile: "general", output_mode: "file-only" },
       parent,
     );
     expect(res.ok).toBe(false);
   });
 
   it("requires resume for fork_resume", () => {
-    const res = validateSubagentRequest({ task: "A", fork_resume: true }, parent);
+    const res = validateSubagentRequest({ task: "A", profile: "general", fork_resume: true }, parent);
     expect(res.ok).toBe(false);
   });
 
@@ -178,7 +193,7 @@ describe("policy", () => {
     if (!alone.ok) expect(alone.error).toMatch(/plan.*task/i);
 
     const both = validateSubagentRequest(
-      { action: "plan", task: "a", tasks: [{ task: "b" }] },
+      { action: "plan", task: "a", profile: "explore", tasks: [{ task: "b", profile: "explore" }] },
       parent,
     );
     const single = validateSubagentRequest({ action: "plan", task: "scan foo", profile: "explore" }, parent);
@@ -223,7 +238,7 @@ describe("policy", () => {
 
   it("rejects include_wip without worktree isolation", () => {
     const res = validateSubagentRequest(
-      { task: "Use dirty baseline", include_wip: true },
+      { task: "Use dirty baseline", profile: "general", include_wip: true },
       parent,
     );
     expect(res.ok).toBe(false);
@@ -232,7 +247,7 @@ describe("policy", () => {
 
   it("accepts include_wip with worktree isolation and maps includeWip", () => {
     const res = validateSubagentRequest(
-      { task: "Use dirty baseline", isolation: "worktree", include_wip: true },
+      { task: "Use dirty baseline", profile: "general", isolation: "worktree", include_wip: true },
       parent,
     );
     expect(res.ok).toBe(true);
@@ -242,12 +257,12 @@ describe("policy", () => {
   });
 
   it("uses description as the task label, truncated", () => {
-    const res = validateSubagentRequest({ task: "Do things", description: "Audit auth flow" }, parent);
+    const res = validateSubagentRequest({ task: "Do things", profile: "general", description: "Audit auth flow" }, parent);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.tasks[0]!.label).toBe("Audit auth flow");
 
-    const long = validateSubagentRequest({ task: "x", description: "y".repeat(200) }, parent);
+    const long = validateSubagentRequest({ task: "x", profile: "general", description: "y".repeat(200) }, parent);
     expect(long.ok).toBe(true);
     if (!long.ok) return;
     expect(long.tasks[0]!.label.length).toBeLessThanOrEqual(60);
@@ -258,8 +273,8 @@ describe("policy", () => {
       explore: { model: "openrouter/kimi-k2.6", thinking: "medium" as const, maxTurns: 12, maxCost: 0.2, timeoutMs: 60_000 },
       general: { model: "openrouter/grok-4.5" },
     };
-    // Parallel tasks default to explore → explore defaults kick in.
-    const par = validateSubagentRequest({ tasks: [{ task: "scan" }] }, parent, { taskDefaults });
+    // Explicit explore profile selects explore defaults.
+    const par = validateSubagentRequest({ tasks: [{ task: "scan", profile: "explore" }] }, parent, { taskDefaults });
     expect(par.ok).toBe(true);
     if (!par.ok) return;
     expect(par.tasks[0]!.model).toBe("openrouter/kimi-k2.6");
@@ -270,7 +285,7 @@ describe("policy", () => {
 
     // Explicit request values beat profile defaults.
     const explicit = validateSubagentRequest(
-      { tasks: [{ task: "scan", model: "custom/model", thinking: "high", max_turns: 3 }] },
+      { tasks: [{ task: "scan", profile: "explore", model: "custom/model", thinking: "high", max_turns: 3 }] },
       parent,
       { taskDefaults },
     );
@@ -280,8 +295,8 @@ describe("policy", () => {
     expect(explicit.tasks[0]!.thinking).toBe("high");
     expect(explicit.tasks[0]!.maxTurns).toBe(3);
 
-    // Single-task mode defaults to general → general defaults kick in.
-    const single = validateSubagentRequest({ task: "implement" }, parent, { taskDefaults });
+    // Explicit general profile selects general defaults.
+    const single = validateSubagentRequest({ task: "implement", profile: "general" }, parent, { taskDefaults });
     expect(single.ok).toBe(true);
     if (!single.ok) return;
     expect(single.tasks[0]!.model).toBe("openrouter/grok-4.5");
@@ -292,29 +307,29 @@ describe("policy", () => {
 
   it("context:'fork' requires a persisted parent session and is single-task only", () => {
     // No session file → rejected with guidance.
-    const noFile = validateSubagentRequest({ task: "x", context: "fork" }, parent);
+    const noFile = validateSubagentRequest({ task: "x", profile: "explore", context: "fork" }, parent);
     expect(noFile.ok).toBe(false);
     if (!noFile.ok) expect(noFile.error).toMatch(/persisted parent session/i);
 
     const withFile = { ...parent, sessionFile: "/tmp/parent-session.jsonl" };
-    const ok = validateSubagentRequest({ task: "x", context: "fork" }, withFile);
+    const ok = validateSubagentRequest({ task: "x", profile: "explore", context: "fork" }, withFile);
     expect(ok.ok).toBe(true);
     if (!ok.ok) return;
     expect(ok.tasks[0]!.contextFork).toBe(true);
     expect(ok.tasks[0]!.parentSessionFile).toBe("/tmp/parent-session.jsonl");
 
     // fresh (default) never forks.
-    const fresh = validateSubagentRequest({ task: "x" }, withFile);
+    const fresh = validateSubagentRequest({ task: "x", profile: "explore" }, withFile);
     expect(fresh.ok).toBe(true);
     if (fresh.ok) expect(fresh.tasks[0]!.contextFork).toBe(false);
 
     // fork + resume conflict.
-    const conflict = validateSubagentRequest({ task: "x", context: "fork", resume: "child-1" }, withFile);
+    const conflict = validateSubagentRequest({ task: "x", profile: "explore", context: "fork", resume: "child-1" }, withFile);
     expect(conflict.ok).toBe(false);
 
     // Parallel fanout with fork rejected.
     const par = validateSubagentRequest(
-      { tasks: [{ task: "a", context: "fork" }, { task: "b" }] },
+      { tasks: [{ task: "a", profile: "explore", context: "fork" }, { task: "b", profile: "explore" }] },
       withFile,
     );
     expect(par.ok).toBe(false);
@@ -324,7 +339,7 @@ describe("policy", () => {
   it("passes grace_turns, fallback_models, and max_retries through with profile defaults", () => {
     const taskDefaults = { general: { fallbackModels: ["fallback/model"], maxRetries: 2 } };
     const explicit = validateSubagentRequest(
-      { task: "x", grace_turns: 5, fallback_models: ["a/b"], max_retries: 0 },
+      { task: "x", profile: "general", grace_turns: 5, fallback_models: ["a/b"], max_retries: 0 },
       parent,
       { taskDefaults },
     );
@@ -334,40 +349,40 @@ describe("policy", () => {
     expect(explicit.tasks[0]!.fallbackModels).toEqual(["a/b"]);
     expect(explicit.tasks[0]!.maxRetries).toBe(0);
 
-    const defaulted = validateSubagentRequest({ task: "x" }, parent, { taskDefaults });
+    const defaulted = validateSubagentRequest({ task: "x", profile: "general" }, parent, { taskDefaults });
     expect(defaulted.ok).toBe(true);
     if (!defaulted.ok) return;
     expect(defaulted.tasks[0]!.fallbackModels).toEqual(["fallback/model"]);
     expect(defaulted.tasks[0]!.maxRetries).toBe(2);
 
-    const invalid = validateSubagentRequest({ task: "x", grace_turns: -1 }, parent);
+    const invalid = validateSubagentRequest({ task: "x", profile: "general", grace_turns: -1 }, parent);
     expect(invalid.ok).toBe(false);
   });
 
   it("validates and passes output_schema through; repairs double-encoded task text", () => {
     const good = validateSubagentRequest(
-      { task: "x", output_schema: { type: "object", required: ["a"] } },
+      { task: "x", profile: "explore", output_schema: { type: "object", required: ["a"] } },
       parent,
     );
     expect(good.ok).toBe(true);
     if (good.ok) expect(good.tasks[0]!.outputSchema).toEqual({ type: "object", required: ["a"] });
 
-    const bad = validateSubagentRequest({ task: "x", output_schema: { type: 42 } as any }, parent);
+    const bad = validateSubagentRequest({ task: "x", profile: "explore", output_schema: { type: 42 } as any }, parent);
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(bad.error).toMatch(/output_schema/);
 
     // Double-encoded task text is de-mangled once.
-    const mangled = validateSubagentRequest({ task: "step 1\\nstep 2" }, parent);
+    const mangled = validateSubagentRequest({ task: "step 1\\nstep 2", profile: "explore" }, parent);
     expect(mangled.ok).toBe(true);
     if (mangled.ok) expect(mangled.tasks[0]!.task).toBe("step 1\nstep 2");
   });
 
   it("synthesis is parallel-only and passes through trimmed", () => {
-    const single = validateSubagentRequest({ task: "x", synthesis: "fold it" }, parent);
+    const single = validateSubagentRequest({ task: "x", profile: "explore", synthesis: "fold it" }, parent);
     expect(single.ok).toBe(false);
 
     const par = validateSubagentRequest(
-      { tasks: [{ task: "a" }, { task: "b" }], synthesis: "  merge findings  " },
+      { tasks: [{ task: "a", profile: "explore" }, { task: "b", profile: "explore" }], synthesis: "  merge findings  " },
       parent,
     );
     expect(par.ok).toBe(true);
@@ -466,19 +481,19 @@ describe("backend capability gate", () => {
   };
 
   it("defaults to the pi backend", () => {
-    const result = validateSubagentRequest({ task: "x" }, parent);
+    const result = validateSubagentRequest({ task: "x", profile: "general" }, parent);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.tasks[0]!.backend).toBe("pi");
   });
 
   it("accepts an explicit codex backend", () => {
-    const result = validateSubagentRequest({ task: "x", backend: "codex" }, parent);
+    const result = validateSubagentRequest({ task: "x", profile: "general", backend: "codex" }, parent);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.tasks[0]!.backend).toBe("codex");
   });
 
   it("refuses max_cost on codex, which reports no cost", () => {
-    const result = validateSubagentRequest({ task: "x", backend: "codex", max_cost: 1 }, parent);
+    const result = validateSubagentRequest({ task: "x", profile: "general", backend: "codex", max_cost: 1 }, parent);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toMatch(/does not report per-turn cost/);
@@ -487,24 +502,24 @@ describe("backend capability gate", () => {
   });
 
   it("allows max_cost on claude, which does report cost", () => {
-    const result = validateSubagentRequest({ task: "x", backend: "claude", max_cost: 1 }, parent);
+    const result = validateSubagentRequest({ task: "x", profile: "general", backend: "claude", max_cost: 1 }, parent);
     expect(result.ok).toBe(true);
   });
 
   it("refuses context:fork on codex, which cannot fork sessions", () => {
-    const result = validateSubagentRequest({ task: "x", backend: "codex", context: "fork" }, parent);
+    const result = validateSubagentRequest({ task: "x", profile: "general", backend: "codex", context: "fork" }, parent);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/cannot fork sessions/);
   });
 
   it("rejects an unknown backend by name", () => {
-    const result = validateSubagentRequest({ task: "x", backend: "gpt5" as never }, parent);
+    const result = validateSubagentRequest({ task: "x", profile: "general", backend: "gpt5" as never }, parent);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/unknown backend/);
   });
 
   it("records the backend in resolution notes", () => {
-    const result = validateSubagentRequest({ task: "x", backend: "codex" }, parent);
+    const result = validateSubagentRequest({ task: "x", profile: "general", backend: "codex" }, parent);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.tasks[0]!.resolutionNotes).toContain("backend=codex");
   });

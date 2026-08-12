@@ -241,8 +241,8 @@ describe("agent resolution in policy", () => {
     expect(prompt.indexOf("security auditor")).toBeLessThan(prompt.indexOf("auth module only"));
   });
 
-  it("agent profile beats mode default but explicit profile beats agent", () => {
-    // Parallel default is explore; agent says review.
+  it("agent profile satisfies the requirement but explicit profile beats agent", () => {
+    // The named agent supplies review.
     const par = validateSubagentRequest({ tasks: [{ task: "a", agent: "reviewer" }] }, parent, { agents: catalog });
     expect(par.ok).toBe(true);
     if (par.ok) expect(par.tasks[0]!.profile).toBe("review");
