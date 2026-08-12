@@ -161,7 +161,7 @@ export function processStartTime(pid: number): number {
 let currentIdentity: ProcessIdentity | undefined;
 
 export function currentProcessIdentity(): ProcessIdentity {
-  if (!currentIdentity) {
+  if (!currentIdentity?.startTime) {
     let pgid: number | undefined;
     try {
       // Node exposes getpgrp on POSIX but the type package has not always
@@ -190,7 +190,9 @@ export function isProcessAlive(identity: ProcessIdentity): boolean {
   if (identity.hostname && identity.hostname !== HOSTNAME) return false;
   if (identity.pid === process.pid) {
     const current = currentProcessIdentity();
-    return !identity.startTime || !current.startTime || identity.startTime === current.startTime;
+    if (identity.startTime > 0 && current.startTime > 0) {
+      return identity.startTime === current.startTime;
+    }
   }
   try {
     process.kill(identity.pid, 0);
