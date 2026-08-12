@@ -10,5 +10,10 @@
     "verbatimModuleSyntax": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["packages/*/extensions/**/*.ts", "packages/*/src/**/*.ts", "packages/*/tests/**/*.ts"]
+  "include": [
+    "packages/*/extensions/**/*.ts",
+    "packages/*/src/**/*.ts",
+    "packages/*/scripts/**/*.ts",
+    "packages/*/tests/**/*.ts"
+  ]
 }
