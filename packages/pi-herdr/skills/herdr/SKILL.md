@@ -5,8 +5,11 @@ description: Dispatch long-running tasks to pi agents in herdr-managed worktrees
 
 # Herdr task dispatch
 
+Use this skill when the system prompt identifies the current Pi session as
+Herdr-managed. In a standalone session, use `subagent` or background terminals.
+
 `herdr_task` hands a task to a fresh pi agent in its own git worktree, pane, and
-branch, managed by the herdr CLI. The dispatching session keeps working; the
+branch, managed by the Herdr CLI. The dispatching session keeps working; the
 child has **no context from this session**, so write the task prompt fully
 self-contained.
 
@@ -107,9 +110,9 @@ Lifecycle: **dispatch → monitor/wake → verify the gate → cleanup**.
 
 ## Prerequisite
 
-The `herdr` CLI must be installed and on PATH; every operation shells out to
-it. Repo roots, worktree roots, and the invocation log path are configurable
-via `~/.pi/herdr.json`. Every Herdr invocation is logged as JSONL at
+The session must be Herdr-managed and the `herdr` CLI must be installed on
+`PATH`; every operation shells out to it. Repo roots, worktree roots, and the
+invocation log path are configurable via `~/.pi/herdr.json`. Every Herdr invocation is logged as JSONL at
 `~/.pi/herdr-task.log` by default: `ts`, `args`, `outcome`, optional `error`,
 and elapsed `ms`. This preserves parameters and error details absent from
 Herdr's server log.
