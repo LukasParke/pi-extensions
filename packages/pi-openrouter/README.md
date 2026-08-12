@@ -47,7 +47,8 @@ above family rules:
 
 The policy comes from 54 live trials across two matrices. See
 [the first matrix](docs/BENCHMARK.md) and
-[the Opus 5 / GPT-5.6 Sol / Kimi K3 matrix](docs/BENCHMARK-2.md).
+[the Opus 5 / GPT-5.6 Sol / Kimi K3 matrix](docs/BENCHMARK-2.md); the
+870-trial volume run is [docs/BENCHMARK-3.md](docs/BENCHMARK-3.md).
 
 ### Override one model
 
@@ -119,12 +120,14 @@ blocks natively (3/3); completions did not replay (sonnet streams
 `reasoning.text`, not `reasoning.encrypted`), which cost nothing on this
 task but matters when thinking is heavier.
 
-**Open model behavior varies by model.** In the first matrix,
+**Open model behavior varies by model — measure before pinning.**
 `moonshotai/kimi-k2-thinking` was 2.1–2.6× cheaper on messages/responses than
-completions because those surfaces replayed reasoning. In the second matrix,
-`moonshotai/kimi-k3` was cheapest on completions because implicit caching
-engaged there. The automatic fallback remains completions; pin exceptions when
-a model has repeatable evidence for another surface.
+completions (reasoning replay). For `moonshotai/kimi-k3`, an n=3 run favored
+completions, but the 110-trial volume run
+([BENCHMARK-3.md](docs/BENCHMARK-3.md)) overturned that: responses won on
+cost ($0.01118 vs $0.01235), replay (81% vs 0%), and p50 wall — so kimi-k3 is
+pinned to responses in the exceptions table. The automatic fallback remains
+completions; pin exceptions only on repeatable volume evidence.
 
 Run your own numbers before committing a harness to a surface (the
 benchmark script requires [Bun](https://bun.sh); the extension itself does

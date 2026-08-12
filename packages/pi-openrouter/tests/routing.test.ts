@@ -7,7 +7,9 @@ describe("resolveModelRoute", () => {
 	it.each([
 		["anthropic/claude-opus-5", "anthropic-messages", "https://openrouter.ai/api"],
 		["openai/gpt-5.6-sol", "openai-responses", "https://openrouter.ai/api/v1"],
-		["moonshotai/kimi-k3", "openai-completions", "https://openrouter.ai/api/v1"],
+		["moonshotai/kimi-k3", "openai-responses", "https://openrouter.ai/api/v1"],
+		["moonshotai/kimi-k2-thinking", "openai-completions", "https://openrouter.ai/api/v1"],
+		["qwen/qwen3-coder", "openai-completions", "https://openrouter.ai/api/v1"],
 	])("routes %s", (model, api, baseUrl) => {
 		expect(resolveModelRoute(model, rules)).toEqual({ api, baseUrl });
 	});
