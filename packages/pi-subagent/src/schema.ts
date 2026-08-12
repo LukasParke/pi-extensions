@@ -11,6 +11,8 @@ const ThinkingLevel = Type.Union([
 
 const OutputMode = Type.Union([Type.Literal("inline"), Type.Literal("file-only")]);
 const Profile = Type.Union([Type.Literal("explore"), Type.Literal("review"), Type.Literal("general")]);
+const profileDescription = "Required unless a named agent supplies it. explore: fast read-only recon/research (cheap, quick model). review: careful read-only code review (strong reading model). general: writes files/runs commands (implementation model). Pick per task strengths — do not habitually mirror the parent.";
+const profileRequired = [{ required: ["profile"] }, { required: ["agent"] }];
 const Isolation = Type.Union([Type.Literal("shared"), Type.Literal("worktree")]);
 const Backend = Type.Union([Type.Literal("pi"), Type.Literal("codex"), Type.Literal("claude")]);
 const Action = Type.Union([
@@ -24,16 +26,16 @@ const Action = Type.Union([
   Type.Literal("plan"),
 ]);
 
-/** Shared optional task configuration fields. */
+/** Shared task configuration fields. */
 export const TaskFields = {
   backend: Type.Optional({ ...Backend, description: "Agent CLI powering the child. pi (default) supports every feature. codex uses codex exec with an OS-level read-only sandbox, but reports no cost (max_cost is refused) and cannot be steered. claude uses the claude CLI, reports cost, and cannot be steered. Unsupported combinations are refused with an explanation rather than silently ignored." }),
-  agent: Type.Optional(Type.String({ minLength: 1, description: "Named agent to use (from .pi/agents/<name>.md). Supplies persona system prompt and defaults; explicit params still override." })),
+  agent: Type.Optional(Type.String({ minLength: 1, description: "Named agent to use (from .pi/agents/<name>.md). Supplies persona system prompt and defaults; explicit params still override. May replace an explicit profile only when the persona declares one." })),
   description: Type.Optional(Type.String({ description: "Short human label (3-5 words) shown in UIs and result indexes." })),
   system_prompt: Type.Optional(Type.String({ description: "Extra system prompt appended to the child's prompt (does not replace it)." })),
   model: Type.Optional(Type.String({ description: "Model id, e.g. anthropic/claude-haiku-4.5. Defaults to profile config default, then the parent's model." })),
   thinking: Type.Optional({ ...ThinkingLevel, description: "Reasoning effort for the child. Defaults to profile config default, then the parent's level." }),
   tools: Type.Optional(Type.Array(Type.String(), { description: "Optional tool allowlist. explore/review profiles reject write-capable tools." })),
-  profile: Type.Optional({ ...Profile, description: "Capability profile: explore/review are strictly read-only; general inherits the parent's active tools and may write." }),
+  profile: Type.Optional({ ...Profile, description: profileDescription }),
   cwd: Type.Optional(Type.String({ description: "Working directory for the child process." })),
   timeout_ms: Type.Optional(Type.Number({ minimum: 1, maximum: 24 * 60 * 60_000, description: "Total budget in milliseconds including queue time. Timed-out runs report which phase timed out." })),
   max_turns: Type.Optional(Type.Number({ minimum: 1, maximum: 500, description: "Budget: at this many turns the child is steered to wrap up and given grace turns for a final answer; ends as 'partial' with output preserved." })),
@@ -75,7 +77,11 @@ export const ParallelTaskItem = Type.Object(
     task: Type.String({ minLength: 1, description: "Task text for one parallel worker." }),
     ...TaskFields,
   },
-  { additionalProperties: false },
+  {
+    additionalProperties: false,
+    anyOf: profileRequired,
+    description: "A parallel task must set profile explicitly unless its named agent persona supplies one.",
+  },
 );
 
 /**
@@ -109,7 +115,7 @@ export const SubagentParamsSchema = Type.Object(
       Type.Array(ParallelTaskItem, {
         minItems: 1,
         maxItems: 8,
-        description: "Array of independent tasks for parallel mode. Parallel tasks default to the read-only explore profile; parallel writers need isolation:'worktree'.",
+        description: "Array of independent tasks for parallel mode. Choose each task's profile deliberately; parallel writers need isolation:'worktree'.",
       }),
     ),
     synthesis: Type.Optional(
@@ -121,12 +127,32 @@ export const SubagentParamsSchema = Type.Object(
   },
   {
     additionalProperties: false,
-    description: "Subagent request: single, parallel, status, wait, or cancel.",
+    allOf: [{ if: { required: ["task"] }, then: { anyOf: profileRequired } }],
+    description: "Subagent request: single, parallel, status, wait, or cancel. Spawned tasks must set profile explicitly unless a named agent persona supplies one.",
   },
 );
 
 export type SubagentParams = Static<typeof SubagentParamsSchema>;
 export type ParallelTaskInput = Static<typeof ParallelTaskItem>;
+
+export function profileRequirementError(index: number) {
+  return `Task ${index}: missing required field "profile". Choose "explore" for fast read-only recon/research, "review" for careful read-only code review, or "general" for implementation that writes files/runs commands. Named agents may omit "profile" only when their persona declares one.`;
+}
+
+export function profileSelectionError(params: unknown): string | undefined {
+  if (!params || typeof params !== "object") return undefined;
+  const request = params as { task?: unknown; profile?: unknown; agent?: unknown; tasks?: unknown };
+  const missing = typeof request.task === "string"
+    ? request.profile === undefined && request.agent === undefined ? 1 : undefined
+    : Array.isArray(request.tasks)
+      ? request.tasks.findIndex((task) => {
+          if (!task || typeof task !== "object") return false;
+          const item = task as { profile?: unknown; agent?: unknown };
+          return item.profile === undefined && item.agent === undefined;
+        }) + 1 || undefined
+      : undefined;
+  return missing === undefined ? undefined : profileRequirementError(missing);
+}
 
 /**
  * Dedicated blocking-wait tool.

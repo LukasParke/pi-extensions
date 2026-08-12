@@ -4,7 +4,7 @@ import { resolveAgent } from "./agents.js";
 import { isPlausibleSchema, repairDoubleEncodedText } from "./structured.js";
 import { defaultConfig, type TaskDefaults, type TaskDefaultsByProfile } from "./config.js";
 import type { OutputMode, TaskProfile, TaskSpec } from "./types.js";
-import type { ParallelTaskInput, SubagentParams } from "./schema.js";
+import { profileRequirementError, type ParallelTaskInput, type SubagentParams } from "./schema.js";
 import { BACKEND_NAMES, checkCapabilities, type BackendName } from "./backend.js";
 import { resolveBackend } from "./backends/index.js";
 
@@ -129,7 +129,6 @@ function normalizeTask(
   },
   index: number,
   parent: ParentContext,
-  defaultProfile: TaskProfile,
   defaults: { timeoutMs?: number; taskDefaults?: TaskDefaultsByProfile; agents?: Map<string, AgentDefinition> } = {},
 ): { task?: ResolvedTask; error?: string } {
   if (!item.task?.trim()) return { error: `Task ${index + 1} must not be blank` };
@@ -142,6 +141,9 @@ function normalizeTask(
     const lookup = resolveAgent(defaults.agents ?? new Map(), (item as { agent?: string }).agent!);
     if (!lookup.agent) return { error: `Task ${index + 1}: ${lookup.error}` };
     agent = lookup.agent;
+  }
+  if (!item.profile && !agent?.profile) {
+    return { error: profileRequirementError(index + 1) };
   }
   if (item.output_mode && !item.output) return { error: `Task ${index + 1}: output_mode requires output` };
   if (item.fork_resume && !item.resume) return { error: `Task ${index + 1}: fork_resume requires resume` };
@@ -176,7 +178,7 @@ function normalizeTask(
     }
   }
 
-  const profile = item.profile ?? agent?.profile ?? defaultProfile;
+  const profile = item.profile ?? agent!.profile!;
   const requestedTools = item.tools ?? agent?.tools;
   const resolved = resolveTools(profile, requestedTools, parent.availableTools, parent.activeTools ?? parent.availableTools);
   if (resolved.error || !resolved.tools || resolved.canWrite === undefined) return { error: resolved.error ?? "Tool resolution failed" };
@@ -444,7 +446,7 @@ export function validateSubagentRequest(
     }
     const tasks: ResolvedTask[] = [];
     for (let index = 0; index < rawTasks.length; index++) {
-      const normalized = normalizeTask(rawTasks[index] as ParallelTaskInput, index, parent, "explore", defaults);
+      const normalized = normalizeTask(rawTasks[index] as ParallelTaskInput, index, parent, defaults);
       if (normalized.error || !normalized.task) return { ok: false, error: normalized.error ?? "Invalid task" };
       tasks.push(normalized.task);
     }
@@ -464,7 +466,7 @@ export function validateSubagentRequest(
     return { ok: false, error: "synthesis applies to parallel mode only (tasks[])" };
   }
   // Single-task mode: top-level fields form the one task.
-  const normalized = normalizeTask(params as ParallelTaskInput, 0, parent, "general", defaults);
+  const normalized = normalizeTask(params as ParallelTaskInput, 0, parent, defaults);
   if (normalized.error || !normalized.task) return { ok: false, error: normalized.error ?? "Invalid task" };
   return { ok: true, mode: "single", async: params.async === true, tasks: [normalized.task], planOnly: planOnly || undefined };
 }

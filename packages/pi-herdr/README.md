@@ -14,6 +14,8 @@ it (`herdr worktree create`, `herdr agent start/prompt/wait/get/read`,
 `herdr pane list`). Without it the tools fail with a clear error and the
 `project_trust` hook stays inert.
 
+A herdr session owns one repo-level mission: a PR stack or substantial deliverable that must survive its dispatcher and remain human-visitable. Use subagents inside that session for inline research, parallel legs, clean-context reviews, and PR-sized units; do not give herdr work whose result the caller needs inline, or give subagents external deliverables that could be lost with their parent. See the bundled `herdr` skill for the full split.
+
 ## Tools
 
 | Tool                 | Purpose                                                                                                           |

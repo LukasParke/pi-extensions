@@ -9,6 +9,10 @@ automatic retry with model fallback, a stall watchdog, session resume and
 context forking, worktree isolation with a diff/apply/discard loop, capability
 profiles, a root/subagent/combined cost ledger, and a TUI inspector.
 
+Subagents are intra-mission workers whose results return to the calling session. Use herdr instead when one agent must own a repo-level mission or PR stack, survive its dispatcher, and land external deliverables; use subagents within that herdr session for parallel legs, research, reviews, and bounded implementation. See the bundled `subagent` skill for the full split.
+
+> **Breaking change:** every spawned task must now set `profile` explicitly (`explore`, `review`, or `general`) unless its named agent persona declares one. Existing prompts that omit it fail validation with selection guidance.
+
 ## Install
 
 Pi packages install from **npm**, **git**, or a **local path**:
@@ -42,17 +46,17 @@ Publishing is automated from package-scoped `pi-subagent-v*` tags — see
 
 ```ts
 // Single foreground task
-{ task: "Find all call sites of parseConfig and summarize patterns.", description: "Map parseConfig usage" }
+{ task: "Find all call sites of parseConfig and summarize patterns.", profile: "explore", description: "Map parseConfig usage" }
 
 // Named agent — persona prompt + defaults from .pi/agents/reviewer.md.
 // Explicit params still override any agent field.
 { task: "Review this diff for security issues", agent: "reviewer" }
 
-// Parallel read-only explorers (default profile: explore)
+// Parallel read-only explorers
 {
   tasks: [
-    { task: "Map auth middleware flow", description: "Auth flow map" },
-    { task: "List all env vars used in server/", description: "Env var inventory" }
+    { task: "Map auth middleware flow", profile: "explore", description: "Auth flow map" },
+    { task: "List all env vars used in server/", profile: "explore", description: "Env var inventory" }
   ]
 }
 
@@ -60,15 +64,15 @@ Publishing is automated from package-scoped `pi-subagent-v*` tags — see
 // outputs into a single brief, delivered first.
 {
   tasks: [
-    { task: "Audit backend error handling", description: "Backend audit" },
-    { task: "Audit frontend error handling", description: "Frontend audit" }
+    { task: "Audit backend error handling", profile: "review", description: "Backend audit" },
+    { task: "Audit frontend error handling", profile: "review", description: "Frontend audit" }
   ],
   synthesis: "Merge both audits into one prioritized findings list"
 }
 
 // Background run — you are notified on completion (batched followUp message),
 // a live widget tracks progress above the editor, and wait/status still work.
-{ task: "Audit dependency licenses", async: true }
+{ task: "Audit dependency licenses", profile: "review", async: true }
 // later
 { action: "status", id: "abc123" }
 { action: "wait", id: "abc123" }      // interruptible; does not cancel
@@ -84,13 +88,14 @@ subagent_wait { id: "abc123", timeout_ms: 30000 }
 // Dry-run a spawn request: full validation + preflights (git repo, fork
 // session, output paths), returns the resolved per-task plan (model, tools,
 // budgets, isolation) without spawning anything.
-{ action: "plan", tasks: [{ task: "Implement feature A", isolation: "worktree" }] }
+{ action: "plan", tasks: [{ task: "Implement feature A", profile: "general", isolation: "worktree" }] }
 
 // Structured output: the child must end with a fenced json:result block
 // matching the schema. Invalid output gets one automatic repair round;
 // delivery is the clean JSON and details carry the parsed object.
 {
   task: "Audit the auth module",
+  profile: "review",
   output_schema: {
     type: "object",
     required: ["findings", "risk"],
@@ -107,11 +112,11 @@ subagent_wait { id: "abc123", timeout_ms: 30000 }
 
 // Budgets with graceful wrap-up: at the limit the child is steered to produce
 // a final answer and given grace turns before any hard stop.
-{ task: "Audit deps", max_turns: 15, grace_turns: 2 }
+{ task: "Audit deps", profile: "review", max_turns: 15, grace_turns: 2 }
 
 // Automatic retry with model fallback on transient failures
 // (provider errors, stalls, queue timeouts — never task-quality failures).
-{ task: "Research X", model: "openrouter/model-a", fallback_models: ["openrouter/model-b"], max_retries: 1 }
+{ task: "Research X", profile: "explore", model: "openrouter/model-a", fallback_models: ["openrouter/model-b"], max_retries: 1 }
 
 // Steer a running child mid-run instead of cancel + retry. The message is
 // delivered after the current assistant turn, before the next LLM call.
@@ -120,7 +125,7 @@ subagent_wait { id: "abc123", timeout_ms: 30000 }
 { action: "steer", id: "abc123", index: 1, message: "Wrap up now" }
 
 // Resume a child session
-{ task: "Continue from your findings and propose a fix plan", resume: "<session-id>" }
+{ task: "Continue from your findings and propose a fix plan", profile: "general", resume: "<session-id>" }
 
 // Isolated writers
 {
@@ -161,7 +166,7 @@ unchanged.
 
 ```ts
 { task: "Summarize this module", backend: "codex", profile: "explore" }
-{ task: "Review this diff",      backend: "claude", max_cost: 0.50 }
+{ task: "Review this diff",      backend: "claude", profile: "review", max_cost: 0.50 }
 ```
 
 Requires the corresponding CLI on PATH (`codex`, `claude`). Capabilities differ,
@@ -187,11 +192,13 @@ Set a persona's backend in agent frontmatter with `backend: codex`.
 
 ## Profiles
 
-| Profile                      | Tools                           | Writes                               |
-| ---------------------------- | ------------------------------- | ------------------------------------ |
-| `explore` (parallel default) | read/grep/find/ls + safe extras | no                                   |
-| `review`                     | same as explore                 | no                                   |
-| `general`                    | inherited active tools          | yes if tools include bash/edit/write |
+Every task must choose a profile unless its named agent persona declares one. Pick for the task's strengths rather than habitually mirroring the parent.
+
+| Profile | Best for | Capability |
+| --- | --- | --- |
+| `explore` | Fast recon/research on a cheap, quick model | Strictly read-only |
+| `review` | Careful code review on a strong reading model | Strictly read-only |
+| `general` | Implementation on a model suited to writing files/running commands | Inherits active tools; may write |
 
 Parallel write-capable tasks sharing one checkout are rejected unless each uses
 `isolation: "worktree"`, distinct `cwd`, or explicit `allow_shared_writes: true`.

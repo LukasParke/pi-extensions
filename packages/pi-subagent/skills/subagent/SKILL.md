@@ -11,29 +11,40 @@ from isolation, parallelism, or a fresh context.
 
 ## When to use
 
+Subagents are intra-mission workers: use them inside the current session for
+PR-sized units within its stack, parallel legs, research fanouts, and
+clean-context reviews. Their results return inline; the calling session owns
+and lands the external deliverable.
+
 - Map a codebase area without bloating the parent context (`profile: "explore"`).
 - Review a diff read-only (`profile: "review"`).
-- Implement behind a worktree and land via apply (`profile: "general"`, `isolation: "worktree"`).
+- Implement a bounded unit and apply it back (`profile: "general"`, `isolation: "worktree"`).
 - Fan out independent questions, optionally with `synthesis` to fold results.
-- Background long work (`async: true`) and collect later with `wait` / `subagent_wait`.
+- Background work (`async: true`) and collect later with `wait` / `subagent_wait`.
+
+Use herdr instead for a mission that owns a PR stack or substantial deliverable
+end-to-end, must survive its dispatcher, or needs a human-visitable pane.
+Subagents must not own PR-producing work that could be lost if the parent dies;
+completed work must never be left behind. Conversely, avoid herdr when this
+session needs the result inline.
 
 ## Core calls
 
 ```ts
-// Single foreground task (default profile: general)
-{ task: "Find call sites of parseConfig", description: "Map parseConfig" }
+// Single foreground task
+{ task: "Find call sites of parseConfig", profile: "explore", description: "Map parseConfig" }
 
-// Parallel read-only explorers (default profile for tasks[]: explore)
+// Parallel read-only explorers
 {
   tasks: [
-    { task: "Map auth middleware", description: "Auth flow" },
-    { task: "List env vars in server/", description: "Env inventory" }
+    { task: "Map auth middleware", profile: "explore", description: "Auth flow" },
+    { task: "List env vars in server/", profile: "explore", description: "Env inventory" }
   ],
   synthesis: "Merge into one prioritized brief"
 }
 
 // Background — notified on completion; wait/status still work
-{ task: "Audit dependency licenses", async: true }
+{ task: "Audit dependency licenses", profile: "review", async: true }
 { action: "status", id: "abc123" }
 { action: "wait", id: "abc123" }           // interruptible; does not cancel
 { action: "cancel", id: "abc123" }
@@ -47,16 +58,20 @@ from isolation, parallelism, or a fresh context.
 { action: "discard", id: "abc123", index: 1 }
 
 // Dry-run validation + resolved plan (no spawn)
-{ action: "plan", tasks: [{ task: "…", isolation: "worktree" }] }
+{ action: "plan", tasks: [{ task: "…", profile: "general", isolation: "worktree" }] }
 ```
 
 ## Profiles
 
-| Profile   | Tools                  | Writes                                      |
-| --------- | ---------------------- | ------------------------------------------- |
-| `explore` | read/search/ls (+safe) | no                                          |
-| `review`  | same as explore        | no                                          |
-| `general` | inherited active tools | yes if tools include bash/edit/write        |
+Every task must choose a profile explicitly unless its named agent persona
+supplies one. Pick for the task's strengths; do not habitually mirror the
+parent.
+
+| Profile | Best for | Capability |
+| --- | --- | --- |
+| `explore` | Fast recon and research on a cheap, quick model | Strictly read-only |
+| `review` | Careful code review on a strong reading model | Strictly read-only |
+| `general` | Implementation on a model suited to writing and commands | Inherits active tools; may write |
 
 Parallel write-capable tasks sharing one checkout are rejected unless each uses
 `isolation: "worktree"`, a distinct `cwd`, or `allow_shared_writes: true`.

@@ -12,13 +12,32 @@ self-contained.
 
 ## When to reach for it
 
-- Work that deserves its own branch and checkout (features, fixes, reviews).
-- Long tasks that should survive this session ending.
-- Parallel work across different repos (`repo` is a short folder name under a
+- One main task in a repo: a PR stack or one substantial deliverable such as a
+  package, migration, or long babysit.
+- Work that must survive the dispatcher, land through PRs, and remain
+  human-visitable in a focusable pane.
+- Parallel missions across repos (`repo` is a short folder name under a
   configured repo root, e.g. `pi-extensions`, `home-ops`).
 
-Prefer the `subagent` tool instead when the child needs shared context with
-this session or the work is quick and read-only.
+## When to use herdr vs subagents
+
+Herdr owns the mission or PR stack. Inside that session, subagents execute its
+PR-sized units, parallel legs, research fanouts, and clean-context reviews.
+Scope may vary—even a single deliverable can merit herdr while subagents only
+parallelize research—but ownership stays fixed: herdr owns the external
+outcome; subagent results return inline to that owner.
+
+| Decision    | Herdr                            | Subagent                                |
+| ----------- | -------------------------------- | --------------------------------------- |
+| Context     | Self-contained mission brief     | Calling session's task context          |
+| Lifespan    | Survives the dispatcher          | Returns to the calling session          |
+| Isolation   | Dedicated worktree, branch, pane | Process or temporary worktree           |
+| Supervision | Human-visitable mission owner    | Intra-mission worker                    |
+| Deliverable | PR stack or substantial outcome  | Inline result or work applied by caller |
+
+Use a subagent when the parent needs the result inline. Use herdr when work must
+own and land PRs independently. A subagent must not own PR-producing work that
+could be lost if its parent dies; completed work must never be left behind.
 
 ## Dispatch
 
