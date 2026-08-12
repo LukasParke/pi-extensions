@@ -66,7 +66,7 @@ export default function (pi: ExtensionAPI) {
 			name: Type.Optional(
 				Type.String({
 					description:
-						"Short kebab-case Herdr agent name (1-32, lowercase start). Omit to generate a subject name from the task, with a deterministic slug fallback.",
+						"Herdr agent name: lowercase letter first, then lowercase letters, digits, '_' or '-' (1-32). Omit to generate a subject name from the task, with a deterministic slug fallback.",
 					pattern: AGENT_NAME_PATTERN,
 				}),
 			),

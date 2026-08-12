@@ -52,8 +52,6 @@ export async function generateNameFromContext(
 	options: GenerateNameOptions = {},
 ): Promise<string | undefined> {
 	if (!ctx.model || !ctx.modelRegistry) return undefined;
-	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
-	if (!auth.ok) return undefined;
 
 	const timeoutMs = options.timeoutMs ?? 8_000;
 	const run = options.complete ?? (complete as CompleteFn);
@@ -61,6 +59,8 @@ export async function generateNameFromContext(
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	try {
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+		if (!auth.ok) return undefined;
 		const response = await run(
 			ctx.model,
 			{

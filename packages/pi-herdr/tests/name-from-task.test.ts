@@ -15,6 +15,16 @@ describe("generateNameFromContext", () => {
 				ctx({ getApiKeyAndHeaders: async () => ({ ok: false, error: "none" }) }),
 			),
 		).resolves.toBeUndefined();
+		await expect(
+			generateNameFromContext(
+				"task",
+				ctx({
+					getApiKeyAndHeaders: async () => {
+						throw new Error("auth lookup failed");
+					},
+				}),
+			),
+		).resolves.toBeUndefined();
 	});
 
 	it("requests a short no-tools completion and returns the text", async () => {
