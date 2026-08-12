@@ -21,6 +21,38 @@ export function knownRepos(repoRoots: string[]): Map<string, string> {
 	return repos;
 }
 
+export class AmbiguousOrphanWorktreeError extends Error {
+	constructor(readonly matches: string[]) {
+		super(`Multiple orphaned worktrees match this agent:\n${matches.join("\n")}`);
+	}
+}
+
+export const AGENT_NAME_PATTERN = String.raw`^(?!\.{1,2}$)[^/\\]+$`;
+
+export function assertAgentName(agentName: string) {
+	if (!new RegExp(AGENT_NAME_PATTERN).test(agentName)) {
+		throw new Error("Agent name must be a non-empty path segment other than . or ..");
+	}
+}
+
+/** Locate a dispatched checkout after herdr forgets its closed workspace. */
+export function findOrphanWorktree(agentName: string, worktreeRoots: string[]): string | undefined {
+	assertAgentName(agentName);
+	const matches: string[] = [];
+	for (const root of worktreeRoots) {
+		if (!existsSync(root)) continue;
+		for (const repo of readdirSync(root, { withFileTypes: true })) {
+			if (!repo.isDirectory()) continue;
+			for (const candidate of [`agent-${agentName}`, agentName]) {
+				const path = join(root, repo.name, candidate);
+				if (existsSync(path)) matches.push(path);
+			}
+		}
+	}
+	if (matches.length > 1) throw new AmbiguousOrphanWorktreeError(matches);
+	return matches[0];
+}
+
 /** Resolve a repo by short name, or fall back to the git root of `cwd`. */
 export async function resolveRepo(
 	name: string | undefined,
@@ -66,7 +98,7 @@ function canonicalize(path: string): string {
 }
 
 /** True containment, immune to `..` segments and prefix-sharing siblings. */
-function isInside(child: string, parent: string): boolean {
+export function isPathInside(child: string, parent: string): boolean {
 	const rel = relative(canonicalize(parent), canonicalize(child));
 	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
@@ -82,7 +114,7 @@ export function worktreeTrust(
 	baseRepo: string | undefined,
 	options: { worktreeRoots: string[]; repoRoots: string[] },
 ): TrustDecision {
-	const inWorktreeRoot = options.worktreeRoots.some((root) => isInside(cwd, root));
+	const inWorktreeRoot = options.worktreeRoots.some((root) => isPathInside(cwd, root));
 	if (!inWorktreeRoot || !baseRepo) return "undecided";
-	return options.repoRoots.some((root) => isInside(baseRepo, root)) ? "yes" : "undecided";
+	return options.repoRoots.some((root) => isPathInside(baseRepo, root)) ? "yes" : "undecided";
 }

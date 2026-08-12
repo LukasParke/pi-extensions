@@ -16,10 +16,11 @@ it (`herdr worktree create`, `herdr agent start/prompt/wait/get/read`,
 
 ## Tools
 
-| Tool                | Purpose                                                                                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `herdr_task`        | Dispatch a self-contained task to a new pi agent in its own worktree, branch (`agent/<name>`), and pane           |
-| `herdr_task_status` | Check a dispatched agent: lifecycle state (working/idle/done/blocked) and recent terminal output; `wait` to block |
+| Tool                 | Purpose                                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `herdr_task`         | Dispatch a self-contained task to a new pi agent in its own worktree, branch (`agent/<name>`), and pane           |
+| `herdr_task_status`  | Check a dispatched agent: lifecycle state (working/idle/done/blocked) and recent terminal output; `wait` to block |
+| `herdr_task_cleanup` | Safely close a finished agent's workspace and remove its dispatched-task worktree                                 |
 
 Dispatch is fire-and-forget and resilient:
 
@@ -29,9 +30,38 @@ Dispatch is fire-and-forget and resilient:
   adopted rather than colliding with `agent_pane_busy`.
 - Pane-not-ready states (`agent_pane_busy`, "not an available shell",
   `agent_kind_mismatch`) are retried as transient while the checkout settles.
-- The prompt is submitted with `--wait --until working` and verified: pi
-  silently drops prompts sent during startup, so a stalled prompt is re-sent
-  unless the agent is already working.
+- Newly started agents receive the task in `pi`'s launch argv, eliminating the
+  startup prompt-swallow race. Dispatch waits up to 30 seconds for `working`
+  and falls back to a verified prompt only if the agent remains idle. Adopted
+  agents are already running, so they always use the verified prompt path.
+
+## Lifecycle
+
+Dispatch → verify → cleanup:
+
+1. Dispatch with `herdr_task`.
+2. Monitor with `herdr_task_status`. If
+   [`@parke.dev/pi-sentinel`](../pi-sentinel) is installed, use
+   `sentinel_watch` on `herdr agent get <name>` so the session wakes when the
+   agent reaches `done` or `idle` instead of polling model turns.
+3. Verify the task's real completion gate: review the result, confirm the PR
+   exists, and wait for required CI/reviews/deployments.
+4. Call `herdr_task_cleanup` only after those criteria pass.
+
+Herdr forgets an agent after its workspace closes. Status reports that agent as
+`gone`: if its checkout still exists under a configured worktree root, the
+response points to it for branch/PR verification and cleanup; otherwise it
+reports that no matching worktree was found under the configured roots. If
+multiple worktrees match, status refuses to choose one.
+
+Cleanup refuses non-Herdr worktrees. Without `force`, it also refuses agents
+that are still working/blocked, dirty checkouts, and unpushed commits. A refusal
+lists every problem to resolve. `force` bypasses those safety checks for
+deliberately abandoned work. Cleanup asks Herdr to remove the worktree and its
+workspace together. If the workspace or agent is already gone, it resolves the
+base repo with `git rev-parse --path-format=absolute --git-common-dir`, removes the orphaned checkout
+with `git worktree remove`, and prunes stale worktree metadata. The pushed
+branch remains on the remote.
 
 ## Slash commands
 
@@ -58,21 +88,29 @@ Optional, via `~/.pi/herdr.json` or environment variables:
 | --------------- | ---------------------- | ------------------------------------ |
 | `repoRoots`     | `HERDR_REPO_ROOTS`     | `~/github`, `~/Development`          |
 | `worktreeRoots` | `HERDR_WORKTREE_ROOTS` | `~/.herdr/worktrees`, `~/.worktrees` |
+| `logPath`       | `HERDR_LOG_PATH`       | `~/.pi/herdr-task.log`               |
 
-Env values are PATH-style separated lists; file values are JSON arrays. `~` is
-expanded.
+Root env values are PATH-style separated lists; root file values are JSON
+arrays. `logPath` is a single path. `~` is expanded.
+
+Every Herdr CLI invocation appends one JSONL object to `logPath` with `ts`,
+`args`, `outcome` (`ok` or `error`), optional `error`, and elapsed `ms`. Logging
+failures never fail the tool. This supplements Herdr's server log, which records
+request outcomes but not the parameters or structured error codes needed for
+failed-dispatch post-mortems.
 
 ```json
 {
   "repoRoots": ["~/code"],
-  "worktreeRoots": ["~/.herdr/worktrees"]
+  "worktreeRoots": ["~/.herdr/worktrees"],
+  "logPath": "~/.pi/herdr-task.log"
 }
 ```
 
 ## Skills
 
 - `herdr` — teaches the model when to dispatch via `herdr_task` versus the
-  `subagent` tool, and how to monitor dispatched agents.
+  `subagent` tool, and how to monitor, verify, and clean up dispatched agents.
 - `herdr-pi-orchestration` — the operator runbook for long-running Pi
   orchestrators in herdr worktrees: brief-on-disk pattern, prompt-swallow
   guard, stacked-PR delegation, and monitoring pitfalls.

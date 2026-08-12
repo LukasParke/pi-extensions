@@ -1,7 +1,7 @@
 {
   "name": "@parke.dev/pi-herdr",
   "version": "0.1.0",
-  "description": "Dispatch tasks to pi agents in herdr-managed worktrees: herdr_task, herdr_task_status, /herdr-task, /review, and worktree trust",
+  "description": "Dispatch, monitor, and safely clean up pi agents in herdr-managed worktrees",
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",

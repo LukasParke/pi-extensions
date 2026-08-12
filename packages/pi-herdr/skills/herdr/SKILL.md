@@ -1,6 +1,6 @@
 ---
 name: herdr
-description: Dispatch long-running tasks to pi agents in herdr-managed worktrees via herdr_task, and monitor them with herdr_task_status. Use when work should run in its own worktree and pane outside this session — a feature build, a PR review, a repo-wide chore — and when checking on an agent dispatched earlier.
+description: Dispatch long-running tasks to pi agents in herdr-managed worktrees via herdr_task, monitor them with herdr_task_status, and safely remove finished worktrees with herdr_task_cleanup. Use when work should run in its own worktree and pane outside this session — a feature build, a PR review, a repo-wide chore — when checking on a dispatched agent, or when cleaning one up after its completion criteria pass.
 ---
 
 # Herdr task dispatch
@@ -31,8 +31,10 @@ herdr_task { task: "<complete self-contained prompt>", repo: "pi-extensions", na
   task when omitted.
 - Returns immediately with the agent name, worktree path, and branch.
 - Dispatch is resilient: an existing worktree/branch from a failed earlier
-  dispatch is reused, an already-running pi in the pane is adopted, and the
-  prompt is verified against pi's startup prompt-swallow (re-sent if dropped).
+  dispatch is reused and an already-running pi in the pane is adopted.
+- Newly started agents receive the task in pi's launch argv. Dispatch waits up
+  to 30 seconds for `working`, then uses the verified prompt path only if the
+  agent remains idle. Adopted agents always use the verified prompt path.
 
 ## Monitor
 
@@ -42,7 +44,40 @@ herdr_task_status { agent: "fix-ci", wait: true }     — block until it settles
 ```
 
 States: `working` (busy), `blocked` (asking a question — read the output, then
-answer with `herdr agent prompt` via bash), `idle`/`done` (turn finished).
+answer with `herdr agent prompt` via bash), `idle`/`done` (turn finished), and
+`gone` (Herdr forgot the agent after its workspace closed). A gone status points
+to the surviving orphan worktree when one exists; verify its branch/PR, then
+clean it up. If no worktree is found under the configured roots, status says
+so without claiming cleanup. If multiple worktrees match, resolve the ambiguity
+before cleanup.
+
+If Sentinel tools are available, register `sentinel_watch` against
+`herdr agent get <name>` reaching `idle` or `done`. Go idle and let Sentinel
+wake the session instead of spending model turns polling.
+
+## Verify and clean up
+
+An idle/done agent means its turn ended, not that the task's gate passed. Read
+its output and verify the actual completion criteria: inspect the diff/result,
+confirm the PR was opened or merged as required, and wait for required CI,
+reviews, or deployments.
+
+Then clean up:
+
+```text
+herdr_task_cleanup { agent: "fix-ci" }
+```
+
+Cleanup only removes configured Herdr worktrees. It refuses with a list of
+problems if the agent is working/blocked, the checkout is dirty, or commits are
+not present on a remote. Resolve those problems and retry.
+Use `force: true` only to discard deliberately abandoned work. Cleanup removes
+the Herdr worktree and workspace together. If the workspace or agent is already
+gone, it finds the orphan by agent name and falls back to Git removal and
+pruning from the base repo. If neither agent nor orphan exists, there is nothing
+to clean up. The pushed branch remains on the remote.
+
+Lifecycle: **dispatch → monitor/wake → verify the gate → cleanup**.
 
 ## Slash commands
 
@@ -54,4 +89,8 @@ answer with `herdr agent prompt` via bash), `idle`/`done` (turn finished).
 ## Prerequisite
 
 The `herdr` CLI must be installed and on PATH; every operation shells out to
-it. Repo and worktree roots are configurable via `~/.pi/herdr.json`.
+it. Repo roots, worktree roots, and the invocation log path are configurable
+via `~/.pi/herdr.json`. Every Herdr invocation is logged as JSONL at
+`~/.pi/herdr-task.log` by default: `ts`, `args`, `outcome`, optional `error`,
+and elapsed `ms`. This preserves parameters and error details absent from
+Herdr's server log.

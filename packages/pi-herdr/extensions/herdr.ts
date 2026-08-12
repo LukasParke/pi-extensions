@@ -2,9 +2,17 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { herdr, herdrText } from "../src/cli.ts";
+import { cleanupHerdrTask } from "../src/cleanup.ts";
 import { defaultConfig, herdrConfig, type HerdrConfig } from "../src/config.ts";
 import { dispatchHerdrTask, parsePrUrl } from "../src/dispatch.ts";
-import { knownRepos, resolveRepo, worktreeBaseRepo, worktreeTrust } from "../src/repos.ts";
+import {
+	AGENT_NAME_PATTERN,
+	knownRepos,
+	resolveRepo,
+	worktreeBaseRepo,
+	worktreeTrust,
+} from "../src/repos.ts";
+import { getHerdrTaskStatus } from "../src/status.ts";
 
 // Task herdr-managed pi agents in repo worktrees.
 //
@@ -27,8 +35,6 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("project_trust", async (event) => {
 		const config = await herdrConfig();
-		const inWorktreeRoot = config.worktreeRoots.some((root) => event.cwd.startsWith(root + "/"));
-		if (!inWorktreeRoot) return { trusted: "undecided" as const };
 		const base = await worktreeBaseRepo(event.cwd);
 		return { trusted: worktreeTrust(event.cwd, base, config) };
 	});
@@ -49,6 +55,7 @@ export default function (pi: ExtensionAPI) {
 			name: Type.Optional(
 				Type.String({
 					description: "Short kebab-case label for the agent/worktree; derived from the task if omitted",
+					pattern: AGENT_NAME_PATTERN,
 				}),
 			),
 		}),
@@ -60,7 +67,7 @@ export default function (pi: ExtensionAPI) {
 				content: [
 					{
 						type: "text",
-						text: `Dispatched agent "${result.agentName}" in ${result.worktreePath} (branch ${result.branch}). Check with herdr_task_status.`,
+						text: `Dispatched agent "${result.agentName}" in ${result.worktreePath} (branch ${result.branch}). Check with herdr_task_status. When its completion criteria are fully verified (e.g. PR opened and green), tear it down with herdr_task_cleanup — if sentinel tools are available, register a watch on \`herdr agent get ${result.agentName}\` reaching done/idle so you are woken to verify and clean up instead of polling.`,
 					},
 				],
 				details: result,
@@ -74,19 +81,32 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Check a herdr-dispatched agent: current state (working/idle/done/blocked) and recent terminal output. Pass wait=true to block until it settles.",
 		parameters: Type.Object({
-			agent: Type.String({ description: "Agent name from herdr_task" }),
+			agent: Type.String({ description: "Agent name from herdr_task", pattern: AGENT_NAME_PATTERN }),
 			wait: Type.Optional(Type.Boolean({ description: "Block until the agent settles (default false)" })),
 			timeout_ms: Type.Optional(Type.Number({ description: "Max wait, ms. Only with wait=true" })),
 			lines: Type.Optional(Type.Number({ description: "Terminal lines to read (default 60)" })),
 		}),
 		async execute(_id, params, signal) {
+			const config = await herdrConfig();
 			if (params.wait) {
 				const args = ["agent", "wait", params.agent];
 				if (params.timeout_ms) args.push("--timeout", String(params.timeout_ms));
-				await herdr(args);
+				try {
+					await herdr(args);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					if (!message.includes("agent_not_found")) throw error;
+				}
 			}
-			const info = await herdr(["agent", "get", params.agent]);
-			if (!info?.agent) throw new Error(`herdr returned no agent named "${params.agent}"`);
+			const status = await getHerdrTaskStatus({ agent: params.agent, worktreeRoots: config.worktreeRoots });
+			if (status.status === "gone") {
+				const text = status.matches
+					? `Agent "${params.agent}" is gone, but multiple worktrees match it:\n${status.matches.join("\n")}\nResolve the ambiguity before cleanup.`
+					: status.worktreePath
+						? `Agent "${params.agent}" is gone (herdr forgets agents when their workspace closes), but its worktree survives at ${status.worktreePath}. Verify its branch/PR, then herdr_task_cleanup to remove it.`
+						: `Agent "${params.agent}" is gone and no matching worktree was found under the configured roots.`;
+				return { content: [{ type: "text" as const, text }], details: status };
+			}
 			const output = await herdrText(
 				["agent", "read", params.agent, "--lines", String(params.lines ?? 60), "--format", "text"],
 				signal as AbortSignal | undefined,
@@ -95,11 +115,49 @@ export default function (pi: ExtensionAPI) {
 				content: [
 					{
 						type: "text",
-						text: `state: ${info.agent.agent_status}\ncwd: ${info.agent.cwd}\n\n--- recent output ---\n${output}`,
+						text: `state: ${status.status}\ncwd: ${status.cwd}\n\n--- recent output ---\n${output}`,
 					},
 				],
-				details: { status: info.agent.agent_status, cwd: info.agent.cwd },
+				details: status,
 			};
+		},
+	});
+
+	pi.registerTool({
+		name: "herdr_task_cleanup",
+		label: "Herdr Task Cleanup",
+		description:
+			"Tear down a finished herdr-dispatched agent: removes its worktree and workspace. Refuses unless the work is verifiably safe to discard — agent settled, no uncommitted changes, no unpushed commits — because the checkout is deleted (the pushed branch survives). Call after verifying the task's completion criteria (PR opened/merged, CI green). Use force only to discard abandoned work.",
+		parameters: Type.Object({
+			agent: Type.String({
+				description: "Agent name (or pane id) from herdr_task",
+				pattern: AGENT_NAME_PATTERN,
+			}),
+			force: Type.Optional(
+				Type.Boolean({
+					description: "Skip safety checks and discard uncommitted/unpushed work (default false)",
+				}),
+			),
+		}),
+		async execute(_id, params) {
+			const config = await herdrConfig();
+			const result = await cleanupHerdrTask({ ...params, worktreeRoots: config.worktreeRoots });
+			if (!result.cleaned) {
+				let text: string;
+				if (result.reason === "nothing-found") {
+					text = `Agent "${params.agent}" is unknown to herdr and no matching worktree was found under the configured roots — nothing to clean up.`;
+				} else if (result.reason === "ambiguous") {
+					text = `Refusing cleanup of "${params.agent}": multiple worktrees match it:\n${result.matches!.join("\n")}\nResolve the ambiguity and retry.`;
+				} else {
+					text = `Refusing cleanup of "${params.agent}" (${result.worktreePath}):\n- ${result.problems!.join("\n- ")}\n\nResolve these (or pass force to discard) and retry.`;
+				}
+				return { content: [{ type: "text" as const, text }], details: result };
+			}
+			const text =
+				result.removal === "herdr"
+					? `Cleaned up "${params.agent}": workspace ${result.workspaceId} and worktree ${result.worktreePath} removed. The pushed branch survives on the remote.`
+					: `Cleaned up "${params.agent}": worktree ${result.worktreePath} removed via git (workspace was already gone). The pushed branch survives on the remote.`;
+			return { content: [{ type: "text" as const, text }], details: result };
 		},
 	});
 

@@ -3,7 +3,14 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { baseRepoFromCommonDir, knownRepos, resolveRepo, worktreeTrust } from "../src/repos.ts";
+import {
+	AmbiguousOrphanWorktreeError,
+	baseRepoFromCommonDir,
+	findOrphanWorktree,
+	knownRepos,
+	resolveRepo,
+	worktreeTrust,
+} from "../src/repos.ts";
 
 let root: string;
 
@@ -41,6 +48,38 @@ describe("knownRepos", () => {
 
 	it("skips roots that do not exist", () => {
 		expect(knownRepos([join(root, "missing")]).size).toBe(0);
+	});
+});
+
+describe("findOrphanWorktree", () => {
+	it("finds dispatch-named worktrees", () => {
+		const worktreeRoot = join(root, "orphans");
+		const path = join(worktreeRoot, "app", "agent-fix");
+		mkdirSync(path, { recursive: true });
+		expect(findOrphanWorktree("fix", [worktreeRoot])).toBe(path);
+	});
+
+	it("finds legacy bare-name worktrees", () => {
+		const worktreeRoot = join(root, "bare-orphans");
+		const path = join(worktreeRoot, "app", "fix");
+		mkdirSync(path, { recursive: true });
+		expect(findOrphanWorktree("fix", [worktreeRoot])).toBe(path);
+	});
+
+	it("refuses to choose between multiple matching worktrees", () => {
+		const firstRoot = join(root, "ambiguous-a");
+		const secondRoot = join(root, "ambiguous-b");
+		mkdirSync(join(firstRoot, "app", "agent-fix"), { recursive: true });
+		mkdirSync(join(secondRoot, "other", "agent-fix"), { recursive: true });
+		expect(() => findOrphanWorktree("fix", [firstRoot, secondRoot])).toThrow(AmbiguousOrphanWorktreeError);
+	});
+
+	it("returns undefined when no matching worktree survives", () => {
+		expect(findOrphanWorktree("missing", [join(root, "orphans")])).toBeUndefined();
+	});
+
+	it.each(["", ".", "..", "with/slash", "with\\slash"])("rejects invalid agent name %j", (name) => {
+		expect(() => findOrphanWorktree(name, [join(root, "orphans")])).toThrow("non-empty path segment");
 	});
 });
 
