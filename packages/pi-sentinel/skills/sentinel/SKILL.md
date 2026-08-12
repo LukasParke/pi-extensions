@@ -63,9 +63,10 @@ Attach the PR directly:
 { "number": 123, "repo": "OWNER/REPO" }
 ```
 
-Omit `repo` inside its checkout. `sentinel_pr` uses authenticated GitHub GraphQL polling, so it
-works for private/internal repositories visible to `GITHUB_TOKEN`, `GH_TOKEN`, the pi-github stored
-credential, or `gh auth token`.
+Omit `repo` inside its checkout. `sentinel_pr` replaces a `gh pr checks --watch` stream for the
+same PR; do not register both or CI will wake the agent twice. It uses authenticated GitHub GraphQL
+polling, so it works for private/internal repositories visible to `GITHUB_TOKEN`, `GH_TOKEN`, the
+pi-github stored credential, or `gh auth token`.
 
 Attachment validates access and establishes a baseline. Later merge conflicts, broken CI, review
 comments, changes requested, and newly unresolved review threads wake the agent. Merge or closure completes the

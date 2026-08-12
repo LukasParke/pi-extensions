@@ -43,6 +43,36 @@ describe("PR transitions", () => {
 });
 
 describe("GitHub snapshot", () => {
+	it("fails when GitHub returns errors, no PR, or no authenticated viewer", () => {
+		const repo = { owner: "o", name: "r", slug: "o/r" };
+		expect(() => snapshotFromGraphQl({ errors: [{ message: "denied" }] }, repo)).toThrow("denied");
+		expect(() => snapshotFromGraphQl({ data: { viewer: { login: "agent" }, repository: {} } }, repo)).toThrow(
+			"GitHub PR o/r was not found or the credential cannot see it",
+		);
+		expect(() =>
+			snapshotFromGraphQl(
+				{
+					data: {
+						repository: {
+							pullRequest: {
+								number: 42,
+								title: "Ship it",
+								url: "https://github.com/o/r/pull/42",
+								state: "OPEN",
+								isDraft: false,
+								merged: false,
+								headRefOid: "abc",
+								mergeable: "MERGEABLE",
+								mergeStateStatus: "CLEAN",
+							},
+						},
+					},
+				},
+				repo,
+			),
+		).toThrow("GitHub GraphQL response did not include the authenticated viewer login");
+	});
+
 	it("maps GraphQL rollups and activity", () => {
 		const snapshot = snapshotFromGraphQl(
 			{

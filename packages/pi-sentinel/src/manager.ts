@@ -123,6 +123,7 @@ interface Entry extends SentinelSnapshot {
 	stream?: StreamHandle;
 	prProbe?: () => Promise<PrSnapshot>;
 	prSnapshot?: PrSnapshot;
+	consecutiveFailures?: number;
 }
 
 interface GateEntry {
@@ -140,6 +141,11 @@ interface GateEntry {
 }
 
 export type ProbeRunner = (command: string, cwd: string) => Promise<ProbeResult>;
+
+function prState(snapshot: PrSnapshot): SentinelState {
+	if (snapshot.lifecycle === "merged" || snapshot.lifecycle === "closed") return "complete";
+	return prNeedsAction(snapshot) ? "failing" : "passing";
+}
 
 export function runProbe(command: string, cwd: string, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS) {
 	return new Promise<ProbeResult>((resolve) => {
@@ -250,7 +256,9 @@ export class SentinelManager {
 		for (const entry of this.entries.values()) {
 			if (
 				entry.mode !== "stream" &&
-				(entry.state === "waiting" || entry.state === "failing" || entry.kind === "pr")
+				(entry.state === "waiting" ||
+					(entry.state === "failing" && entry.kind !== "pr") ||
+					(entry.kind === "pr" && entry.prSnapshot === undefined && !entry.consecutiveFailures))
 			) {
 				this.scheduleEntry(entry, 0);
 			}
@@ -303,13 +311,7 @@ export class SentinelManager {
 			name,
 			kind: "pr",
 			note: options.note ?? `${options.repo}#${options.number}`,
-			state: initial
-				? initial.lifecycle === "merged" || initial.lifecycle === "closed"
-					? "complete"
-					: prNeedsAction(initial)
-						? "failing"
-						: "passing"
-				: "waiting",
+			state: initial ? prState(initial) : "waiting",
 			createdAt: now,
 			intervalMs: options.intervalMs ?? DEFAULT_INTERVAL_MS,
 			expiresAt: options.timeoutMs ? now + options.timeoutMs : undefined,
@@ -319,7 +321,7 @@ export class SentinelManager {
 			lastOutput: initial ? formatPrSnapshot(initial) : undefined,
 		};
 		this.entries.set(name, entry);
-		this.scheduleEntry(entry, 0);
+		this.scheduleEntry(entry, initial ? entry.intervalMs! : 0);
 		this.changed();
 		return this.snapshotEntry(entry);
 	}
@@ -567,6 +569,7 @@ export class SentinelManager {
 			entry.running = false;
 			if (!this.entries.has(entry.name)) return;
 			entry.lastOutput = formatPrSnapshot(snapshot);
+			entry.consecutiveFailures = 0;
 			const previous = entry.prSnapshot;
 			entry.prSnapshot = snapshot;
 			if (previous) {
@@ -580,11 +583,10 @@ export class SentinelManager {
 					});
 				}
 			}
-			if (snapshot.lifecycle === "merged" || snapshot.lifecycle === "closed") {
-				entry.state = "complete";
+			entry.state = prState(snapshot);
+			if (entry.state === "complete") {
 				entry.nextPollAt = undefined;
 			} else {
-				entry.state = prNeedsAction(snapshot) ? "failing" : "passing";
 				const untilExpiry = entry.expiresAt ? entry.expiresAt - this.now() : entry.intervalMs!;
 				this.scheduleEntry(entry, Math.min(entry.intervalMs!, untilExpiry));
 			}
@@ -592,9 +594,11 @@ export class SentinelManager {
 			entry.running = false;
 			if (!this.entries.has(entry.name)) return;
 			entry.state = "failing";
-			entry.lastOutput = error instanceof Error ? error.message : String(error);
-			const untilExpiry = entry.expiresAt ? entry.expiresAt - this.now() : entry.intervalMs!;
-			this.scheduleEntry(entry, Math.min(entry.intervalMs!, untilExpiry));
+			entry.lastOutput = truncateOutput(error instanceof Error ? error.message : String(error));
+			entry.consecutiveFailures = (entry.consecutiveFailures ?? 0) + 1;
+			const delay = entry.intervalMs! * 2 ** Math.min(entry.consecutiveFailures, 5);
+			const untilExpiry = entry.expiresAt ? entry.expiresAt - this.now() : delay;
+			this.scheduleEntry(entry, Math.min(delay, untilExpiry));
 		}
 		this.changed();
 	}

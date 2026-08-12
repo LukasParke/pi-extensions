@@ -96,6 +96,36 @@ describe("SentinelManager", () => {
 		expect(manager.snapshot().items[0]?.state).toBe("complete");
 	});
 
+	it("backs off after a failed PR probe and recovers", async () => {
+		vi.useFakeTimers();
+		const snapshot: PrSnapshot = {
+			repo: "o/r",
+			number: 7,
+			title: "PR",
+			url: "https://github.com/o/r/pull/7",
+			viewer: "agent",
+			lifecycle: "open",
+			headSha: "abc",
+			merge: "clean",
+			checks: "passing",
+			failingChecks: [],
+			reviewDecision: "approved",
+			unresolvedThreads: 0,
+			activities: [],
+		};
+		const probe = vi.fn().mockRejectedValueOnce(new Error("temporary failure")).mockResolvedValue(snapshot);
+		const manager = new SentinelManager();
+		manager.attachPr({ name: "pr-7", repo: "o/r", number: 7, probe, intervalMs: 1_000 });
+		manager.startSession();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(manager.snapshot().items[0]).toMatchObject({ state: "failing", lastOutput: "temporary failure" });
+		await vi.advanceTimersByTimeAsync(1_999);
+		expect(probe).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(probe).toHaveBeenCalledTimes(2);
+		expect(manager.snapshot().items[0]?.state).toBe("passing");
+	});
+
 	it("implements sleep without shell probes", async () => {
 		vi.useFakeTimers();
 		const runner = vi.fn();

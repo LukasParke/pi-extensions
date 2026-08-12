@@ -153,7 +153,8 @@ export function snapshotFromGraphQl(response: GraphQlResponse, repo: RepoRef): P
 	}
 	const pr = response.data?.repository?.pullRequest;
 	if (!pr) throw new Error(`GitHub PR ${repo.slug} was not found or the credential cannot see it`);
-	const viewer = response.data?.viewer?.login ?? "";
+	const viewer = response.data?.viewer?.login;
+	if (!viewer) throw new Error("GitHub GraphQL response did not include the authenticated viewer login");
 	const threads = pr.reviewThreads?.nodes?.flatMap((thread) => (thread ? [thread] : [])) ?? [];
 	const rollup = pr.commits?.nodes?.at(-1)?.commit?.statusCheckRollup;
 	const activities: PrActivity[] = [
