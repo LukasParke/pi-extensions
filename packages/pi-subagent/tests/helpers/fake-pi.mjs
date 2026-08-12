@@ -75,7 +75,6 @@ if (isMain) {
       emit(header);
       emit({
         type: "message_update",
-        message: { role: "assistant", content: [] },
         assistantMessageEvent: { type: "text_delta", delta: "retrying" },
       });
       emit(message);
@@ -236,7 +235,7 @@ if (isMain) {
     }
     if (mode === "malformed") process.stdout.write("not-json\n");
     // Deliberately batch events; optionally pause after billed message usage.
-    const update = { type: "message_update", message: { role: "assistant", content: [] }, assistantMessageEvent: { type: "text_delta", delta: "Hello" } };
+    const update = { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Hello" } };
     if (mode === "pause-after-message") {
       process.stdout.write([header, update, message].map((value) => JSON.stringify(value)).join("\n") + "\n");
       await new Promise((resolve) => setTimeout(resolve, Number(process.env.FAKE_PI_PAUSE_MS || 250)));

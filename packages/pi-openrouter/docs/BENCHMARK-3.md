@@ -6,30 +6,29 @@ tool-loop scenario as [BENCHMARK.md](BENCHMARK.md); these tables supersede the n
 [BENCHMARK-2.md](BENCHMARK-2.md) where they disagree. Cache-read detail lives in the per-run
 summary tables the benchmark printed (committed raw JSONL carries per-trial totals).
 
-
 ## `anthropic/claude-opus-5`
 
-| Surface | n | Cost/trial | Reasoning replayed | Wall p50 |
-| --- | --- | --- | --- | --- |
-| `completions` | 75 | $0.02431 | 0/75 | 11.4s |
-| `responses` | 75 | $0.02422 | 9/75 | 11.3s |
-| `messages` | 75 | $0.00966 | 19/75 | 10.9s |
+| Surface       | n   | Cost/trial | Reasoning replayed | Wall p50 |
+| ------------- | --- | ---------- | ------------------ | -------- |
+| `completions` | 75  | $0.02431   | 0/75               | 11.4s    |
+| `responses`   | 75  | $0.02422   | 9/75               | 11.3s    |
+| `messages`    | 75  | $0.00966   | 19/75              | 10.9s    |
 
 ## `openai/gpt-5.6-sol`
 
-| Surface | n | Cost/trial | Reasoning replayed | Wall p50 |
-| --- | --- | --- | --- | --- |
-| `completions` | 105 | $0.01445 | 0/105 | 9.9s |
-| `responses` | 105 | $0.01453 | 105/105 | 10.0s |
-| `messages` | 105 | $0.01639 | 0/105 | 11.1s |
+| Surface       | n   | Cost/trial | Reasoning replayed | Wall p50 |
+| ------------- | --- | ---------- | ------------------ | -------- |
+| `completions` | 105 | $0.01445   | 0/105              | 9.9s     |
+| `responses`   | 105 | $0.01453   | 105/105            | 10.0s    |
+| `messages`    | 105 | $0.01639   | 0/105              | 11.1s    |
 
 ## `moonshotai/kimi-k3`
 
-| Surface | n | Cost/trial | Reasoning replayed | Wall p50 |
-| --- | --- | --- | --- | --- |
-| `completions` | 110 | $0.01235 | 0/110 | 16.2s |
-| `responses` | 110 | $0.01118 | 89/110 | 15.3s |
-| `messages` | 110 | $0.01235 | 0/110 | 19.1s |
+| Surface       | n   | Cost/trial | Reasoning replayed | Wall p50 |
+| ------------- | --- | ---------- | ------------------ | -------- |
+| `completions` | 110 | $0.01235   | 0/110              | 16.2s    |
+| `responses`   | 110 | $0.01118   | 89/110             | 15.3s    |
+| `messages`    | 110 | $0.01235   | 0/110              | 19.1s    |
 
 ## Verdicts at volume
 

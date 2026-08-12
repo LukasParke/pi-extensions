@@ -158,24 +158,29 @@ export function processStartTime(pid: number): number {
   return 0;
 }
 
+let currentIdentity: ProcessIdentity | undefined;
+
 export function currentProcessIdentity(): ProcessIdentity {
-  let pgid: number | undefined;
-  try {
-    // Node exposes getpgrp on POSIX but the type package has not always
-    // declared it. Access reflectively for portability.
-    const getpgrp = (process as NodeJS.Process & { getpgrp?: () => number }).getpgrp;
-    if (process.platform !== "win32" && typeof getpgrp === "function") {
-      pgid = getpgrp.call(process);
+  if (!currentIdentity) {
+    let pgid: number | undefined;
+    try {
+      // Node exposes getpgrp on POSIX but the type package has not always
+      // declared it. Access reflectively for portability.
+      const getpgrp = (process as NodeJS.Process & { getpgrp?: () => number }).getpgrp;
+      if (process.platform !== "win32" && typeof getpgrp === "function") {
+        pgid = getpgrp.call(process);
+      }
+    } catch {
+      pgid = undefined;
     }
-  } catch {
-    pgid = undefined;
+    currentIdentity = {
+      pid: process.pid,
+      startTime: processStartTime(process.pid),
+      pgid,
+      hostname: HOSTNAME,
+    };
   }
-  return {
-    pid: process.pid,
-    startTime: processStartTime(process.pid),
-    pgid,
-    hostname: HOSTNAME,
-  };
+  return { ...currentIdentity };
 }
 
 export function isProcessAlive(identity: ProcessIdentity): boolean {
@@ -183,6 +188,10 @@ export function isProcessAlive(identity: ProcessIdentity): boolean {
   // Only check processes on this host; cross-host records are treated as dead so
   // local reconcile does not wait forever.
   if (identity.hostname && identity.hostname !== HOSTNAME) return false;
+  if (identity.pid === process.pid) {
+    const current = currentProcessIdentity();
+    return !identity.startTime || !current.startTime || identity.startTime === current.startTime;
+  }
   try {
     process.kill(identity.pid, 0);
   } catch (error: any) {
@@ -393,8 +402,7 @@ export class ProcessLockManager {
    * depth-1 spawns always have ≥1 free. Single-level fan-out at maxDepth 1
    * reserves 0 and can still fill the full cap.
    *
-   * PLAN 3.1 numeric contract: reserve `max(0, maxDepth - 1 - depth)` (the
-   * written `min(depth, maxDepth-1)` form is inverted relative to the example).
+   * PLAN 3.1 numeric contract: reserve `max(0, maxDepth - 1 - depth)`.
    */
   private reservedFor(depth: number): number {
     if (this.maxDepth <= 1) return 0;

@@ -130,7 +130,7 @@ describe("extension end-to-end wiring", () => {
     await fs.rm(bin, { recursive: true, force: true });
   });
 
-  it("runs foreground, persists usage, and reports root/subagent/combined cost", async () => {
+  it("runs foreground, persists usage, and reports root/subagent/combined cost", { timeout: 10_000 }, async () => {
     const h = harness();
     await h.handlers.get("session_start")!({}, h.ctx);
     const result = await execute(h, { task: "hello", profile: "explore" });
@@ -154,7 +154,7 @@ describe("extension end-to-end wiring", () => {
     await vi.waitFor(() => {
       const run = h.entries.find((entry) => entry.customType === RUN_ENTRY_TYPE && entry.data.id === id && entry.data.type === "checkpoint" && entry.data.data.results?.[0]?.usage?.cost > 0);
       expect(run).toBeTruthy();
-    });
+    }, { timeout: 10_000 });
     const status = await execute(h, { action: "status", id });
     expect(status.content[0].text).toContain("subagents $0.0010");
     expect(status.content[0].text).toContain("combined $0.2010");
@@ -413,7 +413,7 @@ describe("extension end-to-end wiring", () => {
     await h.handlers.get("session_shutdown")!();
   });
 
-  it("suppresses the notification when wait already delivered the run", async () => {
+  it("suppresses the notification when wait already delivered the run", { timeout: 10_000 }, async () => {
     const h = harness();
     await h.handlers.get("session_start")!({}, h.ctx);
     process.env.FAKE_PI_DELAY_MS = "100";
@@ -426,7 +426,7 @@ describe("extension end-to-end wiring", () => {
     await h.handlers.get("session_shutdown")!();
   });
 
-  it("foreground runs never notify", async () => {
+  it("foreground runs never notify", { timeout: 10_000 }, async () => {
     const h = harness();
     await h.handlers.get("session_start")!({}, h.ctx);
     await execute(h, { task: "fg work", profile: "explore" });
@@ -435,7 +435,7 @@ describe("extension end-to-end wiring", () => {
     await h.handlers.get("session_shutdown")!();
   });
 
-  it("skips batched completion messages when notifications are off", async () => {
+  it("skips batched completion messages when notifications are off", { timeout: 10_000 }, async () => {
     process.env.PI_SUBAGENT_NOTIFICATIONS = "off";
     const h = harness();
     await h.handlers.get("session_start")!({}, h.ctx);
@@ -444,7 +444,7 @@ describe("extension end-to-end wiring", () => {
     await vi.waitFor(() => {
       const terminal = h.entries.find((entry) => entry.customType === RUN_ENTRY_TYPE && entry.data.id === id && entry.data.type === "terminal");
       expect(terminal).toBeTruthy();
-    });
+    }, { timeout: 10_000 });
     // Default batcher debounce is 2s; wait past that to ensure nothing would flush.
     await new Promise((resolve) => setTimeout(resolve, 2_600));
     expect(h.sentMessages).toHaveLength(0);

@@ -14,10 +14,16 @@ const end = { type: "agent_end", messages: [] };
 const settled = { type: "agent_settled" };
 
 describe("ProtocolParser", () => {
-  it("emits every update from a batched chunk", () => {
+  it("emits every update from a batched Pi 0.84 chunk", () => {
     const parser = new ProtocolParser();
-    const updates = parser.feed([header, { type: "message_update", message: { role: "assistant", content: [] }, assistantMessageEvent: { type: "text_delta", delta: "hi" } }, message, end, settled].map((value) => JSON.stringify(value)).join("\n") + "\n");
+    const updates = parser.feed([header, { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hi" } }, message, end, settled].map((value) => JSON.stringify(value)).join("\n") + "\n");
     expect(updates.map((u) => u.type)).toEqual(["session", "live-text", "message", "agent-end", "agent-settled"]);
+  });
+
+  it("accepts cumulative pre-0.84 message updates", () => {
+    const parser = new ProtocolParser();
+    const updates = parser.feed(JSON.stringify({ type: "message_update", message: { role: "assistant", content: [{ type: "text", text: "legacy" }] } }) + "\n");
+    expect(updates).toEqual([{ type: "live-text", delta: "legacy", liveText: "legacy" }]);
   });
 
   it("flushes a final unterminated JSON line", () => {

@@ -181,7 +181,7 @@ current behavior deadlocks/times out, then flip the assertion with the fix.
 **Step 2 — chosen design: depth-reserved tiers.** Deterministic and simple:
 slot files gain a `depth` field; `tryAcquireGlobalSlot(runId, depth)` enforces
 `activeAtOrBelowDepth(depth) < maxGlobalActive - reservedFor(depth)` where
-`reservedFor(depth) = min(depth, maxDepth-1)` slots are held back for deeper
+`reservedFor(depth) = max(0, maxDepth - 1 - depth)` slots are held back for deeper
 tiers. With defaults (cap 16, maxDepth 2): depth-0 children may hold at most
 15 slots, guaranteeing depth-1 spawns always have ≥1 slot — deadlock becomes
 impossible by construction. Rejected alternative (release-while-waiting) needs

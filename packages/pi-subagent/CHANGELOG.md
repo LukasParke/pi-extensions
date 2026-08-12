@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Pi 0.84 compatibility
+
+- RPC live progress now consumes Pi 0.84's delta-only `message_update` events while retaining compatibility with older cumulative events.
+- Global slot reservations now use the configured `maxDepth` instead of the default, and current-process identity checks avoid repeated platform process lookups.
+
 ### Machine-wide worktree GC
 
 - Startup maintenance now sweeps every repo container under `worktreeDir` via
