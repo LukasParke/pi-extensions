@@ -9,4 +9,5 @@ description: Use GitHub pull request, review, check, issue, and comment tools. U
 2. Use `github_pr` for review: it returns the body, files, patches, checks, and reviews in one call.
 3. Prefer `github_checks` when the question is specifically why CI is red.
 4. Writes (`github_comment`, `github_review`) require confirmation unless the user explicitly chose non-interactive execution.
-5. Authentication: run `/github-login` interactively, use `gh auth login`, or set `GITHUB_TOKEN`/`GH_TOKEN`.
+5. `github_review` event `approve` is Luke-only. Use `comment` unless this conversation explicitly asked to approve that PR. `Agent:` on the body does not make an approval an agent vote — GitHub still records it as LukasParke.
+6. Authentication: run `/github-login` interactively, use `gh auth login`, or set `GITHUB_TOKEN`/`GH_TOKEN`.

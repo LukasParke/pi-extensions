@@ -12,16 +12,16 @@ Nothing else. If you have the GitHub CLI authenticated, there is no credential s
 
 ## What it does
 
-| Tool                                   | What it is for                                                                |
-| -------------------------------------- | ----------------------------------------------------------------------------- |
-| `github_prs`                           | What is open, what is failing, what needs review                              |
-| `github_pr`                            | One PR in full — body, diff, checks, reviews. Enough to review it in one call |
-| `github_issues`                        | Issues, filterable by label and assignee                                      |
-| `github_checks`                        | Why CI is red, for any branch, tag or SHA                                     |
-| `github_comment`                       | Comment on a PR or issue — **asks you first**                                 |
-| `github_review`                        | Approve, request changes, or comment — **asks you first**                     |
-| `github_status`                        | Whether it works, which credential, and what it will not do                   |
-| `github_connect` / `github_disconnect` | Store or remove a token, if you need one                                      |
+| Tool                                   | What it is for                                                                     |
+| -------------------------------------- | ---------------------------------------------------------------------------------- |
+| `github_prs`                           | What is open, what is failing, what needs review                                   |
+| `github_pr`                            | One PR in full — body, diff, checks, reviews. Enough to review it in one call      |
+| `github_issues`                        | Issues, filterable by label and assignee                                           |
+| `github_checks`                        | Why CI is red, for any branch, tag or SHA                                          |
+| `github_comment`                       | Comment on a PR or issue — **asks you first**                                      |
+| `github_review`                        | Comment by default; request changes; approve is Luke-only (`lukeApproved` + `yes`) |
+| `github_status`                        | Whether it works, which credential, and what it will not do                        |
+| `github_connect` / `github_disconnect` | Store or remove a token, if you need one                                           |
 
 **No repository argument needed** inside a checkout — it reads your `origin` remote.
 
