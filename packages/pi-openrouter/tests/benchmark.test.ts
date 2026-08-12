@@ -163,6 +163,8 @@ describe("runTrial", () => {
 		});
 
 		expect(result.completed).toBe(true);
+		// Only one file read and only a failing test run — finished, but off-script.
+		expect(result.followedScenario).toBe(false);
 		expect(result.turns).toHaveLength(3);
 		expect(result.turns.map((t) => t.toolCalls)).toEqual([["read_file"], ["run_tests"], []]);
 		expect(result.totalCost).toBeCloseTo(0.00042);
@@ -180,6 +182,37 @@ describe("runTrial", () => {
 			type: "text",
 			text: expect.stringContaining("a - b"),
 		});
+	});
+
+	it("marks followedScenario when all files are read and tests pass", async () => {
+		const script = [
+			assistantMessage({
+				content: [
+					{ type: "toolCall", id: "r1", name: "read_file", arguments: { path: "math.py" } },
+					{ type: "toolCall", id: "r2", name: "read_file", arguments: { path: "test_math.py" } },
+					{ type: "toolCall", id: "r3", name: "read_file", arguments: { path: "util.py" } },
+				],
+				stopReason: "toolUse",
+			}),
+			assistantMessage({
+				content: [{ type: "toolCall", id: "t1", name: "run_tests", arguments: {} }],
+				stopReason: "toolUse",
+			}),
+			assistantMessage({
+				content: [{ type: "toolCall", id: "t2", name: "run_tests", arguments: {} }],
+				stopReason: "toolUse",
+			}),
+			assistantMessage({ content: [{ type: "text", text: "DONE" }] }),
+		];
+		const result = await runTrial({
+			surface: "completions",
+			model,
+			stream: scriptedStream(script),
+			trial: 1,
+			apiKey: "test-key",
+		});
+		expect(result.completed).toBe(true);
+		expect(result.followedScenario).toBe(true);
 	});
 
 	it("stops on provider errors and records them", async () => {
@@ -226,6 +259,7 @@ describe("aggregation", () => {
 		totalTokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
 		totalWallMs: 0,
 		completed: true,
+		followedScenario: false,
 		reasoningPreserved: false,
 		...overrides,
 	});
@@ -233,6 +267,17 @@ describe("aggregation", () => {
 	it("mean handles empty input", () => {
 		expect(mean([])).toBe(0);
 		expect(mean([1, 2, 3])).toBe(2);
+	});
+
+	it("summarize means come from completed trials only", () => {
+		const summary = summarize("completions", [
+			trial({ totalCost: 0.01, totalWallMs: 1000 }),
+			trial({ totalCost: 100, totalWallMs: 90_000, completed: false, error: "blew up early" }),
+		]);
+		expect(summary.meanCost).toBeCloseTo(0.01);
+		expect(summary.meanWallMs).toBe(1000);
+		expect(summary.completedTrials).toBe(1);
+		expect(summary.erroredTrials).toBe(1);
 	});
 
 	it("summarize averages across trials and counts flags", () => {
@@ -258,7 +303,6 @@ describe("aggregation", () => {
 			trial({
 				totalCost: 0.03,
 				totalWallMs: 3000,
-				completed: false,
 				error: "boom",
 				totalTokens: { input: 300, output: 30, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
 			}),
@@ -268,7 +312,7 @@ describe("aggregation", () => {
 		expect(summary.meanInputTokens).toBe(200);
 		expect(summary.meanCacheReadTokens).toBe(25);
 		expect(summary.meanTtftMs).toBe(200);
-		expect(summary.completedTrials).toBe(1);
+		expect(summary.completedTrials).toBe(2);
 		expect(summary.erroredTrials).toBe(1);
 		expect(summary.reasoningPreservedTrials).toBe(1);
 	});

@@ -85,7 +85,9 @@ both replayed reasoning and were 2.1–2.6× cheaper and ~2× faster than
 completions ($0.00393), where the model re-thought every turn (1144 vs
 215–348 reasoning tokens).
 
-Run your own numbers before committing a harness to a surface:
+Run your own numbers before committing a harness to a surface (the
+benchmark script requires [Bun](https://bun.sh); the extension itself does
+not):
 
 ```bash
 OPENROUTER_API_KEY=... bun run scripts/benchmark.ts anthropic/claude-sonnet-4.6 --trials 3
@@ -106,10 +108,12 @@ request for replayed reasoning items, not just response metadata.
   benchmark finding.
 - The messages surface uses the Anthropic SDK, which posts to `{base}/v1/messages`;
   the provider therefore registers `https://openrouter.ai/api` as its base.
-- Cache metrics stay 0 in short benchmark runs — prompts are below the
-  minimum cacheable size. Real agent sessions with large system prompts will
-  differ; benchmark cache behavior with a bigger scenario before drawing
-  conclusions.
+- Cache behavior depends on the model and surface: in the committed runs
+  gpt-5.2 recorded no cache activity on any surface (the prompt is below
+  OpenAI's minimum cacheable size), Claude hit `cache_control` caching on
+  completions/messages but not responses, and Kimi's implicit cache fired
+  everywhere. Inspect the cache columns for your model rather than
+  generalizing; real agent sessions with large system prompts will differ.
 - Model metadata (`compat`, thinking level maps) is curated for the three
   default models. Other models get sane generic metadata from the models API,
   which may miss provider quirks.

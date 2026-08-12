@@ -127,6 +127,8 @@ export interface TrialResult {
 	totalTokens: { input: number; output: number; cacheRead: number; cacheWrite: number; reasoning: number };
 	totalWallMs: number;
 	completed: boolean;
+	/** Read all three files and saw run_tests pass — the scripted scenario, followed exactly. */
+	followedScenario: boolean;
 	reasoningPreserved: boolean;
 	finalText?: string;
 	error?: string;
@@ -172,8 +174,11 @@ export async function runTrial(options: RunTrialOptions): Promise<TrialResult> {
 		totalTokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
 		totalWallMs: 0,
 		completed: false,
+		followedScenario: false,
 		reasoningPreserved: false,
 	};
+	const readPaths = new Set<string>();
+	let sawTestsPass = false;
 
 	for (let turn = 1; turn <= maxTurns; turn++) {
 		let replayedReasoning = false;
@@ -242,16 +247,24 @@ export async function runTrial(options: RunTrialOptions): Promise<TrialResult> {
 				.filter((block) => block.type === "text")
 				.map((block) => block.text)
 				.join("\n");
-			result.completed = true;
+			result.completed = assistant.stopReason === "stop";
+			result.followedScenario = result.completed && readPaths.size >= 3 && sawTestsPass;
 			break;
 		}
 
 		for (const call of toolCalls) {
+			const answer = harness.answer(call.name, call.arguments);
+			if (call.name === "read_file" && !answer.startsWith("ERROR")) {
+				readPaths.add(String(call.arguments.path ?? ""));
+			}
+			if (call.name === "run_tests" && answer.includes("passed")) {
+				sawTestsPass = true;
+			}
 			messages.push({
 				role: "toolResult",
 				toolCallId: call.id,
 				toolName: call.name,
-				content: [{ type: "text", text: harness.answer(call.name, call.arguments) }],
+				content: [{ type: "text", text: answer }],
 				isError: false,
 				timestamp: Date.now(),
 			});
@@ -269,6 +282,7 @@ export interface SurfaceSummary {
 	surface: string;
 	trials: number;
 	completedTrials: number;
+	followedScenarioTrials: number;
 	erroredTrials: number;
 	meanTurns: number;
 	meanCost: number;
@@ -287,22 +301,27 @@ export function mean(values: number[]) {
 }
 
 export function summarize(surface: string, trials: TrialResult[]): SurfaceSummary {
-	const ttfts = trials.flatMap((t) =>
+	// Means come from completed trials only, so an early provider failure cannot
+	// drag a surface's reported cost or latency down. Error counts still cover
+	// every trial.
+	const completed = trials.filter((t) => t.completed);
+	const ttfts = completed.flatMap((t) =>
 		t.turns.map((turn) => turn.ttftMs).filter((v): v is number => v !== undefined),
 	);
 	return {
 		surface,
 		trials: trials.length,
-		completedTrials: trials.filter((t) => t.completed).length,
+		completedTrials: completed.length,
+		followedScenarioTrials: trials.filter((t) => t.followedScenario).length,
 		erroredTrials: trials.filter((t) => t.error).length,
-		meanTurns: mean(trials.map((t) => t.turns.length)),
-		meanCost: mean(trials.map((t) => t.totalCost)),
-		meanInputTokens: mean(trials.map((t) => t.totalTokens.input)),
-		meanOutputTokens: mean(trials.map((t) => t.totalTokens.output)),
-		meanCacheReadTokens: mean(trials.map((t) => t.totalTokens.cacheRead)),
-		meanCacheWriteTokens: mean(trials.map((t) => t.totalTokens.cacheWrite)),
-		meanReasoningTokens: mean(trials.map((t) => t.totalTokens.reasoning)),
-		meanWallMs: mean(trials.map((t) => t.totalWallMs)),
+		meanTurns: mean(completed.map((t) => t.turns.length)),
+		meanCost: mean(completed.map((t) => t.totalCost)),
+		meanInputTokens: mean(completed.map((t) => t.totalTokens.input)),
+		meanOutputTokens: mean(completed.map((t) => t.totalTokens.output)),
+		meanCacheReadTokens: mean(completed.map((t) => t.totalTokens.cacheRead)),
+		meanCacheWriteTokens: mean(completed.map((t) => t.totalTokens.cacheWrite)),
+		meanReasoningTokens: mean(completed.map((t) => t.totalTokens.reasoning)),
+		meanWallMs: mean(completed.map((t) => t.totalWallMs)),
 		meanTtftMs: mean(ttfts),
 		reasoningPreservedTrials: trials.filter((t) => t.reasoningPreserved).length,
 	};
@@ -314,6 +333,7 @@ export function renderReport(model: string, summaries: SurfaceSummary[], generat
 		[
 			`\`${s.surface}\``,
 			`${s.completedTrials}/${s.trials}`,
+			`${s.followedScenarioTrials}/${s.trials}`,
 			fmt(s.meanTurns, 1),
 			`$${s.meanCost.toFixed(5)}`,
 			fmt(s.meanInputTokens),
@@ -329,10 +349,10 @@ export function renderReport(model: string, summaries: SurfaceSummary[], generat
 	return [
 		`# OpenRouter API surface benchmark — \`${model}\``,
 		"",
-		`Generated ${generatedAt.toISOString()} by \`scripts/benchmark.ts\`. Means over completed trials of the deterministic tool-loop scenario.`,
+		`Generated ${generatedAt.toISOString()} by \`scripts/benchmark.ts\`. Means over completed trials of the deterministic tool-loop scenario. "Scenario" counts trials that read all three files and saw the suite pass before answering.`,
 		"",
-		"| Surface | Completed | Turns | Cost | Input tok | Output tok | Cache read | Cache write | Reasoning tok | Wall | TTFT | Reasoning replayed |",
-		"| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+		"| Surface | Completed | Scenario | Turns | Cost | Input tok | Output tok | Cache read | Cache write | Reasoning tok | Wall | TTFT | Reasoning replayed |",
+		"| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
 		...rows.map((row) => `| ${row} |`),
 		"",
 	].join("\n");

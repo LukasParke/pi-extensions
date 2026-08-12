@@ -6,18 +6,25 @@ API. 3 trials per surface per model, deterministic 4–6 turn tool loop
 are means over trials. "Reasoning replayed" is asserted on the wire: the
 harness inspects every outgoing request payload for replayed reasoning
 items (`reasoning_details` on completions, `type:"reasoning"` input items on
-responses, `thinking` blocks on messages).
+responses, `thinking` blocks on messages). "Scenario" counts trials that
+read all three files and re-ran the suite until it passed before answering
+(computed from the per-trial tool-call logs).
 
 Raw per-trial data: `benchmark-*.jsonl` in this directory
 (`00-24` = gpt-5.2, `00-26` = claude-sonnet-4.6, `00-28` = kimi-k2-thinking).
 
 ## `openai/gpt-5.2`
 
-| Surface       | Completed | Turns | Cost     | Input tok | Output tok | Cache read | Cache write | Reasoning tok | Wall  | TTFT   | Reasoning replayed |
-| ------------- | --------- | ----- | -------- | --------- | ---------- | ---------- | ----------- | ------------- | ----- | ------ | ------------------ |
-| `completions` | 3/3       | 5.3   | $0.01184 | 1522      | 656        | 0          | 0           | 537           | 14.2s | 2021ms | 0/3                |
-| `responses`   | 3/3       | 5.0   | $0.00591 | 1485      | 237        | 0          | 0           | 123           | 8.0s  | 1258ms | 3/3                |
-| `messages`    | 3/3       | 5.3   | $0.01158 | 1719      | 613        | 0          | 0           | 489           | 15.0s | 2082ms | 0/3                |
+| Surface       | Completed | Scenario | Turns | Cost     | Input tok | Output tok | Cache read | Cache write | Reasoning tok | Wall  | TTFT   | Reasoning replayed |
+| ------------- | --------- | -------- | ----- | -------- | --------- | ---------- | ---------- | ----------- | ------------- | ----- | ------ | ------------------ |
+| `completions` | 3/3       | 1/3      | 5.3   | $0.01184 | 1522      | 656        | 0          | 0           | 537           | 14.2s | 2021ms | 0/3                |
+| `responses`   | 3/3       | 0/3      | 5.0   | $0.00591 | 1485      | 237        | 0          | 0           | 123           | 8.0s  | 1258ms | 3/3                |
+| `messages`    | 3/3       | 1/3      | 5.3   | $0.01158 | 1719      | 613        | 0          | 0           | 489           | 15.0s | 2082ms | 0/3                |
+
+gpt-5.2 frequently skipped the confirming second `run_tests` on every
+surface (7/9 trials answered right after the failing run), so its Scenario
+column is low everywhere — an instruction-following quirk of the model, not
+a surface effect; it does not bias the cross-surface comparison.
 
 Responses is the only surface that preserved gpt-5.2's reasoning across
 turns, and it cost **50% less** and ran **44% faster**: without replay the
@@ -30,11 +37,11 @@ echo back.
 
 ## `anthropic/claude-sonnet-4.6`
 
-| Surface       | Completed | Turns | Cost     | Input tok | Output tok | Cache read | Cache write | Reasoning tok | Wall | TTFT   | Reasoning replayed |
-| ------------- | --------- | ----- | -------- | --------- | ---------- | ---------- | ----------- | ------------- | ---- | ------ | ------------------ |
-| `completions` | 3/3       | 4.0   | $0.00935 | 735       | 309        | 2924       | 436         | 10            | 8.8s | 1269ms | 0/3                |
-| `responses`   | 3/3       | 4.0   | $0.01773 | 4190      | 344        | 0          | 0           | 11            | 9.2s | 1234ms | 3/3                |
-| `messages`    | 3/3       | 4.0   | $0.00979 | 739       | 320        | 2938       | 504         | 10            | 8.6s | 1194ms | 3/3                |
+| Surface       | Completed | Scenario | Turns | Cost     | Input tok | Output tok | Cache read | Cache write | Reasoning tok | Wall | TTFT   | Reasoning replayed |
+| ------------- | --------- | -------- | ----- | -------- | --------- | ---------- | ---------- | ----------- | ------------- | ---- | ------ | ------------------ |
+| `completions` | 3/3       | 3/3      | 4.0   | $0.00935 | 735       | 309        | 2924       | 436         | 10            | 8.8s | 1269ms | 0/3                |
+| `responses`   | 3/3       | 3/3      | 4.0   | $0.01773 | 4190      | 344        | 0          | 0           | 11            | 9.2s | 1234ms | 3/3                |
+| `messages`    | 3/3       | 3/3      | 4.0   | $0.00979 | 739       | 320        | 2938       | 504         | 10            | 8.6s | 1194ms | 3/3                |
 
 For Claude the dominant factor is **prompt caching, not reasoning replay**
 (adaptive thinking barely engaged on this task: ~10 reasoning tokens
@@ -49,11 +56,11 @@ Messages replayed signed thinking natively at essentially the same cost.
 
 ## `moonshotai/kimi-k2-thinking`
 
-| Surface       | Completed | Turns | Cost     | Input tok | Output tok | Cache read | Cache write | Reasoning tok | Wall  | TTFT  | Reasoning replayed |
-| ------------- | --------- | ----- | -------- | --------- | ---------- | ---------- | ----------- | ------------- | ----- | ----- | ------------------ |
-| `completions` | 3/3       | 6.0   | $0.00393 | 1204      | 1157       | 2069       | 0           | 1144          | 10.4s | 774ms | 0/3                |
-| `responses`   | 3/3       | 6.0   | $0.00188 | 812       | 432        | 2048       | 0           | 348           | 5.5s  | 560ms | 3/3                |
-| `messages`    | 3/3       | 5.7   | $0.00150 | 729       | 312        | 1856       | 0           | 215           | 4.9s  | 587ms | 3/3                |
+| Surface       | Completed | Scenario | Turns | Cost     | Input tok | Output tok | Cache read | Cache write | Reasoning tok | Wall  | TTFT  | Reasoning replayed |
+| ------------- | --------- | -------- | ----- | -------- | --------- | ---------- | ---------- | ----------- | ------------- | ----- | ----- | ------------------ |
+| `completions` | 3/3       | 3/3      | 6.0   | $0.00393 | 1204      | 1157       | 2069       | 0           | 1144          | 10.4s | 774ms | 0/3                |
+| `responses`   | 3/3       | 3/3      | 6.0   | $0.00188 | 812       | 432        | 2048       | 0           | 348           | 5.5s  | 560ms | 3/3                |
+| `messages`    | 3/3       | 2/3      | 5.7   | $0.00150 | 729       | 312        | 1856       | 0           | 215           | 4.9s  | 587ms | 3/3                |
 
 Same story as gpt-5.2, amplified: responses and messages both replayed
 Kimi's thinking (as reasoning items / unsigned thinking blocks with
@@ -79,7 +86,10 @@ reasoning tokens). All three surfaces hit Kimi's implicit prompt cache.
    `reasoning_details` replay over streaming completions, verify it
    actually receives encrypted details for your model.
 4. All 27 trials completed on all three surfaces for these models — no
-   endpoint rejected any of the curated models outright.
+   endpoint rejected any of the curated models outright. Scenario adherence
+   (reading everything and confirming the fix with a second test run) was
+   perfect for Claude, near-perfect for Kimi, and weak for gpt-5.2 on every
+   surface — a model trait, not a surface trait.
 
 Caveats: single scenario, short prompts (cache columns understate what a
 real agent session with a large system prompt would show), 3 trials per
