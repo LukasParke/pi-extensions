@@ -23,5 +23,6 @@ describe("sentinelStatus", () => {
 		expect(sentinelStatus([])).toBeUndefined();
 		expect(sentinelStatus([watch], gate)).toBe("◉ 1 watch, gate 1/2");
 		expect(sentinelStatus([{ ...watch, kind: "sleep" }])).toBe("◉ 1 sleep");
+		expect(sentinelStatus([{ ...watch, kind: "pr" }])).toBe("◉ 1 PR");
 	});
 });

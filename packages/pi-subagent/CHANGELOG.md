@@ -2,10 +2,17 @@
 
 ## Unreleased
 
+
 ### Pi 0.84 compatibility
 
 - RPC live progress now consumes Pi 0.84's delta-only `message_update` events while retaining compatibility with older cumulative events.
 - Global slot reservations now use the configured `maxDepth` instead of the default, and current-process identity checks avoid repeated platform process lookups.
+
+### Required task profiles
+
+- **Breaking:** spawned tasks must set `profile` to `explore`, `review`, or
+  `general`, unless a named agent persona declares one. Validation now explains
+  the three choices instead of silently selecting a mode default.
 
 ### Machine-wide worktree GC
 

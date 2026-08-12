@@ -12,7 +12,7 @@ and can use tools according to their capability profile.
 | `review` | same as explore | No |
 | `general` | inherited active tools (may include `bash`/`edit`/`write`) | Yes |
 
-Parallel mode defaults to `explore` to avoid concurrent shared writes.
+Every task selects a profile explicitly; parallel writers still require worktree isolation, distinct working directories, or explicit shared-write opt-in.
 
 ## Hard rules
 

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SentinelManager } from "../src/manager.ts";
 import type { ProbeResult } from "../src/index.ts";
+import type { PrSnapshot } from "../src/pr.ts";
 
 const flush = async () => {
 	await vi.runAllTimersAsync();
@@ -50,6 +51,79 @@ describe("SentinelManager", () => {
 		await vi.advanceTimersByTimeAsync(2_000);
 		expect(events.at(-1)).toContain("timed out");
 		expect(manager.snapshot().items[0]?.state).toBe("timeout");
+	});
+
+	it("attaches a PR, baselines silently, and wakes on actionable updates", async () => {
+		vi.useFakeTimers();
+		const snapshot = (over: Partial<PrSnapshot> = {}): PrSnapshot => ({
+			repo: "o/r",
+			number: 7,
+			title: "PR",
+			url: "https://github.com/o/r/pull/7",
+			viewer: "agent",
+			lifecycle: "open",
+			headSha: "abc",
+			merge: "clean",
+			checks: "passing",
+			failingChecks: [],
+			reviewDecision: "approved",
+			unresolvedThreads: 0,
+			activities: [],
+			...over,
+		});
+		const values = [
+			snapshot(),
+			snapshot({ checks: "failing", failingChecks: ["test"] }),
+			snapshot({ lifecycle: "merged" }),
+		];
+		const events: string[] = [];
+		const manager = new SentinelManager();
+		manager.onEvent((event) => events.push(event.message));
+		manager.attachPr({
+			name: "pr-7",
+			repo: "o/r",
+			number: 7,
+			probe: async () => values.shift()!,
+			intervalMs: 1_000,
+		});
+		manager.startSession();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(events).toEqual([]);
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(events[0]).toContain("broken CI");
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(events[1]).toContain("was merged");
+		expect(manager.snapshot().items[0]?.state).toBe("complete");
+	});
+
+	it("backs off after a failed PR probe and recovers", async () => {
+		vi.useFakeTimers();
+		const snapshot: PrSnapshot = {
+			repo: "o/r",
+			number: 7,
+			title: "PR",
+			url: "https://github.com/o/r/pull/7",
+			viewer: "agent",
+			lifecycle: "open",
+			headSha: "abc",
+			merge: "clean",
+			checks: "passing",
+			failingChecks: [],
+			reviewDecision: "approved",
+			unresolvedThreads: 0,
+			activities: [],
+		};
+		const probe = vi.fn().mockRejectedValueOnce(new Error("temporary failure")).mockResolvedValue(snapshot);
+		const manager = new SentinelManager();
+		manager.attachPr({ name: "pr-7", repo: "o/r", number: 7, probe, intervalMs: 1_000 });
+		manager.startSession();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(manager.snapshot().items[0]).toMatchObject({ state: "failing", lastOutput: "temporary failure" });
+		await vi.advanceTimersByTimeAsync(1_999);
+		expect(probe).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(probe).toHaveBeenCalledTimes(2);
+		expect(manager.snapshot().items[0]?.state).toBe("passing");
 	});
 
 	it("implements sleep without shell probes", async () => {

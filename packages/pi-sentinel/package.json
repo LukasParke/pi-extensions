@@ -28,6 +28,7 @@
     "extensions",
     "src",
     "skills",
+    "docs",
     "README.md",
     "LICENSE"
   ],
@@ -45,6 +46,9 @@
     "skills": [
       "./skills"
     ]
+  },
+  "dependencies": {
+    "@parke.dev/pi-github": "^0.1.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

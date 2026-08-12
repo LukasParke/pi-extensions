@@ -7,10 +7,11 @@ complete before their criteria pass.
 
 | Tool              | What it does                                                                 |
 | ----------------- | ---------------------------------------------------------------------------- |
+| `sentinel_pr`     | Attach a GitHub PR and wake for conflicts, broken CI, reviews, or closure    |
 | `sentinel_watch`  | Poll a command, or stream one blocking process until it exits                |
 | `sentinel_sleep`  | Schedule a replaceable wakeup after a duration or at an ISO-8601 time        |
 | `sentinel_gate`   | Require every session criterion to pass, optionally for a quiet time         |
-| `sentinel_status` | Show watches, sleeps, gate state, output snippets, and poll ETAs             |
+| `sentinel_status` | Show attached PRs, watches, sleeps, gate state, output, and poll ETAs        |
 | `sentinel_cancel` | Cancel one sentinel, the gate, or everything, including queued notifications |
 
 ## Install
@@ -35,6 +36,25 @@ Sentinel therefore optimizes for fewer, better-timed turns:
 - low-priority `next-turn` events wait for the next natural model turn;
 - blocking commands can run once in stream mode, eliminating poll latency;
 - replacing or cancelling a sentinel drops stale undelivered notifications.
+
+## Pull requests
+
+Attach a PR once, then let the session idle:
+
+```json
+{ "number": 123, "repo": "owner/repo" }
+```
+
+`repo` defaults to the current checkout's GitHub `origin`. Attachment validates access and
+establishes a baseline without waking the model. Later merge conflicts, CI failures, review comments,
+changes requested, and newly unresolved review threads wake the agent with a focused
+message. Merge or closure wakes once and completes the attachment.
+
+Sentinel uses the same GitHub credential resolution as `@parke.dev/pi-github`:
+`GITHUB_TOKEN`, `GH_TOKEN`, its stored credential, then `gh auth token`. Tokens with
+repository access support private and internal repositories. Polling uses one authenticated
+GraphQL request per interval and only runs while the agent is idle. See the
+[native PR monitoring design](docs/pr-monitoring.md) for the state and wakeup contract.
 
 ## Watches
 
@@ -98,8 +118,8 @@ passing for that whole window. Criterion flips are normally queued for the next
 natural turn; a clear `SENTINEL GATE: ALL PASS` wakes immediately. While a gate
 is open, its task is not done.
 
-See the bundled [`sentinel` skill](skills/sentinel/SKILL.md) for blocking-command
-PR babysitting recipes.
+See the bundled [`sentinel` skill](skills/sentinel/SKILL.md) for PR monitoring and
+blocking-command recipes.
 
 ## Cancellation and delivery
 
@@ -112,8 +132,8 @@ Sentinels are session-scoped and in-memory. Session shutdown cancels timers and
 stream processes; sentinels do not survive a Pi restart.
 
 Probe output is capped before being sent to the model, retaining both the head
-and tail. The footer status and editor widget show active watches, sleeps, and
-gate progress.
+and tail. The footer status and editor widget show attached PRs, active watches,
+sleeps, and gate progress.
 
 ## License
 
