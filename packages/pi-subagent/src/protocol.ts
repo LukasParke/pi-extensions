@@ -149,11 +149,13 @@ export class ProtocolParser {
       return dialog && typeof event.id === "string" ? [{ type: "ui-request", id: event.id }] : [];
     }
 
-    if (event.type === "message_update" && event.message?.role === "assistant") {
+    if (event.type === "message_update") {
       const delta =
         typeof event.assistantMessageEvent?.delta === "string"
           ? event.assistantMessageEvent.delta
-          : this.textParts(event.message).join("");
+          : event.message?.role === "assistant"
+            ? this.textParts(event.message).join("")
+            : "";
       if (!delta) return [];
       // Cap live text growth: keep the last 64KB of visible text so long runs stay bounded.
       this.liveText = (this.liveText + delta).slice(-64 * 1024);

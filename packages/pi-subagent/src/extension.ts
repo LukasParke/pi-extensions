@@ -693,6 +693,7 @@ export default function registerSubagent(pi: ExtensionAPI): void {
     runtime.locks = new ProcessLockManager({
       rootDir: runtime.config.lockDir,
       maxGlobalActive: runtime.config.maxGlobalActive,
+      maxDepth: runtime.config.maxDepth,
     });
     runtime.getPiCommand = createGetPiCommand(getLaunchResolution());
     runtime.liveRunners = new Map();
