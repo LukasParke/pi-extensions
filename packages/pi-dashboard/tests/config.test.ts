@@ -10,7 +10,7 @@ describe("dashboard config defaults off", () => {
 		expect(defaultConfig.header).toBe(true);
 		expect(defaultConfig.footer).toBe(true);
 		expect(defaultConfig.showPr).toBe(true);
-		expect(defaultConfig.pollIntervalMs).toBe(3000);
+		expect(defaultConfig.pollIntervalMs).toBe(60_000);
 	});
 
 	it("resolve keeps enabled false without overrides", () => {
@@ -45,6 +45,13 @@ describe("dashboard config defaults off", () => {
 		expect(config.header).toBe(false);
 	});
 
+	it("accepts an explicit lower poll interval", () => {
+		const fromFile = resolveConfig(schema, defaultConfig, { pollIntervalMs: 1000 }, {});
+		const fromEnv = resolveConfig(schema, defaultConfig, {}, { PI_DASHBOARD_POLL_MS: "500" });
+		expect(fromFile.pollIntervalMs).toBe(1000);
+		expect(fromEnv.pollIntervalMs).toBe(500);
+	});
+
 	it("malformed env falls through to default", () => {
 		const config = resolveConfig(
 			schema,
@@ -56,9 +63,8 @@ describe("dashboard config defaults off", () => {
 			},
 		);
 		expect(config.enabled).toBe(false);
-		expect(config.pollIntervalMs).toBe(3000);
+		expect(config.pollIntervalMs).toBe(60_000);
 	});
-
 });
 
 describe("installDashboardUi disabled boundary", () => {
