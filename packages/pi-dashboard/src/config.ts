@@ -27,7 +27,7 @@ export const defaultConfig: DashboardConfig = {
 	header: true,
 	footer: true,
 	showPr: true,
-	pollIntervalMs: 3000,
+	pollIntervalMs: 60_000,
 };
 
 export const schema: Schema<DashboardConfig> = {

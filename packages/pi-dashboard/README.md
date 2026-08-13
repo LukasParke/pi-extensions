@@ -38,7 +38,7 @@ Resolves **defaults ← `~/.pi/dashboard.json` ← environment**.
 | `header`         | `PI_DASHBOARD_HEADER`  | `true`  | Replace the TUI header when enabled.               |
 | `footer`         | `PI_DASHBOARD_FOOTER`  | `true`  | Replace the TUI footer when enabled.               |
 | `showPr`         | `PI_DASHBOARD_SHOW_PR` | `true`  | Look up an open PR via `gh` (cached, silent fail). |
-| `pollIntervalMs` | `PI_DASHBOARD_POLL_MS` | `3000`  | Git/PR poll interval.                              |
+| `pollIntervalMs` | `PI_DASHBOARD_POLL_MS` | `60000` | External Git/PR poll interval; lifecycle events refresh immediately. |
 | `title`          | `PI_DASHBOARD_TITLE`   | —       | Optional header / window title override.           |
 
 ## Opt-in 2 — select the theme (optional)
