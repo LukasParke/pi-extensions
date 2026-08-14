@@ -20,7 +20,6 @@ import { streamSimple as completionsStream } from "@earendil-works/pi-ai/api/ope
 import { streamSimple as responsesStream } from "@earendil-works/pi-ai/api/openai-responses";
 import { streamSimple as messagesStream } from "@earendil-works/pi-ai/api/anthropic-messages";
 import {
-	buildSurfaceModels,
 	fetchApiModels,
 	providerId,
 	SURFACE_API,
@@ -28,6 +27,7 @@ import {
 	surfaceBaseUrl,
 	type Surface,
 } from "../src/catalog.ts";
+import { buildModelEntry } from "../src/generate.ts";
 import { attributionHeaders, defaultConfig } from "../src/config.ts";
 import { runTrial, summarize, renderReport, type StreamFn, type TrialResult } from "../src/benchmark.ts";
 
@@ -67,8 +67,9 @@ async function main() {
 
 	const allTrials: TrialResult[] = [];
 	for (const surface of args.surfaces) {
-		const [catalogModel] = buildSurfaceModels(surface, apiModels, [args.model]);
-		if (!catalogModel) throw new Error(`Model ${args.model} not found in the OpenRouter models API`);
+		const apiModel = apiModels.find((m) => m.id === args.model);
+		if (!apiModel) throw new Error(`Model ${args.model} not found in the OpenRouter models API`);
+		const catalogModel = buildModelEntry(apiModel, config.baseUrl, surface);
 		const model = {
 			...catalogModel,
 			api: SURFACE_API[surface] as Api,
