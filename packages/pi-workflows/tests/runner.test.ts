@@ -140,4 +140,82 @@ describe.skipIf(!canSandbox)("executeWorkflow", () => {
 		expect(second.summary.agentCount).toBe(2);
 		expect(second.summary.completedAgents).toBe(2);
 	});
+
+	it("passes maxCost through unclamped when agentMaxCost is unset", async () => {
+		const agentDir = await tempDir();
+		const specs: { maxCost?: number }[] = [];
+		const runAgent = vi.fn(async (spec: { maxCost?: number }) => {
+			specs.push(spec);
+			return { ok: true, output: "ok", usage: emptyUsage() };
+		});
+
+		const exec = await executeWorkflow({
+			runId: newRunId(),
+			label: "cost-unset-test",
+			source: `
+        await agent("one", { label: "a" });
+        await agent("two", { label: "b", maxCost: 5 });
+        return true;
+      `,
+			cwd: process.cwd(),
+			agentDir,
+			config: { ...defaultConfig, approval: "never" },
+			signal: new AbortController().signal,
+			ctx: { cwd: process.cwd(), model: undefined },
+			runAgent,
+			worktrees: {
+				create: vi.fn(async () => ({
+					cwd: process.cwd(),
+					branch: "wf/test",
+					baseCwd: process.cwd(),
+					baseCommit: "x",
+					changed: false,
+				})),
+				finalize: vi.fn(async (h) => h),
+			} as never,
+		});
+
+		expect(exec.state).toBe("completed");
+		expect(specs[0]?.maxCost).toBeUndefined();
+		expect(specs[1]?.maxCost).toBe(5);
+	});
+
+	it("defaults and clamps maxCost when agentMaxCost is set", async () => {
+		const agentDir = await tempDir();
+		const specs: { maxCost?: number }[] = [];
+		const runAgent = vi.fn(async (spec: { maxCost?: number }) => {
+			specs.push(spec);
+			return { ok: true, output: "ok", usage: emptyUsage() };
+		});
+
+		const exec = await executeWorkflow({
+			runId: newRunId(),
+			label: "cost-set-test",
+			source: `
+        await agent("one", { label: "a" });
+        await agent("two", { label: "b", maxCost: 5 });
+        return true;
+      `,
+			cwd: process.cwd(),
+			agentDir,
+			config: { ...defaultConfig, approval: "never", agentMaxCost: 0.5 },
+			signal: new AbortController().signal,
+			ctx: { cwd: process.cwd(), model: undefined },
+			runAgent,
+			worktrees: {
+				create: vi.fn(async () => ({
+					cwd: process.cwd(),
+					branch: "wf/test",
+					baseCwd: process.cwd(),
+					baseCommit: "x",
+					changed: false,
+				})),
+				finalize: vi.fn(async (h) => h),
+			} as never,
+		});
+
+		expect(exec.state).toBe("completed");
+		expect(specs[0]?.maxCost).toBe(0.5);
+		expect(specs[1]?.maxCost).toBe(0.5);
+	});
 });

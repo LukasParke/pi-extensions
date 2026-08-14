@@ -1,7 +1,7 @@
 {
   "name": "@parke.dev/pi-openrouter",
-  "version": "0.1.0",
-  "description": "Route OpenRouter models to their most efficient API surface, with selectable surface providers and a benchmark harness",
+  "version": "0.2.0",
+  "description": "OpenRouter model catalog sync for pi: generates models.json entries with per-model API surface routing (completions/responses/messages), benchmark-driven rules, and a surface benchmark harness",
   "type": "module",
   "license": "MIT",
   "author": "Luke Parke",
@@ -26,10 +26,8 @@
     "parke.dev"
   ],
   "files": [
-    "extensions",
     "src",
     "scripts",
-    "docs",
     "README.md",
     "LICENSE"
   ],
@@ -40,11 +38,6 @@
     ".": "./src/index.ts"
   },
   "main": "./src/index.ts",
-  "pi": {
-    "extensions": [
-      "./extensions/openrouter.ts"
-    ]
-  },
   "scripts": {
     "benchmark": "bun run scripts/benchmark.ts"
   },
@@ -58,5 +51,8 @@
   },
   "engines": {
     "node": ">=22.19.0"
+  },
+  "bin": {
+    "pi-openrouter": "./src/cli.ts"
   }
 }

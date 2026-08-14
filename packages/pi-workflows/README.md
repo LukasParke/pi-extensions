@@ -62,7 +62,9 @@ return value                                 // JSON-serializable tool result
 }
 ```
 
-Per-call budgets are clamped to trusted config ceilings.
+Per-call turn/time budgets are clamped to trusted config ceilings. Cost is
+opt-in: `maxCost` passes through unless `agentMaxCost` is configured, in which
+case it is both the default and the clamp.
 
 ## Shared worktree lane
 
@@ -134,21 +136,21 @@ Thin policy layer — not a new model:
 
 Precedence: **defaults ← config file ← environment**.
 
-| Field                 | Env                            | Default     | Meaning                      |
-| --------------------- | ------------------------------ | ----------- | ---------------------------- |
-| `defaultModel`        | `PI_WORKFLOW_MODEL`            | _unset_     | inherit parent session model |
-| `defaultThinking`     | `PI_WORKFLOW_THINKING`         | `medium`    |                              |
-| `defaultProfile`      | `PI_WORKFLOW_PROFILE`          | `explore`   |                              |
-| `agentMaxTurns`       | `PI_WORKFLOW_AGENT_MAX_TURNS`  | `20`        |                              |
-| `agentMaxCost`        | `PI_WORKFLOW_AGENT_MAX_COST`   | `0.5`       |                              |
-| `agentTimeoutMs`      | `PI_WORKFLOW_AGENT_TIMEOUT_MS` | `600000`    |                              |
-| `workflowTimeoutMs`   | `PI_WORKFLOW_TIMEOUT_MS`       | `2700000`   |                              |
-| `maxAgentRequests`    | `PI_WORKFLOW_MAX_AGENTS`       | `32` (≤200) | hard cap                     |
-| `maxConcurrency`      | `PI_WORKFLOW_MAX_CONCURRENCY`  | `4` (≤16)   | hard cap                     |
-| `approval`            | `PI_WORKFLOW_APPROVAL`         | `auto`      | `auto` / `always` / `never`  |
-| `backgroundByDefault` | `PI_WORKFLOW_BACKGROUND`       | `true`      |                              |
-| `defaultSize`         | `PI_WORKFLOW_SIZE`             | `medium`    | ultracode guideline          |
-| `largeRunWarnAgents`  | `PI_WORKFLOW_LARGE_WARN`       | `15`        | advisory warning threshold   |
+| Field                 | Env                            | Default     | Meaning                                                                     |
+| --------------------- | ------------------------------ | ----------- | --------------------------------------------------------------------------- |
+| `defaultModel`        | `PI_WORKFLOW_MODEL`            | _unset_     | inherit parent session model                                                |
+| `defaultThinking`     | `PI_WORKFLOW_THINKING`         | `medium`    |                                                                             |
+| `defaultProfile`      | `PI_WORKFLOW_PROFILE`          | `explore`   |                                                                             |
+| `agentMaxTurns`       | `PI_WORKFLOW_AGENT_MAX_TURNS`  | `20`        |                                                                             |
+| `agentMaxCost`        | `PI_WORKFLOW_AGENT_MAX_COST`   | _unset_     | per-agent cost ceiling; unset = no ceiling, script `maxCost` passes through |
+| `agentTimeoutMs`      | `PI_WORKFLOW_AGENT_TIMEOUT_MS` | `600000`    |                                                                             |
+| `workflowTimeoutMs`   | `PI_WORKFLOW_TIMEOUT_MS`       | `2700000`   |                                                                             |
+| `maxAgentRequests`    | `PI_WORKFLOW_MAX_AGENTS`       | `32` (≤200) | hard cap                                                                    |
+| `maxConcurrency`      | `PI_WORKFLOW_MAX_CONCURRENCY`  | `4` (≤16)   | hard cap                                                                    |
+| `approval`            | `PI_WORKFLOW_APPROVAL`         | `auto`      | `auto` / `always` / `never`                                                 |
+| `backgroundByDefault` | `PI_WORKFLOW_BACKGROUND`       | `true`      |                                                                             |
+| `defaultSize`         | `PI_WORKFLOW_SIZE`             | `medium`    | ultracode guideline                                                         |
+| `largeRunWarnAgents`  | `PI_WORKFLOW_LARGE_WARN`       | `15`        | advisory warning threshold                                                  |
 
 ## Example
 
