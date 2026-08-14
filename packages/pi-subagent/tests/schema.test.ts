@@ -13,13 +13,17 @@ describe("SubagentParamsSchema", () => {
   it("exposes JSON Schema type object for providers", () => {
     expect(SubagentParamsSchema.type).toBe("object");
     expect(() => assertObjectToolSchema(SubagentParamsSchema)).not.toThrow();
-    // Must not be a bare anyOf/union at the top level.
-    expect("=" in SubagentParamsSchema ? null : (SubagentParamsSchema as any).anyOf).toBeUndefined();
+    // Anthropic-family providers 400 on top-level combinators.
+    expect((SubagentParamsSchema as any).anyOf).toBeUndefined();
+    expect((SubagentParamsSchema as any).allOf).toBeUndefined();
+    expect((SubagentParamsSchema as any).oneOf).toBeUndefined();
   });
 
   it("requires profile on single tasks with actionable guidance", () => {
     const params = { task: "do thing" };
-    expect(Value.Check(SubagentParamsSchema, params)).toBe(false);
+    // Schema stays provider-safe (no top-level combinators), so the
+    // profile-vs-agent requirement is enforced by profileSelectionError.
+    expect(Value.Check(SubagentParamsSchema, params)).toBe(true);
     expect(profileSelectionError(params)).toContain('missing required field "profile"');
     expect(profileSelectionError(params)).toContain('"explore"');
     expect(profileSelectionError(params)).toContain('"review"');
@@ -34,6 +38,7 @@ describe("SubagentParamsSchema", () => {
     };
     expect(Value.Check(SubagentParamsSchema, params)).toBe(false);
     expect(profileSelectionError(params)).toContain("Task 2");
+    expect(profileSelectionError({ tasks: params.tasks.map((task) => ({ profile: "explore" as const, ...task })) })).toBeUndefined();
     expect(Value.Check(SubagentParamsSchema, {
       ...params,
       tasks: params.tasks.map((task) => ({ profile: "explore", ...task })),
@@ -70,5 +75,11 @@ describe("SubagentParamsSchema", () => {
   it("requires one of task, tasks, or action", () => {
     const validated = validateSubagentRequest({} as any, parent);
     expect(validated.ok).toBe(false);
+  });
+
+  it("assertObjectToolSchema rejects top-level combinators", () => {
+    for (const combinator of ["anyOf", "allOf", "oneOf"]) {
+      expect(() => assertObjectToolSchema({ type: "object", [combinator]: [] })).toThrow(combinator);
+    }
   });
 });

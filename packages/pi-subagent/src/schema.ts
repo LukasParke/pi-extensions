@@ -96,6 +96,12 @@ export const ParallelTaskItem = Type.Object(
  *
  * Mode exclusivity (action vs task vs tasks) is enforced in policy validation,
  * not at the JSON Schema layer.
+ *
+ * Top-level combinators (anyOf/allOf/oneOf) are also banned: Anthropic rejects
+ * them outright (`input_schema does not support oneOf, allOf, or anyOf at the
+ * top level`), and every Anthropic-family frontend on OpenRouter (Azure,
+ * Bedrock, Google) returns the same 400. The profile-vs-agent requirement is
+ * therefore enforced at runtime via `profileSelectionError`, not in schema.
  */
 export const SubagentParamsSchema = Type.Object(
   {
@@ -127,7 +133,6 @@ export const SubagentParamsSchema = Type.Object(
   },
   {
     additionalProperties: false,
-    allOf: [{ if: { required: ["task"] }, then: { anyOf: profileRequired } }],
     description: "Subagent request: single, parallel, status, wait, or cancel. Spawned tasks must set profile explicitly unless a named agent persona supplies one.",
   },
 );
@@ -188,5 +193,12 @@ export function assertObjectToolSchema(schema: unknown): asserts schema is { typ
   if (!schema || typeof schema !== "object" || (schema as { type?: unknown }).type !== "object") {
     const type = schema && typeof schema === "object" ? (schema as { type?: unknown }).type : typeof schema;
     throw new Error(`Tool parameters must be JSON Schema type "object", got ${JSON.stringify(type ?? "None")}`);
+  }
+  // Anthropic-family providers (Anthropic, Azure, Bedrock, Google via
+  // OpenRouter) 400 on top-level combinators in tool input_schema.
+  for (const combinator of ["anyOf", "allOf", "oneOf"] as const) {
+    if (combinator in schema) {
+      throw new Error(`Tool parameters must not use top-level "${combinator}" (rejected by Anthropic-family providers)`);
+    }
   }
 }
