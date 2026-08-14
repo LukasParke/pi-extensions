@@ -3,14 +3,15 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import { matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { RunSnapshot } from "./types.js";
 import {
-  formatCost,
+  commonModelId,
+  computeTps,
   formatDuration,
   formatState,
-  formatTokens,
   formatPath,
   isActiveState,
   oneLine,
   SPINNERS,
+  statLine,
   stateGlyph,
 } from "./format.js";
 import { sessionLineRenderer, tailSessionFile, type TailSessionStatus } from "./transcript.js";
@@ -92,18 +93,33 @@ function wrapLines(text: string, width: number): string[] {
 }
 
 function runStats(run: RunSnapshot, now: number): string {
-  let turns = 0, tokens = 0, cost = 0;
+  const live = isActiveState(run.state);
+  let turns = 0, tokens = 0, cost = 0, tps: number | undefined;
   for (const result of run.results) {
     turns += result.usage?.turns ?? 0;
     tokens += (result.usage?.input ?? 0) + (result.usage?.output ?? 0);
     cost += result.usage?.cost ?? 0;
+    const t = computeTps({
+      output: result.usage?.output ?? 0,
+      samples: result.usageSamples,
+      startedAt: run.startedAt,
+      endedAt: run.endedAt,
+      now,
+      live: live && isActiveState(result.state),
+    });
+    if (t !== undefined) tps = (tps ?? 0) + t;
   }
-  const parts: string[] = [];
-  if (turns) parts.push(`↻${turns}`);
-  if (tokens) parts.push(`${formatTokens(tokens)} tok`);
-  if (cost > 0.00005) parts.push(formatCost(cost));
-  parts.push(formatDuration((run.endedAt ?? now) - run.startedAt));
-  return parts.join(" · ");
+  return statLine(
+    {
+      cost,
+      turns,
+      model: commonModelId(run.results.map((r) => r.model)),
+      tps,
+      tokens,
+      durationMs: (run.endedAt ?? now) - run.startedAt,
+    },
+    { live },
+  );
 }
 
 function runTitle(run: RunSnapshot): string {
@@ -397,11 +413,22 @@ export class SubagentsOverlay implements Component {
         ].filter(Boolean).join(" · ");
         body.push(truncateToWidth(`${rGlyph} ${label} ${theme.fg("dim", caps)}`, width));
         const usage = result.usage;
-        const stats = [
-          usage?.turns ? `↻${usage.turns}` : "",
-          `${formatTokens((usage?.input ?? 0) + (usage?.output ?? 0))} tok`,
-          usage?.cost ? `$${usage.cost.toFixed(4)}` : "",
-        ].filter(Boolean).join(" · ");
+        const stats = statLine(
+          {
+            cost: usage?.cost,
+            turns: usage?.turns,
+            tps: computeTps({
+              output: usage?.output ?? 0,
+              samples: result.usageSamples,
+              startedAt: run.startedAt,
+              endedAt: run.endedAt,
+              now,
+              live: isActiveState(result.state),
+            }),
+            tokens: (usage?.input ?? 0) + (usage?.output ?? 0),
+          },
+          { live: isActiveState(result.state) },
+        );
         body.push(theme.fg("dim", `  ${stats}`));
         const pointers = [
           result.outputFile ? `→ ${formatPath(result.outputFile)}` : "",
