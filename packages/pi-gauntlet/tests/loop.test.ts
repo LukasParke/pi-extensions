@@ -8,6 +8,7 @@ function harness(exec: CheckExec, maxIterations = 3) {
 		exhausted: vi.fn(),
 		inject: vi.fn(),
 		changed: vi.fn(),
+		error: vi.fn(),
 	};
 	const engine = new GauntletEngine({ maxIterations, checkTimeoutMs: 1_000, exec, hooks });
 	engine.addCheck("tests", "npm test");
@@ -85,6 +86,44 @@ describe("GauntletEngine.settle", () => {
 
 		// Two checks, one gauntlet run: the second settle() was skipped entirely.
 		expect(exec).toHaveBeenCalledTimes(2);
+	});
+
+	it("records a rejected exec (e.g. timeout) as a failed outcome and iterates", async () => {
+		const timingOut: CheckExec = async (command) => {
+			if (command.includes("lint")) throw new Error("timeout: 1000ms");
+			return { stdout: "ok", stderr: "", code: 0 };
+		};
+		const { engine, hooks } = harness(timingOut);
+		engine.start("ship it");
+		await engine.settle();
+
+		expect(engine.state.active).toBe(true);
+		expect(engine.state.iteration).toBe(1);
+		expect(engine.state.results.lint).toEqual({
+			code: 1,
+			output: "check did not complete: timeout: 1000ms",
+		});
+		const report = vi.mocked(hooks.inject).mock.calls[0]![0] as string;
+		expect(report).toContain("✗ lint");
+		expect(report).toContain("check did not complete");
+	});
+
+	it("never rejects: an unexpected error stops the loop and reports it", async () => {
+		const { engine, hooks } = harness(passing);
+		vi.mocked(hooks.inject).mockImplementation(() => {
+			throw new Error("sendMessage exploded");
+		});
+		const failing: CheckExec = async () => ({ stdout: "", stderr: "no", code: 1 });
+		const broken = new GauntletEngine(
+			{ maxIterations: 3, checkTimeoutMs: 1_000, exec: failing, hooks },
+			{ ...emptyState(), checks: [{ name: "tests", command: "npm test" }] },
+		);
+		broken.start("ship it");
+
+		await expect(broken.settle()).resolves.toBeUndefined();
+		expect(broken.state.active).toBe(false);
+		expect(hooks.error).toHaveBeenCalledWith("Gauntlet stopped: sendMessage exploded");
+		expect(engine.state.active).toBe(false);
 	});
 
 	it("pauses without injecting when a check run is aborted", async () => {

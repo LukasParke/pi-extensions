@@ -46,21 +46,18 @@ export function widgetLines(state: GauntletState, maxIterations: number): string
 	];
 }
 
+/** One `<glyph> <name> — <status> — <command>` line, shared by list and status. */
+function checkLine(state: GauntletState, check: GauntletCheck): string {
+	const outcome = state.results[check.name];
+	const status = outcome ? (outcome.code === 0 ? "passing" : `failing (exit ${outcome.code})`) : "not run";
+	return `${checkGlyph(state, check.name)} ${check.name} — ${status} — \`${check.command}\``;
+}
+
 /** Just the checks with last status, for bare `/gauntlet`. */
 export function checkListText(state: GauntletState): string {
 	if (state.checks.length === 0)
 		return "No gauntlet checks defined. Add one with /gauntlet add <name> <command>.";
-	return state.checks
-		.map((check) => {
-			const outcome = state.results[check.name];
-			const status = outcome
-				? outcome.code === 0
-					? "passing"
-					: `failing (exit ${outcome.code})`
-				: "not run";
-			return `${checkGlyph(state, check.name)} ${check.name} — ${status} — \`${check.command}\``;
-		})
-		.join("\n");
+	return state.checks.map((check) => checkLine(state, check)).join("\n");
 }
 
 /** Plain-text status for `/goal status` and the tool's `status` action. */
@@ -71,9 +68,7 @@ export function statusText(state: GauntletState, maxIterations: number): string 
 	];
 	if (state.checks.length === 0) lines.push("No checks defined.");
 	for (const check of state.checks) {
-		const outcome = state.results[check.name];
-		const status = outcome ? (outcome.code === 0 ? "passing" : `failing (exit ${outcome.code})`) : "not run";
-		lines.push(`${checkGlyph(state, check.name)} ${check.name} — ${status} — \`${check.command}\``);
+		lines.push(checkLine(state, check));
 	}
 	return lines.join("\n");
 }

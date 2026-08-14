@@ -29,7 +29,12 @@ export const schema: Schema<GauntletConfig> = {
 let cached: Promise<GauntletConfig> | undefined;
 
 export function gauntletConfig(): Promise<GauntletConfig> {
-	cached ??= load({ name: "gauntlet", schema, defaults: defaultConfig }).then((r) => r.config);
+	cached ??= load({ name: "gauntlet", schema, defaults: defaultConfig })
+		.then((r) => r.config)
+		.catch((error) => {
+			cached = undefined;
+			throw error;
+		});
 	return cached;
 }
 

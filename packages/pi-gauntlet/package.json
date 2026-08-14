@@ -44,7 +44,7 @@
     ]
   },
   "dependencies": {
-    "@parke.dev/pi-ext-config": "*"
+    "@parke.dev/pi-ext-config": "^0.1.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

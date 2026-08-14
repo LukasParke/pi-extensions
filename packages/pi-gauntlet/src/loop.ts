@@ -58,6 +58,8 @@ export interface EngineHooks {
 	inject(report: string): void;
 	/** State changed in a way the widget should reflect. */
 	changed(state: GauntletState): void;
+	/** Unexpected failure — the loop stopped itself and the user should know. */
+	error?(message: string): void;
 }
 
 export interface EngineOptions {
@@ -124,11 +126,21 @@ export class GauntletEngine {
 	 */
 	async runChecks(): Promise<Record<string, CheckOutcome>> {
 		for (const check of this.state.checks) {
-			const result = await this.options.exec(check.command, this.options.checkTimeoutMs);
-			this.state.results[check.name] = {
-				code: result.code,
-				output: [result.stdout, result.stderr].filter(Boolean).join("\n"),
-			};
+			try {
+				const result = await this.options.exec(check.command, this.options.checkTimeoutMs);
+				this.state.results[check.name] = {
+					code: result.code,
+					output: [result.stdout, result.stderr].filter(Boolean).join("\n"),
+				};
+			} catch (error) {
+				// pi.exec rejects on timeout; an abort (user pressed Esc) still
+				// propagates so settle() can pause the loop instead of iterating.
+				if (isAbort(error)) throw error;
+				this.state.results[check.name] = {
+					code: 1,
+					output: `check did not complete: ${error instanceof Error ? error.message : String(error)}`,
+				};
+			}
 		}
 		this.options.hooks.persist(this.state);
 		this.options.hooks.changed(this.state);
@@ -168,9 +180,21 @@ export class GauntletEngine {
 		} catch (error) {
 			// An aborted check run (user pressed Esc) pauses the loop instead of
 			// immediately re-triggering a turn. `/goal stop` is the explicit exit.
-			if (!(error instanceof Error && error.name === "AbortError")) throw error;
+			// Anything else stops the loop and is reported — settle() runs inside
+			// the agent_settled handler and must never reject.
+			if (isAbort(error)) return;
+			this.mutate(() => {
+				this.state.active = false;
+			});
+			this.options.hooks.error?.(
+				`Gauntlet stopped: ${error instanceof Error ? error.message : String(error)}`,
+			);
 		} finally {
 			this.running = false;
 		}
 	}
+}
+
+function isAbort(error: unknown): boolean {
+	return error instanceof Error && error.name === "AbortError";
 }

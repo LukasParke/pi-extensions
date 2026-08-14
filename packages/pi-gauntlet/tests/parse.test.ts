@@ -51,4 +51,25 @@ describe("parseStateEntry", () => {
 		expect(parseStateEntry({ active: "yes", iteration: 1, checks: [] })).toBeUndefined();
 		expect(parseStateEntry({ active: true, iteration: 1, checks: [{ name: 1 }] })).toBeUndefined();
 	});
+
+	it("rejects non-integer or negative iterations", () => {
+		expect(parseStateEntry({ active: true, iteration: -1, checks: [] })).toBeUndefined();
+		expect(parseStateEntry({ active: true, iteration: Number.NaN, checks: [] })).toBeUndefined();
+		expect(parseStateEntry({ active: true, iteration: 1.5, checks: [] })).toBeUndefined();
+	});
+
+	it("drops malformed result outcomes but keeps valid ones", () => {
+		const parsed = parseStateEntry({
+			active: true,
+			iteration: 1,
+			checks: [{ name: "tests", command: "npm test" }],
+			results: {
+				tests: { code: 0, output: "ok" },
+				lint: "oops",
+				types: { code: "2", output: "bad code" },
+				build: { code: 1 },
+			},
+		});
+		expect(parsed?.results).toEqual({ tests: { code: 0, output: "ok" } });
+	});
 });

@@ -29,13 +29,25 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { truncateTail, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { defaultConfig, gauntletConfig } from "../src/config.ts";
 import { GauntletEngine, type CheckExecResult, type GauntletState } from "../src/loop.ts";
 import { parseCheckArgs, parseSeedChecks, parseStateEntry } from "../src/parse.ts";
 import { checkListText, statusText, widgetLines } from "../src/report.ts";
 
 const ENTRY_TYPE = "gauntlet-state";
+
+const gauntletParams = Type.Object(
+	{
+		action: StringEnum(["start", "stop", "status", "add_check", "remove_check", "run"] as const),
+		goal: Type.Optional(
+			Type.String({ description: "Goal text. Required for start unless one is already set." }),
+		),
+		name: Type.Optional(Type.String({ description: "Check name, for add_check/remove_check." })),
+		command: Type.Optional(Type.String({ description: "Shell command for the check, for add_check." })),
+	},
+	{ additionalProperties: false },
+);
 /** Per-check output kept in state and reports; tails are what matter for failures. */
 const OUTPUT_TAIL_BYTES = 2_048;
 
@@ -100,6 +112,7 @@ export default function (pi: ExtensionAPI) {
 				exec: execAdapter,
 				hooks: {
 					persist: (state) => pi.appendEntry(ENTRY_TYPE, state),
+					error: (message) => notify(message, "error"),
 					success: (state) => {
 						notify(`Gauntlet passed — goal achieved after ${state.iteration} iteration(s).`, "info");
 					},
@@ -134,7 +147,10 @@ export default function (pi: ExtensionAPI) {
 		description: "Manage gauntlet checks: /gauntlet [add <name> <command…> | rm <name>]",
 		handler: async (args, ctx) => {
 			lastCtx = ctx;
-			if (!engine) return;
+			if (!engine) {
+				notify("Gauntlet is not initialized yet.", "warning");
+				return;
+			}
 			const trimmed = args.trim();
 			if (!trimmed) {
 				notify(checkListText(engine.state));
@@ -163,7 +179,10 @@ export default function (pi: ExtensionAPI) {
 		description: "Set a goal and run the gauntlet loop: /goal <text> | stop | status",
 		handler: async (args, ctx) => {
 			lastCtx = ctx;
-			if (!engine) return;
+			if (!engine) {
+				notify("Gauntlet is not initialized yet.", "warning");
+				return;
+			}
 			const trimmed = args.trim();
 			if (trimmed === "stop") {
 				engine.stop();
@@ -192,18 +211,8 @@ export default function (pi: ExtensionAPI) {
 			"max iterations are hit, or stop is called. run executes the checks once and returns results without starting the loop. " +
 			"Use when the user asks you to keep working until tests/lint/typecheck pass.",
 		promptSnippet: "Iterate toward a goal until named shell checks all pass",
-		parameters: Type.Object(
-			{
-				action: StringEnum(["start", "stop", "status", "add_check", "remove_check", "run"] as const),
-				goal: Type.Optional(
-					Type.String({ description: "Goal text. Required for start unless one is already set." }),
-				),
-				name: Type.Optional(Type.String({ description: "Check name, for add_check/remove_check." })),
-				command: Type.Optional(Type.String({ description: "Shell command for the check, for add_check." })),
-			},
-			{ additionalProperties: false },
-		),
-		async execute(_id, params: any, _signal, _onUpdate, ctx) {
+		parameters: gauntletParams,
+		async execute(_id, params: Static<typeof gauntletParams>, _signal, _onUpdate, ctx) {
 			lastCtx = ctx;
 			if (!engine) {
 				return {
@@ -215,7 +224,7 @@ export default function (pi: ExtensionAPI) {
 				content: [{ type: "text" as const, text: t }],
 				details,
 			});
-			switch (params.action as string) {
+			switch (params.action) {
 				case "add_check": {
 					const name = params.name?.trim();
 					const command = params.command?.trim();
@@ -262,7 +271,7 @@ export default function (pi: ExtensionAPI) {
 					return text(lines.join("\n"), { passed, results });
 				}
 				default:
-					return text(`Unknown action "${params.action}".`);
+					return text(`Unknown action "${String(params.action)}".`);
 			}
 		},
 	});
