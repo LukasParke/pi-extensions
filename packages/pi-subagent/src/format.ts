@@ -11,7 +11,7 @@ import { truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
 export const SPINNERS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-const ACTIVE_STATES: ReadonlySet<string> = new Set(['queued', 'running']);
+const ACTIVE_STATES: ReadonlySet<string> = new Set(['queued', 'running', 'waiting']);
 
 export function isActiveState(state: string | undefined): boolean {
   return state !== undefined && ACTIVE_STATES.has(state);
@@ -178,6 +178,7 @@ export function formatPath(p?: string): string {
 export function formatState(state: RunState, exitCode?: number | null): string {
   switch (state) {
     case 'running': return 'running';
+    case 'waiting': return 'waiting';
     case 'completed': return typeof exitCode === 'number' && exitCode !== 0 ? 'failed' : 'done';
     case 'failed': return 'failed';
     case 'cancelled': return 'cancelled';
@@ -185,6 +186,7 @@ export function formatState(state: RunState, exitCode?: number | null): string {
     case 'partial': return 'partial';
     case 'lost': return 'lost';
     case 'timeout': return 'timeout';
+    case 'paused': return 'paused';
     default: return state;
   }
 }
@@ -194,12 +196,14 @@ export function stateGlyph(state: RunState | undefined, theme: Theme, spinnerFra
   switch (state) {
     case 'queued': return theme.fg('dim', '◌');
     case 'running': return theme.fg('accent', SPINNERS[spinnerFrame % SPINNERS.length]!);
+    case 'waiting': return theme.fg('accent', '◔');
     case 'completed': return theme.fg('success', '✓');
     case 'partial': return theme.fg('warning', '◐');
     case 'cancelled': return theme.fg('muted', '−');
     case 'timeout': return theme.fg('warning', '◷');
     case 'lost': return theme.fg('error', '?');
     case 'failed': return theme.fg('error', '✗');
+    case 'paused': return theme.fg('warning', '⏸');
     default: return theme.fg('dim', '·');
   }
 }
@@ -223,6 +227,19 @@ export function formatStatusPreview(snapshot: RunSnapshot, now = Date.now()): st
   if (maxAttempts > 1) flags.push(`[attempt ${maxAttempts}]`);
   if (stalledSince !== undefined && isActiveState(snapshot.state)) {
     flags.push(`[stalled ${formatDuration(now - stalledSince)}]`);
+  }
+  if (snapshot.state === 'waiting') {
+    // Keep-alive: the child idles between triggered turns; show the wait age.
+    const waitingSince = snapshot.results
+      .map((r) => (r.state === 'waiting' ? r.waitingSince : undefined))
+      .filter((v): v is number => typeof v === 'number')
+      .sort((a, b) => a - b)[0];
+    flags.push(`[waiting ${formatDuration(now - (waitingSince ?? snapshot.startedAt))}]`);
+  }
+  if (snapshot.state === 'paused') {
+    // Watchdog pause: surface the reason (evidence) in the one-line preview.
+    const reason = snapshot.results.find((r) => r.errorMessage)?.errorMessage;
+    flags.push(`[${oneLine(reason ?? 'watchdog pause', 60)}]`);
   }
   const flagText = flags.length ? ` ${flags.join(' ')}` : '';
   return `[${snapshot.id.slice(0, 8)}] ${snapshot.mode} ${formatState(snapshot.state)}${phaseTag} ${elapsed} ${done}${flagText}`;

@@ -134,6 +134,34 @@ describe("ProtocolParser", () => {
     expect(result.usage).toMatchObject({ input: 10, output: 5, cost: 0.033, turns: 1 });
   });
 
+  it("surfaces custom messages (role 'custom') without polluting messages/usage", () => {
+    const custom = {
+      type: "message_end",
+      message: {
+        role: "custom",
+        customType: "keep-alive",
+        content: [],
+        display: false,
+        details: { active: true, reasons: ["watch:pr"] },
+        timestamp: 2,
+      },
+    };
+    const parser = new ProtocolParser();
+    const updates = parser.feed([header, custom, message, end, settled].map((value) => JSON.stringify(value)).join("\n") + "\n");
+    expect(updates[1]).toEqual({
+      type: "custom",
+      customType: "keep-alive",
+      display: false,
+      details: { active: true, reasons: ["watch:pr"] },
+    });
+    const result = parser.finalize(0);
+    expect(result.state).toBe("completed");
+    // Custom messages are extension signals, not LLM turns.
+    expect(result.usage.turns).toBe(1);
+    expect(result.messages).toHaveLength(1);
+    expect(result.transcript ?? "").not.toContain("keep-alive");
+  });
+
   it("rejects oversized single lines without killing the parser", () => {
     const parser = new ProtocolParser();
     const huge = "x".repeat(5 * 1024 * 1024);

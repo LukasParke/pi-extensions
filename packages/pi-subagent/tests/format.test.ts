@@ -215,6 +215,45 @@ describe('format helpers', () => {
     expect(withRetry.split('\n')).toHaveLength(1);
   });
 
+  it('status preview shows waiting age and paused reason', () => {
+    const now = 1_000_000;
+    const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 } as UsageStats;
+    const base = {
+      schemaVersion: 1 as const,
+      id: 'runkeep0xxxx',
+      sessionKey: 'key',
+      mode: 'single' as const,
+      startedAt: now - 120_000,
+      taskPreviews: [] as string[],
+      delivered: false,
+    };
+    const waiting: RunSnapshot = {
+      ...base,
+      state: 'waiting' as RunState,
+      results: [{ label: 't', task: 'x', state: 'waiting' as RunState, exitCode: null, usage, waitingSince: now - 90_000 }],
+    };
+    const waitingPreview = format.formatStatusPreview(waiting, now);
+    expect(waitingPreview).toContain('waiting');
+    expect(waitingPreview).toContain('[waiting 1m30s]');
+
+    const paused: RunSnapshot = {
+      ...base,
+      state: 'paused' as RunState,
+      endedAt: now,
+      results: [{
+        label: 't',
+        task: 'x',
+        state: 'paused' as RunState,
+        exitCode: 1,
+        usage,
+        errorMessage: 'doom-loop watchdog: 3 consecutive wakeups without progress',
+      }],
+    };
+    const pausedPreview = format.formatStatusPreview(paused, now);
+    expect(pausedPreview).toContain('paused');
+    expect(pausedPreview).toContain('[doom-loop watchdog: 3 consecutive wakeups without progr');
+  });
+
   it('status preview plain case unchanged without reliability flags', () => {
     const snap: RunSnapshot = {
       schemaVersion: 1 as const,

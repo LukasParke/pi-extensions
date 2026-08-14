@@ -39,6 +39,8 @@ import { emptyUsage } from "./types.js";
 import { addUsage, buildUsageLedger, formatLedger, hasBilledUsage, toPiUsage, type UsageLedger } from "./usage.js";
 import { resolveBackendSessionFilePath, resolveSessionFilePath } from "./transcript.js";
 import { CompletionBatcher, COMPLETION_MESSAGE_TYPE, type CompletionDetails, type CompletionDetailsRun } from "./notifications.js";
+import { ensureDispatchDelivery, publishDispatch } from "./dispatch.js";
+import type { WatchdogEvent } from "./runner.js";
 import { describeCatalog, discoverAgents, type AgentDefinition } from "./agents.js";
 import { createSubagentsOverlay, FooterStatusModel, type SubagentAdapter } from "./ui.js";
 import { WorktreeManager } from "./worktree.js";
@@ -328,6 +330,7 @@ function compactDetails(
       transcript: utf8Preview(result.transcript, perResultText),
       wrappedUp: result.wrappedUp,
       stalledSince: result.stalledSince,
+      waitingSince: result.waitingSince,
       attempts: result.attempts,
       attemptedModels: result.attemptedModels,
       structuredOutput: result.structuredOutput,
@@ -632,6 +635,60 @@ function buildCompletionDetails(runtime: SessionRuntime, runIds: string[]): Comp
   return { runs };
 }
 
+/** customType for watchdog warning fallback messages (dispatch unavailable). */
+const WATCHDOG_MESSAGE_TYPE = "subagent-watchdog";
+
+/**
+ * Watchdog signals from the doom-loop runner. Soft budget warnings are
+ * info-priority (dispatch item, or a nextTurn message that never wakes the
+ * model); doom-loop pauses are escalation-priority (dispatch item, falling
+ * back to the existing completion batcher for async runs — paused is treated
+ * as a failure there and flushed immediately with the evidence as preview).
+ */
+function handleWatchdogEvent(
+  pi: ExtensionAPI,
+  runtime: SessionRuntime,
+  runId: string,
+  index: number,
+  event: WatchdogEvent,
+): void {
+  const runLabel = `run ${runId.slice(0, 8)} task ${index}`;
+  if (event.kind === "budget-warning") {
+    const published = publishDispatch({
+      id: `subagent:${runId}:${index}:budget:${event.message}`,
+      source: `subagent:${runId}`,
+      priority: "info",
+      urgency: "next-turn",
+      message: `Budget warning (${runLabel}): ${event.message}`,
+      details: { kind: "budget-warning", runId, taskIndex: index },
+    });
+    if (!published) {
+      // Info priority: nextTurn is recorded in context without spending a turn.
+      pi.sendMessage(
+        {
+          customType: WATCHDOG_MESSAGE_TYPE,
+          content: `Subagent watchdog warning for ${runLabel}: ${event.message}`,
+          display: true,
+          details: { kind: "budget-warning", runId, taskIndex: index, warning: event.message },
+        },
+        { deliverAs: "nextTurn" },
+      );
+    }
+    runtime.ctx.ui.notify(`Subagent ${event.message}`, "warning");
+    return;
+  }
+  // Doom-loop pause: escalate with the evidence (counters, usage, reason).
+  publishDispatch({
+    id: `subagent:${runId}:${index}:watchdog-pause`,
+    source: `subagent:${runId}`,
+    priority: "escalation",
+    urgency: "wake",
+    message: `Paused by doom-loop watchdog (${runLabel}): ${event.reason}`,
+    details: { kind: "watchdog-pause", runId, taskIndex: index, counters: event.counters, usage: event.usage },
+  });
+  runtime.ctx.ui.notify(`Subagent ${runLabel} paused: ${event.reason}`, "warning");
+}
+
 /**
  * Fire-and-forget startup GC + orphan reclaim.
  * Only top-level parents may run maintenance — nested children would race each
@@ -789,6 +846,8 @@ export default function registerSubagent(pi: ExtensionAPI): void {
     current = runtime;
     refreshFooter(runtime);
     scheduleMaintenance(runtime);
+    // Optional @parke.dev/pi-dispatch queue (parallel PR): loads async and
+    ensureDispatchDelivery(pi);
   });
 
   pi.on("message_end", async (event) => {
@@ -1212,6 +1271,11 @@ export default function registerSubagent(pi: ExtensionAPI): void {
             stallKillAfterMs: runtime.config.stallKillAfterMs,
             progressThrottleMs: runtime.config.progressThrottleMs,
             maxRetries: runtime.config.maxRetries,
+            watchdog: runtime.config.watchdog,
+            onWatchdogEvent: (index, event) => {
+              if (runtime.closed || current !== runtime) return;
+              handleWatchdogEvent(pi, runtime, runId, index, event);
+            },
             onRunnerCreated: (index, runner) => {
               let runners = runtime.liveRunners.get(runId);
               if (!runners) runtime.liveRunners.set(runId, (runners = new Map()));

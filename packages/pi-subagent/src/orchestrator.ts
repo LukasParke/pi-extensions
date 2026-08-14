@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { defaultConfig } from "./config.js";
+import { defaultConfig, type WatchdogConfig } from "./config.js";
 import { createGetPiCommand } from "./launch.js";
 import type { ProcessLockManager } from "./process-lock.js";
 import { ChildRunner, type GetPiCommand } from "./runner.js";
@@ -30,6 +30,10 @@ export interface OrchestratorDeps {
   progressThrottleMs?: number;
   /** Default extra attempts on transient failures (per-spec maxRetries overrides). */
   maxRetries?: number;
+  /** Doom-loop watchdog thresholds (defaults from config). */
+  watchdog?: WatchdogConfig;
+  /** Watchdog signals per task (soft budget warnings, doom-loop pauses). */
+  onWatchdogEvent?: (index: number, event: import("./runner.js").WatchdogEvent) => void;
 }
 
 /**
@@ -62,6 +66,8 @@ function aggregateState(results: TaskResult[]): RunState {
   if (results.every((r) => r.state === "completed")) return "completed";
   // Budget-stopped / truncated tasks ("partial") carry useful output.
   if (results.some((r) => r.state === "completed" || r.state === "partial")) return "partial";
+  // Watchdog-paused tasks are preserved-and-resumable, not failed.
+  if (results.every((r) => r.state === "paused")) return "paused";
   if (results.every((r) => r.state === "cancelled")) return "cancelled";
   if (results.every((r) => r.state === "timeout" || r.state === "cancelled")) return "timeout";
   if (results.some((r) => r.state === "timeout") && results.every((r) => ["timeout", "cancelled", "failed"].includes(r.state))) {
@@ -179,7 +185,16 @@ export async function runTasks(
         taskRunId,
         options.parentSessionKey,
         undefined,
-        { graceTurns: options.graceTurns, stallAfterMs: options.stallAfterMs, stallKillAfterMs: options.stallKillAfterMs, progressThrottleMs: options.progressThrottleMs },
+        {
+          graceTurns: options.graceTurns,
+          stallAfterMs: options.stallAfterMs,
+          stallKillAfterMs: options.stallKillAfterMs,
+          progressThrottleMs: options.progressThrottleMs,
+          watchdog: options.watchdog,
+          onWatchdogEvent: options.onWatchdogEvent
+            ? (event) => options.onWatchdogEvent!(index, event)
+            : undefined,
+        },
       );
       options.onRunnerCreated?.(index, runner);
       result = await runner.run(attemptSpec, options.signal);

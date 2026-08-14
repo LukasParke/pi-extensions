@@ -1,7 +1,39 @@
 import type { Message } from "@earendil-works/pi-ai";
 
 export type RunMode = "single" | "parallel";
-export type RunState = "queued" | "running" | "completed" | "partial" | "failed" | "cancelled" | "lost" | "timeout";
+/**
+ * Run lifecycle. "waiting" and "paused" come from the keep-alive protocol:
+ * a child with live wakeup triggers idles between turns in "waiting" (still
+ * live, steerable, cancellable); the doom-loop watchdog terminates a run that
+ * turns without progress into "paused" (terminal, session kept resumable).
+ */
+export type RunState =
+  | "queued"
+  | "running"
+  | "waiting"
+  | "completed"
+  | "partial"
+  | "failed"
+  | "cancelled"
+  | "lost"
+  | "timeout"
+  | "paused";
+/** Child-reported liveness: live wakeup triggers keep the run alive past a settle. */
+export interface KeepAliveStatus {
+  active: boolean;
+  reasons: string[];
+}
+
+/** Runner-level doom-loop watchdog status, surfaced in checkpoints and status output. */
+export interface WatchdogStatus {
+  /** Consecutive wakeup turns (started from waiting) with no progress signal change. */
+  wakeupsWithoutProgress: number;
+  /** Consecutive turns with an identical tool-call sequence. */
+  repeatedActions: number;
+  /** Soft budget warnings fired so far (50%/80% of max_cost / max_turns). */
+  warnings: string[];
+}
+
 /** Distinct timeout phases so agents can retry queue pressure without "fixing" unfinished work. */
 export type TimeoutPhase = "queued" | "starting" | "running" | "cancelling";
 export type TaskProfile = "explore" | "review" | "general";
@@ -123,6 +155,12 @@ export interface TaskResult {
   wrappedUp?: boolean;
   /** Set while no protocol activity has been seen for the stall window. */
   stalledSince?: number;
+  /** Set when the run entered "waiting" (keep-alive active, child idle). */
+  waitingSince?: number;
+  /** Last-known child keep-alive state (default inactive = one-shot). */
+  keepAlive?: KeepAliveStatus;
+  /** Doom-loop watchdog counters and fired soft warnings. */
+  watchdog?: WatchdogStatus;
   /** Total attempts including retries (present when > 1). */
   attempts?: number;
   /** Models tried across attempts, in order. */
@@ -178,6 +216,7 @@ export interface RunSnapshot {
     transcript?: string;
     wrappedUp?: boolean;
     stalledSince?: number;
+    waitingSince?: number;
     attempts?: number;
     attemptedModels?: string[];
     structuredOutput?: unknown;
