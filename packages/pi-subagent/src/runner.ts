@@ -58,6 +58,8 @@ export interface RunnerOptions {
   graceTurns?: number;
   /** Protocol-silence window before flagging a running child as stalled. 0 disables. */
   stallAfterMs?: number;
+  /** Latest-wins coalescing interval for streamed live-text progress. 0 disables. */
+  progressThrottleMs?: number;
   /** Additional silence after the stall flag before the child is killed. 0 disables kill. */
   stallKillAfterMs?: number;
   /** Backend adapter override (defaults to the spec's backend, then pi). */
@@ -83,6 +85,7 @@ export class ChildRunner {
   private readonly graceTurns: number;
   private readonly stallAfterMs: number;
   private readonly stallKillAfterMs: number;
+  private readonly progressThrottleMs: number;
   private readonly backendOverride?: BackendAdapter;
   /** Backend for the in-flight run; set at spawn so steer() uses the right dialect. */
   private backend: BackendAdapter = resolveBackend("pi");
@@ -102,7 +105,7 @@ export class ChildRunner {
     private readonly maxTaskBytes = DEFAULT_MAX_TASK_BYTES,
     options: Pick<
       RunnerOptions,
-      "graceTurns" | "stallAfterMs" | "stallKillAfterMs" | "backend"
+      "graceTurns" | "stallAfterMs" | "stallKillAfterMs" | "backend" | "progressThrottleMs"
     > = {},
   ) {
     this.backendOverride = options.backend;
@@ -110,6 +113,8 @@ export class ChildRunner {
     this.stallAfterMs = options.stallAfterMs ?? defaultConfig.stallAfterMs;
     this.stallKillAfterMs =
       options.stallKillAfterMs ?? defaultConfig.stallKillAfterMs;
+    this.progressThrottleMs =
+      options.progressThrottleMs ?? defaultConfig.progressThrottleMs;
   }
 
   /**
@@ -335,6 +340,11 @@ export class ChildRunner {
       this.sendCommand = undefined;
       clearTimeout(timeout);
       stopStallWatchdog();
+      if (liveTrailing) {
+        clearTimeout(liveTrailing);
+        liveTrailing = undefined;
+      }
+      chunkQueue.length = 0;
       if (forceKillTimer) clearTimeout(forceKillTimer);
       abortSignal?.removeEventListener("abort", onExternalAbort);
       if (abortSignal && abortHandler)
@@ -358,6 +368,57 @@ export class ChildRunner {
       if (withTranscript) checkpoint.transcript = parser.getTranscript();
       else delete checkpoint.transcript;
       this.onCheckpoint?.(checkpoint);
+    };
+
+    /**
+     * Live-text progress is latest-wins coalesced to ~1 emission per
+     * progressThrottleMs per run; ultrafast streams (750+ tok/s) must not
+     * turn every delta into an onUpdate. Structural updates (session,
+     * message/usage, terminal) are never throttled and always carry the
+     * latest liveText via progress().
+     */
+    let lastLiveProgressAt = 0;
+    let liveTrailing: NodeJS.Timeout | undefined;
+    const progressLive = () => {
+      lastLiveProgressAt = Date.now();
+      progress({ liveText: parser.getLiveText() });
+    };
+    const progressLiveThrottled = () => {
+      const throttle = this.progressThrottleMs;
+      if (throttle <= 0) return progressLive();
+      const elapsed = Date.now() - lastLiveProgressAt;
+      if (elapsed >= throttle) {
+        if (liveTrailing) {
+          clearTimeout(liveTrailing);
+          liveTrailing = undefined;
+        }
+        progressLive();
+        return;
+      }
+      if (!liveTrailing) {
+        liveTrailing = setTimeout(() => {
+          liveTrailing = undefined;
+          progressLive();
+        }, throttle - elapsed);
+        liveTrailing.unref?.();
+      }
+    };
+
+    /**
+     * Guaranteed drain: no synchronous parse/dispatch work in the stdout
+     * "data" callback. Chunks queue up and are parsed + dispatched in
+     * setImmediate batches so the pipe always drains and a fast child never
+     * stalls on a full OS buffer.
+     */
+    const chunkQueue: Buffer[] = [];
+    let drainScheduled = false;
+    const drainChunks = () => {
+      drainScheduled = false;
+      if (!chunkQueue.length) return;
+      const batch = chunkQueue.splice(0, chunkQueue.length);
+      const updates: ProtocolUpdate[] = [];
+      for (const chunk of batch) updates.push(...parser.feed(chunk));
+      handleUpdates(updates);
     };
 
     /**
@@ -396,8 +457,7 @@ export class ChildRunner {
       for (const update of updates) {
         if (update.type === "session")
           progress({ sessionId: update.sessionId });
-        if (update.type === "live-text")
-          progress({ liveText: update.liveText });
+        if (update.type === "live-text") progressLiveThrottled();
         if (update.type === "message") {
           result.messages = parser.getMessages();
           result.usage = update.usage;
@@ -621,9 +681,13 @@ export class ChildRunner {
 
       // Attach readers BEFORE writing stdin so a chatty child cannot fill the
       // OS pipe buffer and deadlock waiting for us to drain.
-      processHandle.stdout?.on("data", (chunk: Buffer) =>
-        handleUpdates(parser.feed(chunk)),
-      );
+      processHandle.stdout?.on("data", (chunk: Buffer) => {
+        chunkQueue.push(chunk);
+        if (!drainScheduled) {
+          drainScheduled = true;
+          setImmediate(drainChunks);
+        }
+      });
       processHandle.stderr?.on("data", (chunk: Buffer) => {
         stderr = (stderr + chunk.toString()).slice(-50 * 1024);
         result.stderr = stderr;
@@ -673,6 +737,9 @@ export class ChildRunner {
         );
       });
 
+      // Drain anything queued between the last setImmediate batch and close
+      // before projecting the final result.
+      drainChunks();
       handleUpdates(parser.flush());
       // The child owns a dedicated process group. Reap descendants even when the
       // direct Pi process exits normally after a tool backgrounds work — unless
@@ -843,6 +910,7 @@ export function runSubagent(
       stallAfterMs: options.stallAfterMs,
       stallKillAfterMs: options.stallKillAfterMs,
       backend: options.backend,
+      progressThrottleMs: options.progressThrottleMs,
     },
   ).run(spec, options.signal);
 }

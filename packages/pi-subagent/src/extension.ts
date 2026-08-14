@@ -1183,6 +1183,7 @@ export default function registerSubagent(pi: ExtensionAPI): void {
             graceTurns: runtime.config.graceTurns,
             stallAfterMs: runtime.config.stallAfterMs,
             stallKillAfterMs: runtime.config.stallKillAfterMs,
+            progressThrottleMs: runtime.config.progressThrottleMs,
             maxRetries: runtime.config.maxRetries,
             onRunnerCreated: (index, runner) => {
               let runners = runtime.liveRunners.get(runId);
