@@ -72,12 +72,13 @@ Names resolve only under:
 
 ## Limits (defaults)
 
-| Limit                  | Value      |
-| ---------------------- | ---------- |
-| agent calls per run    | 32         |
-| concurrency            | 4          |
-| turns / cost per agent | 20 / $0.50 |
-| workflow timeout       | 45 min     |
+| Limit               | Value                                  |
+| ------------------- | -------------------------------------- |
+| agent calls per run | 32                                     |
+| concurrency         | 4                                      |
+| turns per agent     | 20                                     |
+| cost per agent      | no ceiling (opt-in via `agentMaxCost`) |
+| workflow timeout    | 45 min                                 |
 
 Hard config ceilings: 200 agents / 16 concurrency. Size guidelines for
 Ultracode (`small`/`medium`/`large`/`unrestricted`) are advisory only.

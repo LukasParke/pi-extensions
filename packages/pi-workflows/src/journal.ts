@@ -72,7 +72,7 @@ export interface WorkflowDefinitionFile {
 		maxAgentRequests: number;
 		maxConcurrency: number;
 		agentMaxTurns: number;
-		agentMaxCost: number;
+		agentMaxCost?: number;
 		agentTimeoutMs: number;
 		workflowTimeoutMs: number;
 	};
