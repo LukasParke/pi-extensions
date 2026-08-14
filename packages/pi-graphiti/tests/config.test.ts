@@ -1,5 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { graphitiConfig, resetConfigCache } from "../src/config.ts";
+
+// Keep tests hermetic: without this, load() reads the real ~/.pi/graphiti.json.
+const ISOLATED_AGENT_DIR = path.join(os.tmpdir(), "pi-graphiti-test-nonexistent", "agent");
 
 const ENV_KEYS = [
 	"GRAPHITI_BASE_URL",
@@ -11,8 +16,13 @@ const ENV_KEYS = [
 ];
 
 describe("graphitiConfig", () => {
+	beforeEach(() => {
+		process.env.PI_CODING_AGENT_DIR = ISOLATED_AGENT_DIR;
+	});
+
 	afterEach(() => {
 		for (const key of ENV_KEYS) delete process.env[key];
+		delete process.env.PI_CODING_AGENT_DIR;
 		resetConfigCache();
 	});
 
