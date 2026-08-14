@@ -48,6 +48,12 @@ export interface ChildProcessIdentity {
   hostname?: string;
 }
 
+/** (timestamp, cumulative output tokens) captured per usage update, for rolling tps. */
+export interface UsageSample {
+  t: number;
+  output: number;
+}
+
 export interface UsageStats {
   input: number;
   output: number;
@@ -119,6 +125,8 @@ export interface TaskResult {
   messages: Message[];
   stderr: string;
   usage: UsageStats;
+  /** Rolling ring of (ts, outputTokens) usage samples for live tps; capped by the runner. */
+  usageSamples?: UsageSample[];
   model?: string;
   thinking?: TaskSpec["thinking"];
   profile?: TaskProfile;
@@ -193,6 +201,7 @@ export interface RunSnapshot {
     timeoutPhase?: TimeoutPhase;
     errorMessage?: string;
     usage: UsageStats;
+    usageSamples?: UsageSample[];
     model?: string;
     thinking?: TaskSpec["thinking"];
     profile?: TaskProfile;

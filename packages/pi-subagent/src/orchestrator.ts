@@ -26,6 +26,8 @@ export interface OrchestratorDeps {
   /** Stall watchdog windows (0 disables). */
   stallAfterMs?: number;
   stallKillAfterMs?: number;
+  /** Throttle for streamed progress updates (0 disables). */
+  progressThrottleMs?: number;
   /** Default extra attempts on transient failures (per-spec maxRetries overrides). */
   maxRetries?: number;
   /** Doom-loop watchdog thresholds (defaults from config). */
@@ -187,6 +189,7 @@ export async function runTasks(
           graceTurns: options.graceTurns,
           stallAfterMs: options.stallAfterMs,
           stallKillAfterMs: options.stallKillAfterMs,
+          progressThrottleMs: options.progressThrottleMs,
           watchdog: options.watchdog,
           onWatchdogEvent: options.onWatchdogEvent
             ? (event) => options.onWatchdogEvent!(index, event)

@@ -1,4 +1,4 @@
-import type { UsageStats, RunSnapshot, RunState, RunMode, TimeoutPhase } from './types.js';
+import type { UsageStats, UsageSample, RunSnapshot, RunState, RunMode, TimeoutPhase } from './types.js';
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import * as os from 'node:os';
 import { truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
@@ -49,6 +49,110 @@ export function formatCost(cost: number): string {
   if (cost >= 0.095) return `$${cost.toFixed(2)}`;
   if (cost >= 0.00095) return `$${cost.toFixed(3)}`;
   return '<$0.001';
+}
+
+// ── Unified per-subagent stat line ──────────────────────────────────────────
+// One format for every stat-line site (inline blocks, overlay list + detail,
+// widget rows, completion messages):
+//   `$0.012 · ↻8 · kimi-k3 · 42 tps · 33.8k tok · 12s`
+// Cost immediately left of turns, then model, tps, tokens, duration.
+
+/** Strip the provider prefix: `moonshotai/kimi-k3` → `kimi-k3`. */
+export function shortModelId(model?: string): string | undefined {
+  if (!model) return undefined;
+  const slash = model.lastIndexOf('/');
+  return slash >= 0 ? model.slice(slash + 1) : model;
+}
+
+/** Model shared by every task (for header-only rendering); undefined when mixed. */
+export function commonModelId(models: Array<string | undefined>): string | undefined {
+  const ids = models.map(shortModelId).filter((id): id is string => !!id);
+  if (!ids.length) return undefined;
+  return ids.every((id) => id === ids[0]) ? ids[0] : undefined;
+}
+
+/** Rolling output tokens/sec over the trailing window; undefined with < 2 samples in it. */
+export function rollingTps(samples: UsageSample[] | undefined, now: number, windowMs = 30_000): number | undefined {
+  if (!samples || samples.length < 2) return undefined;
+  const recent = samples.filter((s) => now - s.t <= windowMs);
+  if (recent.length < 2) return undefined;
+  const first = recent[0]!;
+  const last = recent[recent.length - 1]!;
+  const spanSec = (last.t - first.t) / 1000;
+  if (spanSec <= 0) return undefined;
+  return (last.output - first.output) / spanSec;
+}
+
+/** Live runs: rolling window, falling back to lifetime output/elapsed. Terminal: lifetime average. */
+export function computeTps(input: {
+  output: number;
+  samples?: UsageSample[];
+  startedAt?: number;
+  endedAt?: number;
+  now: number;
+  live: boolean;
+}): number | undefined {
+  if (input.live) {
+    const rolling = rollingTps(input.samples, input.now);
+    if (rolling !== undefined) return rolling;
+  }
+  if (!input.startedAt || input.output <= 0) return undefined;
+  const elapsedSec = ((input.endedAt ?? input.now) - input.startedAt) / 1000;
+  if (elapsedSec <= 0) return undefined;
+  return input.output / elapsedSec;
+}
+
+export function formatTps(tps: number, live: boolean): string {
+  // `~0` on a live run is the stall tell: cost climbing, no output flowing.
+  if (live && tps < 0.5) return '~0 tps';
+  return `${Math.round(tps)} tps`;
+}
+
+export interface StatLineParts {
+  cost?: number;
+  turns?: number;
+  model?: string;
+  /** Output tokens/sec (see computeTps). */
+  tps?: number;
+  tokens?: number;
+  durationMs?: number;
+}
+
+export interface StatLineOptions {
+  /**
+   * Live rows show any cost > $0 (a cheap run showing <$0.001 is information).
+   * Terminal/aggregate rows keep the 0.00005 threshold so zero-cost cached
+   * runs don't render a noisy <$0.001.
+   */
+  live?: boolean;
+  /** Available display width; drops duration, then tokens, then tps. Cost/turns/model survive. */
+  width?: number;
+}
+
+export function statLine(parts: StatLineParts, opts: StatLineOptions = {}): string {
+  // drop rank: 0 drops first under narrow width; Infinity never drops.
+  const segs: Array<{ text: string; drop: number }> = [];
+  const costThreshold = opts.live ? 0 : 0.00005;
+  if (parts.cost !== undefined && parts.cost > costThreshold) segs.push({ text: formatCost(parts.cost), drop: Infinity });
+  const model = shortModelId(parts.model);
+  if (model) segs.push({ text: model, drop: Infinity });
+  if (parts.tps !== undefined) segs.push({ text: formatTps(parts.tps, opts.live ?? false), drop: 2 });
+  if (parts.turns) segs.push({ text: `↻${parts.turns}`, drop: Infinity });
+  if (parts.tokens) segs.push({ text: `${formatTokens(parts.tokens)} tok`, drop: 1 });
+  if (parts.durationMs !== undefined && parts.durationMs >= 0) segs.push({ text: formatDuration(parts.durationMs), drop: 0 });
+  const render = (list: typeof segs) => list.map((s) => s.text).join(' · ');
+  if (opts.width !== undefined) {
+    const kept = segs.slice();
+    for (const rank of [0, 1, 2]) {
+      while (render(kept).length > opts.width) {
+        const idx = kept.map((s) => s.drop).lastIndexOf(rank);
+        if (idx < 0) break;
+        kept.splice(idx, 1);
+      }
+    }
+    return truncateToWidth(render(kept), opts.width);
+  }
+  return render(segs);
 }
 
 export function formatUsage(usage: UsageStats, model?: string, compact = true): string {
@@ -151,6 +255,7 @@ export interface InlineTaskView {
   label?: string;
   state?: RunState;
   usage?: Partial<UsageStats>;
+  usageSamples?: UsageSample[];
   model?: string;
   stopReason?: string;
   timeoutPhase?: TimeoutPhase;
@@ -195,13 +300,29 @@ function usageAggregate(results: InlineTaskView[]): AggregateStats {
   return { turns, tokens, cost };
 }
 
-function statsText(agg: AggregateStats, durationMs?: number): string {
-  const parts: string[] = [];
-  if (agg.turns > 0) parts.push(`↻${agg.turns}`);
-  if (agg.tokens > 0) parts.push(`${formatTokens(agg.tokens)} tok`);
-  if (agg.cost > 0.00005) parts.push(formatCost(agg.cost));
-  if (durationMs !== undefined && durationMs >= 0) parts.push(formatDuration(durationMs));
-  return parts.join(' · ');
+/** Run-level stat line: aggregates tasks, sums live per-task tps, shows a shared model once. */
+function statsText(
+  results: InlineTaskView[],
+  opts: { durationMs?: number; live: boolean; now: number; startedAt?: number; endedAt?: number; model?: string },
+): string {
+  const agg = usageAggregate(results);
+  let tps: number | undefined;
+  for (const task of results) {
+    const taskLive = opts.live && isActiveState(task.state);
+    const t = computeTps({
+      output: task.usage?.output ?? 0,
+      samples: task.usageSamples,
+      startedAt: opts.startedAt,
+      endedAt: opts.endedAt,
+      now: opts.now,
+      live: taskLive,
+    });
+    if (t !== undefined) tps = (tps ?? 0) + t;
+  }
+  return statLine(
+    { cost: agg.cost, turns: agg.turns, model: opts.model, tps, tokens: agg.tokens, durationMs: opts.durationMs },
+    { live: opts.live },
+  );
 }
 
 function taskAnnotations(task: InlineTaskView, now: number): string[] {
@@ -308,8 +429,8 @@ export function renderRunLines(run: InlineRunView, opts: InlineRenderOptions): s
   const frame = opts.spinnerFrame ?? 0;
   const running = opts.isPartial ?? isActiveState(run.state);
   const durationMs = run.startedAt ? (run.endedAt ?? now) - run.startedAt : undefined;
-  const agg = usageAggregate(run.results);
-  const stats = statsText(agg, durationMs);
+  const sharedModel = commonModelId(run.results.map((r) => r.model));
+  const aggStats = statsText(run.results, { durationMs, live: running, now, startedAt: run.startedAt, endedAt: run.endedAt, model: sharedModel });
   const spin = theme.fg('accent', SPINNERS[frame % SPINNERS.length]!);
   const lines: string[] = [];
 
@@ -317,14 +438,15 @@ export function renderRunLines(run: InlineRunView, opts: InlineRenderOptions): s
     const total = run.results.length;
     const done = run.results.filter((r) => r.state && !isActiveState(r.state)).length;
     lines.push(running
-      ? `${spin} ${theme.fg('dim', `${done}/${total} done${stats ? ` · ${stats}` : ''}`)}`
-      : theme.fg('dim', `${total} tasks${stats ? ` · ${stats}` : ''}`));
+      ? `${spin} ${theme.fg('dim', `${done}/${total} done${aggStats ? ` · ${aggStats}` : ''}`)}`
+      : theme.fg('dim', `${total} tasks${aggStats ? ` · ${aggStats}` : ''}`));
 
     const shown = opts.expanded ? run.results : run.results.slice(0, 6);
     for (const task of shown) {
       const glyph = stateGlyph(task.state, theme, frame);
-      const mini = statsText(usageAggregate([task]));
       const active = isActiveState(task.state);
+      // Mini-rows omit the model when every task shares it (header shows it once).
+      const mini = statsText([task], { live: active, now, startedAt: run.startedAt, endedAt: run.endedAt, model: sharedModel ? undefined : task.model });
       // The state glyph already communicates the outcome; parallel rows show
       // just the message/preview without repeating the state word.
       const tail = active
@@ -358,11 +480,11 @@ export function renderRunLines(run: InlineRunView, opts: InlineRenderOptions): s
     if (running) {
       const notes = taskAnnotations(task, now);
       const noteText = notes.length ? ` ${theme.fg('warning', `[${notes.join(' · ')}]`)}` : '';
-      lines.push(`${spin} ${theme.fg('dim', stats || 'starting…')}${noteText}`);
+      lines.push(`${spin} ${theme.fg('dim', aggStats || 'starting…')}${noteText}`);
       const activity = pickLine(task.finalOutput, 'last');
       if (activity) lines.push(`  ${theme.fg('dim', '⎿')} ${theme.fg('muted', oneLine(activity, width))}`);
     } else {
-      lines.push(theme.fg('dim', stats || formatState(run.state ?? task.state ?? 'completed')));
+      lines.push(theme.fg('dim', aggStats || formatState(run.state ?? task.state ?? 'completed')));
       const summary = terminalTaskLine(theme, task);
       if (summary && !opts.expanded) lines.push(`  ${theme.fg('dim', '⎿')} ${theme.fg(summary.color, oneLine(summary.text, width))}`);
       const pointers = pointerText(task, opts.expanded ?? false);

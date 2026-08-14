@@ -24,6 +24,8 @@ export type ProtocolUpdate =
 /** Strict-enough, line-buffered parser for Pi's documented JSON event stream. */
 export class ProtocolParser {
   private buffer = "";
+  /** Byte length of `buffer`, tracked incrementally so feed() stays O(chunk). */
+  private bufferBytes = 0;
   private sessionId?: string;
   private messages: Message[] = [];
   private usage = emptyUsage();
@@ -84,15 +86,22 @@ export class ProtocolParser {
   }
 
   feed(data: Buffer | string): ProtocolUpdate[] {
-    this.buffer += data.toString();
+    const text = data.toString();
+    this.buffer += text;
+    this.bufferBytes += Buffer.byteLength(text, "utf8");
     // If a single line grows past the hard limit without a newline, drop it as a parse error.
-    if (Buffer.byteLength(this.buffer, "utf8") > ProtocolParser.MAX_BUFFER_BYTES) {
+    if (this.bufferBytes > ProtocolParser.MAX_BUFFER_BYTES) {
       this.parseErrors++;
       this.buffer = "";
+      this.bufferBytes = 0;
       return [];
     }
+    // No complete line yet: appending is enough — never re-split the whole
+    // buffer per chunk (that is O(n²) on long lines).
+    if (!text.includes("\n")) return [];
     const lines = this.buffer.split("\n");
     this.buffer = lines.pop() ?? "";
+    this.bufferBytes = Buffer.byteLength(this.buffer, "utf8");
     return lines.flatMap((line) => this.parseLine(line));
   }
 
@@ -101,6 +110,7 @@ export class ProtocolParser {
     if (!this.buffer.trim()) return [];
     const line = this.buffer;
     this.buffer = "";
+    this.bufferBytes = 0;
     return this.parseLine(line);
   }
 

@@ -8,6 +8,8 @@ import type { Usage } from "@earendil-works/pi-ai";
 import { Value } from "typebox/value";
 import { defaultConfig, loadConfig, readConfigFile, type SubagentConfig } from "./config.js";
 import {
+  commonModelId,
+  computeTps,
   formatDuration,
   formatStatusPreview,
   formatTokens,
@@ -16,6 +18,7 @@ import {
   renderCallLine,
   renderRunLines,
   SPINNERS,
+  statLine,
   stateGlyph,
   type InlineRunView,
 } from "./format.js";
@@ -246,14 +249,29 @@ function refreshWidget(runtime: SessionRuntime): void {
   shown.forEach((run, index) => {
     const last = index === shown.length - 1 && live.length <= 4;
     const joint = last ? "└─" : "├─";
+    // Per-task model is omitted when every task in the run shares one model.
+    const sharedModel = commonModelId(run.results.map((result) => result.model));
     for (const result of run.results.slice(0, 2)) {
       const active = isActiveState(result.state);
       const glyph = active ? theme.fg("accent", SPINNERS[frame]!) : stateGlyph(result.state, theme);
-      const stats = [
-        result.usage.turns ? `↻${result.usage.turns}` : "",
-        result.usage.input + result.usage.output ? `${formatTokens(result.usage.input + result.usage.output)} tok` : "",
-        formatDuration(now - run.startedAt),
-      ].filter(Boolean).join(" · ");
+      const stats = statLine(
+        {
+          cost: result.usage.cost,
+          turns: result.usage.turns,
+          model: sharedModel ? undefined : result.model,
+          tps: computeTps({
+            output: result.usage.output,
+            samples: result.usageSamples,
+            startedAt: run.startedAt,
+            endedAt: run.endedAt,
+            now,
+            live: active,
+          }),
+          tokens: result.usage.input + result.usage.output,
+          durationMs: now - run.startedAt,
+        },
+        { live: active },
+      );
       const activity = result.liveText?.split("\n").reverse().find((line) => line.trim());
       lines.push(`${theme.fg("dim", joint)} ${glyph} ${theme.fg("text", result.label)} ${theme.fg("dim", `· ${stats}`)}`);
       if (activity) lines.push(`${theme.fg("dim", last ? "    " : "│   ")}${theme.fg("dim", "⎿ ")}${theme.fg("muted", oneLine(activity, 80))}`);
@@ -298,6 +316,7 @@ function compactDetails(
       timeoutPhase: result.timeoutPhase,
       errorMessage: result.errorMessage?.slice(0, 1_000),
       usage: result.usage ?? emptyUsage(),
+      usageSamples: result.usageSamples,
       model: result.model,
       thinking: result.thinking,
       profile: result.profile,
@@ -584,11 +603,12 @@ function buildCompletionDetails(runtime: SessionRuntime, runIds: string[]): Comp
     const found = runtime.registry.lookup(id, runtime.key);
     if (found.status !== "found" || !found.run || "controller" in found.run) continue;
     const snapshot = found.run;
-    let turns = 0, tokens = 0, cost = 0;
+    let turns = 0, tokens = 0, cost = 0, output = 0;
     const pointers: string[] = [];
     for (const result of snapshot.results) {
       turns += result.usage?.turns ?? 0;
       tokens += (result.usage?.input ?? 0) + (result.usage?.output ?? 0);
+      output += result.usage?.output ?? 0;
       cost += result.usage?.cost ?? 0;
       if (result.outputFile) pointers.push(result.outputFile);
       if (result.worktree?.changed) pointers.push(`branch ${result.worktree.branch}`);
@@ -605,7 +625,9 @@ function buildCompletionDetails(runtime: SessionRuntime, runIds: string[]): Comp
       preview,
       turns,
       tokens,
+      output,
       cost,
+      model: commonModelId(snapshot.results.map((result) => result.model)),
       durationMs: (snapshot.endedAt ?? Date.now()) - snapshot.startedAt,
       pointers,
     });
@@ -871,12 +893,17 @@ export default function registerSubagent(pi: ExtensionAPI): void {
       const lines: string[] = [];
       for (const run of details.runs) {
         const glyph = stateGlyph(run.state as any, theme);
-        const stats = [
-          run.turns ? `↻${run.turns}` : "",
-          run.tokens ? `${formatTokens(run.tokens)} tok` : "",
-          run.cost > 0.00005 ? `$${run.cost.toFixed(3)}` : "",
-          formatDuration(run.durationMs),
-        ].filter(Boolean).join(" · ");
+        const stats = statLine(
+          {
+            cost: run.cost,
+            turns: run.turns,
+            model: run.model,
+            tps: run.durationMs > 0 && run.output ? run.output / (run.durationMs / 1000) : undefined,
+            tokens: run.tokens,
+            durationMs: run.durationMs,
+          },
+          { live: false },
+        );
         lines.push(truncateToWidth(`${glyph} ${theme.bold(theme.fg("toolTitle", run.label))} ${theme.fg("dim", `[${run.id.slice(0, 8)}] ${stats}`)}`, width));
         if (run.preview) lines.push(truncateToWidth(`  ${theme.fg("dim", "⎿")} ${theme.fg("toolOutput", run.preview)}`, width));
         if ((expanded || details.runs.length === 1) && run.pointers.length) {
@@ -1242,6 +1269,7 @@ export default function registerSubagent(pi: ExtensionAPI): void {
             graceTurns: runtime.config.graceTurns,
             stallAfterMs: runtime.config.stallAfterMs,
             stallKillAfterMs: runtime.config.stallKillAfterMs,
+            progressThrottleMs: runtime.config.progressThrottleMs,
             maxRetries: runtime.config.maxRetries,
             watchdog: runtime.config.watchdog,
             onWatchdogEvent: (index, event) => {
@@ -1361,6 +1389,7 @@ export default function registerSubagent(pi: ExtensionAPI): void {
           label: task.label,
           state: task.state,
           usage: task.usage,
+          usageSamples: task.usageSamples,
           model: task.model,
           stopReason: task.stopReason,
           timeoutPhase: task.timeoutPhase,

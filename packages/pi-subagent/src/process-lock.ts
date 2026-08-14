@@ -425,7 +425,15 @@ export class ProcessLockManager {
     ensureDirSync(slotDir(this.root));
     this.reapDeadSlots();
     const limit = this.maxGlobalActive - this.reservedFor(normalizedDepth);
-    const activeAtOrBelow = this.countLiveSlotsAtOrBelow(normalizedDepth);
+    let activeAtOrBelow = this.countAdmissionRecords(normalizedDepth, false);
+    if (activeAtOrBelow >= limit || limit <= 0) {
+      // Verify before refusing: check every counted record's process identity
+      // (kill(pid,0) + startTime match; pid=0 / unparseable counts as dead),
+      // prune the dead ones, and recount. Stale records left by crashed
+      // parents or tests must never block a real spawn.
+      this.reconcileAdmissionLiveness();
+      activeAtOrBelow = this.countAdmissionRecords(normalizedDepth, true);
+    }
     if (activeAtOrBelow >= limit || limit <= 0) {
       throw new Error(
         `Machine-wide subagent process limit reached (${this.maxGlobalActive}` +
@@ -456,24 +464,62 @@ export class ProcessLockManager {
     }
   }
 
-  /** Count live slot files whose recorded depth is ≤ the given depth (missing → 0). */
-  private countLiveSlotsAtOrBelow(depth: number): number {
+  /**
+   * Admission count: union (by runId) of live slot files at or below `depth`
+   * and "running" run records. Run records are the durable spawn record, so
+   * they count toward admission; when `verifyRunRecords` is false they are
+   * counted unverified (cheap path), and the refusal path re-counts after a
+   * liveness reconcile so stale records never cause refusal.
+   */
+  private countAdmissionRecords(depth: number, verifyRunRecords: boolean): number {
+    const { counted, all } = this.collectLiveSlots(depth);
+    const runIds = new Set(counted);
+    for (const record of this.listRunRecords()) {
+      if (record.state !== "running") continue;
+      if (runIds.has(record.runId) || all.has(record.runId)) continue;
+      if (verifyRunRecords && (!record.process || !this.isAlive(record.process))) continue;
+      runIds.add(record.runId);
+    }
+    return runIds.size;
+  }
+
+  /** Live slots grouped by runId: `counted` at or below depth, `all` at any depth. */
+  private collectLiveSlots(depth: number): { counted: Set<string>; all: Set<string> } {
+    const counted = new Set<string>();
+    const all = new Set<string>();
     let entries: string[] = [];
     try {
       entries = fs.readdirSync(slotDir(this.root));
     } catch {
-      return 0;
+      return { counted, all };
     }
-    let count = 0;
     for (const name of entries) {
       if (!name.endsWith(".slot")) continue;
       const file = path.join(slotDir(this.root), name);
-      const data = readJsonSync<{ depth?: number; process?: ProcessIdentity }>(file);
+      const data = readJsonSync<{ runId?: string; depth?: number; process?: ProcessIdentity }>(file);
       if (!data?.process || !this.isAlive(data.process)) continue;
+      const runId = data.runId ?? name;
+      all.add(runId);
       const slotDepth = typeof data.depth === "number" && Number.isFinite(data.depth) ? data.depth : 0;
-      if (slotDepth <= depth) count++;
+      if (slotDepth <= depth) counted.add(runId);
     }
-    return count;
+    return { counted, all };
+  }
+
+  /**
+   * Prune every slot file and "running" run record whose recorded process is
+   * demonstrably dead (pid=0, unparseable, or failed the start-time identity
+   * check). Called on the admission-refusal path so stale records left by
+   * crashed parents or tests can never block a real spawn.
+   */
+  private reconcileAdmissionLiveness(): void {
+    this.reapDeadSlots();
+    for (const record of this.listRunRecords()) {
+      if (record.state !== "running") continue;
+      if (!record.process || !this.isAlive(record.process)) {
+        this.deleteRunRecord(record.runId);
+      }
+    }
   }
 
   private reapDeadSlots(): void {
