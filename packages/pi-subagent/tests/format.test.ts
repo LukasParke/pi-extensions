@@ -236,8 +236,8 @@ describe('format helpers', () => {
 describe('statLine', () => {
   const parts = { cost: 0.012, turns: 8, model: 'moonshotai/kimi-k3', tps: 42.4, tokens: 33800, durationMs: 12_000 };
 
-  it('orders cost, turns, model, tps, tokens, duration', () => {
-    expect(format.statLine(parts, { live: true })).toBe('$0.012 · ↻8 · kimi-k3 · 42 tps · 34k tok · 12s');
+  it('orders cost, model, tps, turns, tokens, duration', () => {
+    expect(format.statLine(parts, { live: true })).toBe('$0.012 · kimi-k3 · 42 tps · ↻8 · 34k tok · 12s');
   });
 
   it('strips the provider prefix from model ids', () => {

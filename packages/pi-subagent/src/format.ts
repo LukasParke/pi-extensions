@@ -134,10 +134,10 @@ export function statLine(parts: StatLineParts, opts: StatLineOptions = {}): stri
   const segs: Array<{ text: string; drop: number }> = [];
   const costThreshold = opts.live ? 0 : 0.00005;
   if (parts.cost !== undefined && parts.cost > costThreshold) segs.push({ text: formatCost(parts.cost), drop: Infinity });
-  if (parts.turns) segs.push({ text: `↻${parts.turns}`, drop: Infinity });
   const model = shortModelId(parts.model);
   if (model) segs.push({ text: model, drop: Infinity });
   if (parts.tps !== undefined) segs.push({ text: formatTps(parts.tps, opts.live ?? false), drop: 2 });
+  if (parts.turns) segs.push({ text: `↻${parts.turns}`, drop: Infinity });
   if (parts.tokens) segs.push({ text: `${formatTokens(parts.tokens)} tok`, drop: 1 });
   if (parts.durationMs !== undefined && parts.durationMs >= 0) segs.push({ text: formatDuration(parts.durationMs), drop: 0 });
   const render = (list: typeof segs) => list.map((s) => s.text).join(' · ');
