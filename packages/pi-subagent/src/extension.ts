@@ -875,9 +875,14 @@ export default function registerSubagent(pi: ExtensionAPI): void {
       if (!runtime || runtime.closed || runtime.key !== sessionKey(ctx)) {
         fail("Subagent runtime is not initialized for this session.");
       }
+      // Profile-vs-agent is checked explicitly: the schema cannot express it
+      // (top-level combinators are rejected by Anthropic-family providers).
+      const profileError = profileSelectionError(params);
+      if (profileError) {
+        fail(`Invalid parameters: ${profileError}`);
+      }
       if (!Value.Check(SubagentParamsSchema, params)) {
-        const profileError = profileSelectionError(params);
-        const errors = profileError ?? [...Value.Errors(SubagentParamsSchema, params)].slice(0, 5).map((error: any) => error.message).join("; ");
+        const errors = [...Value.Errors(SubagentParamsSchema, params)].slice(0, 5).map((error: any) => error.message).join("; ");
         fail(`Invalid parameters: ${errors}`);
       }
 
