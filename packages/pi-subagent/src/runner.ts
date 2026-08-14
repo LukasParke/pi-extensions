@@ -461,6 +461,10 @@ export class ChildRunner {
         if (update.type === "message") {
           result.messages = parser.getMessages();
           result.usage = update.usage;
+          // Ring of usage samples feeding the live rolling-tps stat.
+          const samples = (result.usageSamples ??= []);
+          samples.push({ t: Date.now(), output: update.usage.output });
+          if (samples.length > 64) samples.splice(0, samples.length - 64);
           progress(
             {
               messages: result.messages,

@@ -22,6 +22,8 @@ export interface PersistedResult {
   timeoutPhase?: TimeoutPhase;
   errorMessage?: string;
   usage: UsageStats;
+  /** Rolling (ts, outputTokens) samples for live tps; capped at 64. */
+  usageSamples?: import("./types.js").UsageSample[];
   model?: string;
   thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   profile?: TaskProfile;
@@ -140,6 +142,11 @@ function normalizeResult(value: unknown): PersistedResult | undefined {
     timeoutPhase: isTimeoutPhase(r.timeoutPhase) ? r.timeoutPhase : undefined,
     errorMessage: typeof r.errorMessage === "string" ? utf8Prefix(r.errorMessage, 2_000) : undefined,
     usage: normalizeUsage(r.usage),
+    usageSamples: Array.isArray(r.usageSamples)
+      ? r.usageSamples
+          .filter((s): s is import("./types.js").UsageSample => !!s && typeof s.t === "number" && typeof s.output === "number")
+          .slice(-64)
+      : undefined,
     model: typeof r.model === "string" ? r.model : undefined,
     thinking: ["off", "minimal", "low", "medium", "high", "xhigh"].includes(String(r.thinking)) ? r.thinking : undefined,
     profile: ["explore", "review", "general"].includes(String(r.profile)) ? r.profile : undefined,

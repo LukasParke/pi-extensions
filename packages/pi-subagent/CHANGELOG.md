@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Unified stat line
+
+- All five TUI stat-line surfaces (inline run blocks, overlay list, detail
+  view, live widget, completion messages) now share one `statLine()` helper
+  rendering `$cost · ↻turns · model · tps · tokens · duration` — cost sits
+  immediately left of the turn count, model shows as a provider-stripped
+  short id (elided per-task when a parallel run shares one model), and tps
+  is a 30s rolling output-token rate for live runs (`~0 tps` when stalled —
+  a visual doom-loop tell) with lifetime average for finished runs.
+
 ## 0.9.0
 
 ### Anthropic-compatible tool schema
