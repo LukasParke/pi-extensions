@@ -9,6 +9,7 @@ const config: GraphitiConfig = {
 	timeoutMs: 5_000,
 	autoRecallFacts: 5,
 	autoRecallMinPromptLength: 24,
+	recallCacheTtlMs: 120_000,
 };
 
 function jsonResponse(body: unknown, init?: ResponseInit & { sessionId?: string }) {

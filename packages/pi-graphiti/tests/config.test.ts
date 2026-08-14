@@ -13,6 +13,7 @@ const ENV_KEYS = [
 	"GRAPHITI_TIMEOUT_MS",
 	"GRAPHITI_AUTO_RECALL_FACTS",
 	"GRAPHITI_AUTO_RECALL_MIN_PROMPT",
+	"GRAPHITI_RECALL_CACHE_TTL_MS",
 ];
 
 describe("graphitiConfig", () => {
@@ -35,6 +36,7 @@ describe("graphitiConfig", () => {
 		expect(config.groupId).toBe("main");
 		expect(config.timeoutMs).toBe(15_000);
 		expect(config.autoRecallFacts).toBe(0);
+		expect(config.recallCacheTtlMs).toBe(120_000);
 	});
 
 	it("rejects a non-http baseUrl", async () => {

@@ -21,6 +21,8 @@ export interface GraphitiConfig {
 	autoRecallFacts: number;
 	/** Prompts shorter than this skip auto-recall (greetings, confirmations). */
 	autoRecallMinPromptLength: number;
+	/** In-memory TTL for identical recall queries, ms. Skips repeat server hits. */
+	recallCacheTtlMs: number;
 }
 
 export const defaultConfig: GraphitiConfig = {
@@ -28,6 +30,7 @@ export const defaultConfig: GraphitiConfig = {
 	timeoutMs: 15_000,
 	autoRecallFacts: 5,
 	autoRecallMinPromptLength: 24,
+	recallCacheTtlMs: 120_000,
 };
 
 export const schema: Schema<GraphitiConfig> = {
@@ -37,6 +40,7 @@ export const schema: Schema<GraphitiConfig> = {
 	timeoutMs: { validate: number(1_000), env: "GRAPHITI_TIMEOUT_MS" },
 	autoRecallFacts: { validate: number(0), env: "GRAPHITI_AUTO_RECALL_FACTS" },
 	autoRecallMinPromptLength: { validate: number(0), env: "GRAPHITI_AUTO_RECALL_MIN_PROMPT" },
+	recallCacheTtlMs: { validate: number(0), env: "GRAPHITI_RECALL_CACHE_TTL_MS" },
 };
 
 let cached: Promise<GraphitiConfig> | undefined;
