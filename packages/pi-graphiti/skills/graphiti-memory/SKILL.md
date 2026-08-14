@@ -7,9 +7,9 @@ description: Use shared Graphiti memory through the memory_recall, memory_rememb
 
 Graphiti (a temporal knowledge graph) is the durable memory store for all
 agents. The `pi-graphiti` extension owns a direct connection; relevant facts
-are **auto-recalled** into context on each substantive prompt, so most of the
-time recall has already happened — check the injected "Recalled from memory"
-block first.
+are **auto-recalled in the background** from conversation state and delivered
+as a dispatch message at the next turn boundary, so most of the time recall
+has already happened — check the "Recalled from memory" dispatch block first.
 
 ## Tools
 
@@ -23,9 +23,9 @@ block first.
 
 ## When to recall explicitly
 
-Auto-recall covers the prompt text. Search explicitly when the task shifts to
-something the original prompt didn't mention: a host you're about to touch, a
-service being configured, a decision area being revisited.
+Auto-recall covers the current conversation state. Search explicitly when the
+task shifts to something the conversation hasn't touched yet: a host you're
+about to modify, a service being configured, a decision area being revisited.
 
 ## When to store
 

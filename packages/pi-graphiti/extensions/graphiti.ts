@@ -1,16 +1,21 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { dispatchQueue, ensureDelivery } from "@parke.dev/pi-dispatch";
 import { Type } from "typebox";
-import { GraphitiClient } from "../src/client.ts";
+import { GraphitiClient, type FactResult } from "../src/client.ts";
 import { graphitiConfig } from "../src/config.ts";
+import { RecallPipeline, extractRecallContext, formatRecallMessage } from "../src/recall.ts";
 
 // Graphiti shared memory for pi.
 //
 // Owns a direct MCP-over-HTTP connection to a Graphiti server (no gateway in
-// between) and makes memory table stakes:
-//  - auto-recall: every substantive prompt is searched against the graph and
-//    top facts are injected as context before the agent starts
+// between) and makes memory table stakes without ever blocking a turn:
+//  - background recall: conversation state (latest user message + assistant
+//    tail + recent tool activity) is searched against the graph off the turn
+//    path; new facts arrive via the dispatch queue at the next turn boundary
 //  - memory_remember / memory_recall / memory_status tools for explicit use
-//  - a store-before-finishing policy block appended to the system prompt
+//  - a store-before-finishing policy block appended to the system prompt,
+//    plus a one-shot dispatch reminder when a substantive session ends
+//    without a single memory_remember
 //
 // Config lives in ~/.pi/graphiti.json or GRAPHITI_* env vars; see src/config.ts.
 
@@ -23,60 +28,101 @@ environment changes, constraints, non-obvious debugging results — store one
 small episode per fact with memory_remember. Skip ephemera, anything derivable
 from a repo, and never store secret values (store where they live instead).`;
 
+const STORE_REMINDER =
+	"This session has done substantive work but memory_remember has not been called. " +
+	"Per the Graphiti memory policy, store durable outcomes (decisions, environment changes, " +
+	"constraints, non-obvious debugging results) as one small episode per fact before finishing.";
+
+/** Settled turns before the store reminder is eligible. */
+const STORE_REMINDER_MIN_SETTLED_TURNS = 10;
+
 export default function (pi: ExtensionAPI) {
+	ensureDelivery(pi);
+
 	let client: GraphitiClient | undefined;
 	let unavailable: string | undefined;
+	let remembered = false;
+	let reminderSent = false;
+	let settledTurns = 0;
 
 	async function getClient(): Promise<GraphitiClient> {
 		if (!client) client = new GraphitiClient(await graphitiConfig());
 		return client;
 	}
 
-	pi.on("session_start", async (_event, ctx) => {
-		unavailable = undefined;
-		try {
-			const c = await getClient();
-			const status = await c.status();
-			if (status.status !== "ok") {
-				unavailable = status.message ?? "server not ok";
-			}
-		} catch (error) {
-			unavailable = error instanceof Error ? error.message : String(error);
-		}
-		if (unavailable && ctx.hasUI) {
-			ctx.ui.setStatus("graphiti", `memory unavailable: ${unavailable.slice(0, 80)}`);
-		}
+	const pipeline = new RecallPipeline({
+		config: graphitiConfig,
+		searchFacts: async (query, maxFacts) => (await getClient()).searchFacts(query, maxFacts),
+		publish: (facts: FactResult[]) => {
+			dispatchQueue().publish({
+				id: "graphiti:recall",
+				source: "graphiti",
+				priority: "info",
+				urgency: "next-turn",
+				message: formatRecallMessage(facts),
+				details: { facts },
+			});
+		},
 	});
 
-	pi.on("session_shutdown", async () => {
+	function recallFromSession(ctx: ExtensionContext, userMessage?: string): void {
+		if (unavailable) return;
+		try {
+			const extracted = extractRecallContext(ctx.sessionManager.getBranch());
+			pipeline.trigger({
+				userMessage: userMessage ?? extracted.userMessage,
+				assistantTail: extracted.assistantTail,
+				toolNames: extracted.toolNames,
+			});
+		} catch {
+			// Session state is best-effort context; never block the turn on it.
+		}
+	}
+
+	pi.on("session_start", (_event, ctx) => {
+		unavailable = undefined;
+		remembered = false;
+		reminderSent = false;
+		settledTurns = 0;
+		pipeline.reset();
+		// Fire-and-forget: the status glyph lands whenever the check resolves.
+		void (async () => {
+			try {
+				const status = await (await getClient()).status();
+				if (status.status !== "ok") unavailable = status.message ?? "server not ok";
+			} catch (error) {
+				unavailable = error instanceof Error ? error.message : String(error);
+			}
+			if (unavailable && ctx.hasUI) {
+				ctx.ui.setStatus("graphiti", `memory unavailable: ${unavailable.slice(0, 80)}`);
+			}
+		})().catch(() => {});
+	});
+
+	pi.on("session_shutdown", () => {
 		client?.close();
 		client = undefined;
 	});
 
-	pi.on("before_agent_start", async (event, ctx) => {
-		const systemPrompt = `${event.systemPrompt}\n\n${STORE_POLICY}`;
-		if (unavailable) return { systemPrompt };
+	pi.on("before_agent_start", (event, ctx) => {
+		// Synchronous: only the system-prompt append. Recall runs in the
+		// background and arrives via dispatch at the next turn boundary.
+		recallFromSession(ctx, event.prompt);
+		return { systemPrompt: `${event.systemPrompt}\n\n${STORE_POLICY}` };
+	});
 
-		const config = await graphitiConfig();
-		if (config.autoRecallFacts <= 0) return { systemPrompt };
-		if (event.prompt.trim().length < config.autoRecallMinPromptLength) return { systemPrompt };
-
-		try {
-			const c = await getClient();
-			const facts = await c.searchFacts(event.prompt, config.autoRecallFacts, ctx.signal);
-			if (facts.length === 0) return { systemPrompt };
-			const lines = facts.map((f) => `- ${f.fact}${f.invalid_at ? " (superseded)" : ""}`);
-			return {
-				systemPrompt,
-				message: {
-					customType: "graphiti-recall",
-					content: `Recalled from memory (verify against current state before relying on):\n${lines.join("\n")}`,
-					display: true,
-				},
-			};
-		} catch {
-			// Recall is best-effort; a slow or failing graph must never block the turn.
-			return { systemPrompt };
+	pi.on("agent_settled", (_event, ctx) => {
+		settledTurns++;
+		recallFromSession(ctx);
+		if (!remembered && !reminderSent && settledTurns >= STORE_REMINDER_MIN_SETTLED_TURNS) {
+			reminderSent = true;
+			dispatchQueue().publish({
+				id: "graphiti:store-reminder",
+				source: "graphiti:store",
+				priority: "info",
+				urgency: "next-turn",
+				message: STORE_REMINDER,
+			});
 		}
 	});
 
@@ -97,7 +143,11 @@ export default function (pi: ExtensionAPI) {
 			let payload: unknown;
 			if (mode === "nodes") payload = await c.searchNodes(params.query, limit, signal);
 			else if (mode === "episodes") payload = await c.recentEpisodes(limit, signal);
-			else payload = await c.searchFacts(params.query, limit, signal);
+			else {
+				const facts = await c.searchFacts(params.query, limit, signal);
+				pipeline.markSeen(facts);
+				payload = facts;
+			}
 			return {
 				content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
 				details: {},
@@ -129,6 +179,8 @@ export default function (pi: ExtensionAPI) {
 				},
 				signal,
 			);
+			remembered = true;
+			dispatchQueue().suppress("graphiti:store");
 			return { content: [{ type: "text", text: result }], details: {} };
 		},
 	});
