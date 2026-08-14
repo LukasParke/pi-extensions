@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
+### Anthropic-compatible tool schema
+
+- Removed the top-level `allOf` from the `subagent` tool's `input_schema`:
+  Anthropic (and its Azure/Bedrock/Google frontends on OpenRouter) reject
+  top-level `oneOf`/`allOf`/`anyOf` with a 400, which made the tool unusable
+  with Claude models. The profile-vs-agent requirement is now enforced at
+  runtime via `profileSelectionError`, and `assertObjectToolSchema` rejects
+  top-level combinators to prevent regressions.
 
 ### Pi 0.84 compatibility
 

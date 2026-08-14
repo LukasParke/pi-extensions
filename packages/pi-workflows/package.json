@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-workflows",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Multi-phase multi-agent orchestration for the pi coding agent: write a JavaScript program that fans out to subagents",
   "type": "module",
   "license": "MIT",
@@ -44,7 +44,7 @@
   },
   "dependencies": {
     "@parke.dev/pi-ext-config": "^0.1.0",
-    "@parke.dev/pi-subagent": "^0.8.0"
+    "@parke.dev/pi-subagent": "^0.9.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

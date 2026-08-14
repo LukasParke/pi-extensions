@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-notion",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Notion page search, reading and append tools for the Pi coding agent",
   "type": "module",
   "license": "MIT",

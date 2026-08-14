@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-sentinel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Criteria-gated wakeups for Pi agents watching CI, reviews, deployments and other external state",
   "type": "module",
   "license": "MIT",

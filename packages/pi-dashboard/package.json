@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-dashboard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Optional header/footer dashboard for the Pi coding agent: cwd, model, context, full session cost, tok/s, git, and PR",
   "type": "module",
   "license": "MIT",
