@@ -262,7 +262,8 @@ export class SentinelManager {
 			if (
 				entry.state === "waiting" ||
 				(entry.state === "failing" && entry.kind !== "pr") ||
-				(entry.kind === "pr" && (missedPoll || (entry.prSnapshot === undefined && !entry.consecutiveFailures)))
+				(entry.kind === "pr" &&
+					(missedPoll || (entry.prSnapshot === undefined && !entry.consecutiveFailures)))
 			) {
 				this.scheduleEntry(entry, 0);
 			}

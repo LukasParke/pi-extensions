@@ -145,7 +145,14 @@ describe("SentinelManager", () => {
 		};
 		const probe = vi.fn(async () => snapshot);
 		const manager = new SentinelManager();
-		manager.attachPr({ name: "pr-7", repo: "o/r", number: 7, probe, initialSnapshot: snapshot, intervalMs: 1_000 });
+		manager.attachPr({
+			name: "pr-7",
+			repo: "o/r",
+			number: 7,
+			probe,
+			initialSnapshot: snapshot,
+			intervalMs: 1_000,
+		});
 		manager.startSession();
 		manager.setIdle(false);
 		// The scheduled poll fires mid-turn and is skipped.
