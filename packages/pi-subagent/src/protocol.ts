@@ -9,6 +9,13 @@ export type ProtocolUpdate =
   | { type: "message"; message: Message; usage: UsageStats }
   | { type: "agent-end"; willRetry?: boolean }
   | { type: "agent-settled" }
+  /**
+   * Extension-injected custom message (pi.sendMessage). RPC mode forwards
+   * every session event unfiltered, so these arrive as message_end with
+   * role "custom" — this is how children signal keep-alive liveness and
+   * sentinel gate results to the runner.
+   */
+  | { type: "custom"; customType: string; display: boolean; details: unknown }
   /** RPC extension UI dialog awaiting an answer; headless children auto-cancel. */
   | { type: "ui-request"; id: string }
   /** The child rejected the prompt; no agent events will follow. */
@@ -160,6 +167,19 @@ export class ProtocolParser {
       // Cap live text growth: keep the last 64KB of visible text so long runs stay bounded.
       this.liveText = (this.liveText + delta).slice(-64 * 1024);
       return [{ type: "live-text", delta, liveText: this.liveText }];
+    }
+
+    // Custom messages (role "custom") are extension signals, not LLM turns:
+    // surface them to the runner without polluting messages/usage/transcript.
+    if (event.type === "message_end" && event.message?.role === "custom") {
+      return [
+        {
+          type: "custom",
+          customType: String(event.message.customType ?? ""),
+          display: event.message.display === true,
+          details: event.message.details,
+        },
+      ];
     }
 
     if (event.type === "message_end" && event.message) {

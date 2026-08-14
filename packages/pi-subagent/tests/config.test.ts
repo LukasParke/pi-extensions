@@ -46,6 +46,23 @@ describe("config", () => {
     }
   });
 
+  it("sanitizes watchdog overrides and defaults", () => {
+    expect(defaultConfig.watchdog).toEqual({ wakeupsWithoutProgress: 3, repeatedActionRuns: 3 });
+    expect(sanitizeConfigOverrides({ watchdog: { wakeupsWithoutProgress: 5 } })).toEqual({
+      watchdog: { wakeupsWithoutProgress: 5, repeatedActionRuns: 3 },
+    });
+    expect(
+      sanitizeConfigOverrides({ watchdog: { wakeupsWithoutProgress: -1, repeatedActionRuns: "x" } }),
+    ).toEqual({});
+    expect(
+      configFromEnv({ PI_SUBAGENT_WATCHDOG_REPEATED_ACTION_RUNS: "5" } as NodeJS.ProcessEnv),
+    ).toEqual({ watchdog: { wakeupsWithoutProgress: 3, repeatedActionRuns: 5 } });
+    // 0 disables a detector.
+    expect(sanitizeConfigOverrides({ watchdog: { wakeupsWithoutProgress: 0 } })).toEqual({
+      watchdog: { wakeupsWithoutProgress: 0, repeatedActionRuns: 3 },
+    });
+  });
+
   it("keeps worktrees outside the OS tmpdir by default", () => {
     expect(defaultConfig.worktreeDir.startsWith(os.tmpdir())).toBe(false);
     expect(defaultConfig.worktreeDir).toContain(".pi");

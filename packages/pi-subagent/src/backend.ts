@@ -85,6 +85,12 @@ export interface BackendAdapter {
   createParser(): BackendParser;
   /** stdin payload that injects a message mid-run, or undefined if unsupported. */
   steerCommand?(message: string): unknown;
+  /**
+   * stdin payload that starts a fresh turn in an idle child. Distinct from
+   * steerCommand: steering queues behind the current turn, while a waiting
+   * (settled, keep-alive) child needs a prompt to wake up at all.
+   */
+  promptCommand?(message: string): unknown;
   /** stdin payload requesting a graceful stop, or undefined if unsupported. */
   stopCommand?(): unknown;
   /** stdin payload answering an interactive UI request (headless auto-cancel). */

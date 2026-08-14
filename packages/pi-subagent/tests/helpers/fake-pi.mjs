@@ -19,6 +19,35 @@ const message = {
 const agentEnd = { type: "agent_end", messages: [message.message] };
 const agentSettled = { type: "agent_settled" };
 
+// Keep-alive protocol fixtures: custom messages (role "custom") are how a
+// child extension signals liveness and gate results over the RPC stream.
+const keepAliveMessage = (active, reasons = active ? ["watch:pr"] : []) => ({
+  type: "message_end",
+  message: {
+    role: "custom",
+    customType: "keep-alive",
+    content: [],
+    display: false,
+    details: { active, reasons },
+    timestamp: Date.now(),
+  },
+});
+const sentinelWakeupMessage = (details) => ({
+  type: "message_end",
+  message: {
+    role: "custom",
+    customType: "sentinel-wakeup",
+    content: [],
+    display: false,
+    details,
+    timestamp: Date.now(),
+  },
+});
+const turnMessage = (text, extraContent = []) => ({
+  ...message,
+  message: { ...message.message, content: [{ type: "text", text }, ...extraContent] },
+});
+
 if (isMain) {
   // Emulates `pi --mode rpc`: JSONL commands on stdin, events + responses on stdout.
   // The parent runner sends {type:"prompt"} then {type:"get_state"}, may send
@@ -124,6 +153,100 @@ if (isMain) {
       emit(agentSettled);
       process.exit(0);
       return;
+    }
+    if (mode === "keep-alive") {
+      // Turn 1 settles with live triggers: the parent must park in "waiting"
+      // instead of closing stdin. Turn 2 is driven by the parent's prompt
+      // command (steer-while-waiting); it ends with triggers exhausted.
+      emit(header);
+      emit(keepAliveMessage(true));
+      emit(message);
+      emit(agentEnd);
+      emit(agentSettled);
+      return; // stays alive; stdin handler drives turn 2
+    }
+    if (mode === "keep-alive-wakeup") {
+      // Self-triggered wakeup turns: waiting → running → waiting → running →
+      // triggers exhausted → the parent closes stdin on the final settle.
+      const wakeupMs = Number(process.env.FAKE_PI_WAKEUP_MS || 100);
+      emit(header);
+      emit(keepAliveMessage(true));
+      emit(turnMessage("turn 1"));
+      emit(agentEnd);
+      emit(agentSettled);
+      setTimeout(() => {
+        emit(turnMessage("turn 2 (wakeup)"));
+        emit(agentEnd);
+        emit(agentSettled);
+      }, wakeupMs).unref?.();
+      setTimeout(() => {
+        emit(turnMessage("turn 3 (final)"));
+        emit(agentEnd);
+        emit(keepAliveMessage(false));
+        emit(agentSettled);
+      }, wakeupMs * 2).unref?.();
+      return; // stays alive until the parent closes stdin
+    }
+    if (mode === "gate-all-pass") {
+      // A sentinel gate ALL PASS wakeup while waiting auto-completes the run.
+      const wakeupMs = Number(process.env.FAKE_PI_WAKEUP_MS || 100);
+      emit(header);
+      emit(keepAliveMessage(true));
+      emit(message);
+      emit(agentEnd);
+      emit(agentSettled);
+      setTimeout(() => {
+        emit(sentinelWakeupMessage({ event: { gate: "pr-review", status: "all_pass" } }));
+      }, wakeupMs).unref?.();
+      return;
+    }
+    if (mode === "doom-loop" || mode === "progress-reset" || mode === "repeated-actions") {
+      // Doom-loop simulator: identical turns forever (doom-loop), a change in
+      // the middle (progress-reset), or identical tool calls (repeated-actions).
+      const tickMs = Number(process.env.FAKE_PI_TICK_MS || 60);
+      const texts =
+        mode === "progress-reset"
+          ? ["alpha", "alpha", "beta", "beta", "beta"]
+          : ["checking…", "checking…", "checking…", "checking…", "checking…", "checking…"];
+      const toolCall =
+        mode === "repeated-actions"
+          ? [{ type: "toolCall", id: "call-x", name: "bash", arguments: { command: "gh pr view 1" } }]
+          : [];
+      const emitTurn = (text) => {
+        emit(turnMessage(text, toolCall));
+        emit(agentEnd);
+        emit(agentSettled);
+      };
+      emit(header);
+      emit(keepAliveMessage(true));
+      emitTurn(texts[0]);
+      let index = 1;
+      const timer = setInterval(() => {
+        if (index >= texts.length) {
+          clearInterval(timer);
+          // progress-reset never hits the pause threshold; triggers exhaust and
+          // the run must complete normally.
+          if (mode === "progress-reset") emit(keepAliveMessage(false));
+          return;
+        }
+        emitTurn(texts[index++]);
+      }, tickMs);
+      timer.unref?.();
+      return; // SIGTERM (watchdog pause) or stdin close ends the process
+    }
+    if (mode === "three-turns") {
+      // Three billed turns in one settle, for soft budget-warning thresholds.
+      emit(header);
+      emit(message);
+      emit(turnMessage("second"));
+      emit(turnMessage("third"));
+      emit(agentEnd);
+      emit(agentSettled);
+      return; // stays alive until the parent closes stdin
+    }
+    if (mode === "require-session-arg" && !process.argv.includes("--session")) {
+      process.stderr.write("missing --session argument\n");
+      process.exit(4);
     }
     if (mode === "stall") {
       // Emits the header + one message, then goes silent forever (process alive,
@@ -266,8 +389,21 @@ if (isMain) {
       if (!line.trim()) continue;
       let command;
       try { command = JSON.parse(line); } catch { continue; }
+      if (process.env.FAKE_PI_LOG_COMMANDS === "1") {
+        // Lets tests assert which stdin verb the parent chose (steer vs prompt).
+        process.stderr.write(`cmd:${command.type}\n`);
+      }
       if (command.type === "prompt") {
         promptCount++;
+        if (mode === "keep-alive" && promptCount >= 2) {
+          // Parent steered a waiting child: a prompt starts the wakeup turn,
+          // which ends with triggers exhausted (keep-alive inactive).
+          emit(turnMessage(`wakeup turn: ${String(command.message ?? "")}`));
+          emit(agentEnd);
+          emit(keepAliveMessage(false));
+          emit(agentSettled);
+          continue;
+        }
         if (!promptSeen) {
           promptSeen = true;
           void runScript();

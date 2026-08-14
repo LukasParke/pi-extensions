@@ -30,6 +30,14 @@ export interface TaskDefaults {
 
 export type TaskDefaultsByProfile = Partial<Record<TaskProfile, TaskDefaults>>;
 
+/** Doom-loop watchdog thresholds. 0 disables that detector. */
+export interface WatchdogConfig {
+  /** Consecutive wakeup turns (started from waiting) with no progress before pause. */
+  wakeupsWithoutProgress: number;
+  /** Consecutive turns with an identical tool-call sequence before pause. */
+  repeatedActionRuns: number;
+}
+
 export interface SubagentConfig {
   maxTasksPerRun: number;
   maxActiveProcesses: number;
@@ -72,6 +80,8 @@ export interface SubagentConfig {
   stallKillAfterMs: number;
   /** Default extra attempts on transient failures (queued timeout, stall, provider error). */
   maxRetries: number;
+  /** Doom-loop watchdog thresholds (runner-level, deterministic). */
+  watchdog: WatchdogConfig;
   /**
    * Ambient background-run widget above the editor. `"off"` clears any existing
    * widget and skips refreshes.
@@ -105,6 +115,7 @@ export const defaultConfig: SubagentConfig = {
   stallAfterMs: 90_000,
   stallKillAfterMs: 90_000,
   maxRetries: 1,
+  watchdog: { wakeupsWithoutProgress: 3, repeatedActionRuns: 3 },
   widget: "background",
   notifications: "batched",
 };
@@ -163,6 +174,28 @@ function sanitizeTaskDefaultsByProfile(raw: unknown): TaskDefaultsByProfile | un
   return Object.keys(result).length ? result : undefined;
 }
 
+function sanitizeWatchdog(raw: unknown): WatchdogConfig | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Record<string, unknown>;
+  const wakeupsWithoutProgress = positiveNumber(value.wakeupsWithoutProgress, 0);
+  const repeatedActionRuns = positiveNumber(value.repeatedActionRuns, 0);
+  if (wakeupsWithoutProgress === undefined && repeatedActionRuns === undefined) return undefined;
+  return {
+    wakeupsWithoutProgress: wakeupsWithoutProgress ?? defaultConfig.watchdog.wakeupsWithoutProgress,
+    repeatedActionRuns: repeatedActionRuns ?? defaultConfig.watchdog.repeatedActionRuns,
+  };
+}
+
+function watchdogFromEnv(env: NodeJS.ProcessEnv): WatchdogConfig | undefined {
+  const wakeupsWithoutProgress = positiveNumber(env.PI_SUBAGENT_WATCHDOG_WAKEUPS_WITHOUT_PROGRESS, 0);
+  const repeatedActionRuns = positiveNumber(env.PI_SUBAGENT_WATCHDOG_REPEATED_ACTION_RUNS, 0);
+  if (wakeupsWithoutProgress === undefined && repeatedActionRuns === undefined) return undefined;
+  return {
+    wakeupsWithoutProgress: wakeupsWithoutProgress ?? defaultConfig.watchdog.wakeupsWithoutProgress,
+    repeatedActionRuns: repeatedActionRuns ?? defaultConfig.watchdog.repeatedActionRuns,
+  };
+}
+
 /** Validate untrusted JSON overrides field-by-field; unknown keys are dropped. */
 export function sanitizeConfigOverrides(raw: unknown): Partial<SubagentConfig> {
   if (!raw || typeof raw !== "object") return {};
@@ -190,6 +223,7 @@ export function sanitizeConfigOverrides(raw: unknown): Partial<SubagentConfig> {
     stallAfterMs: positiveNumber(value.stallAfterMs, 0),
     stallKillAfterMs: positiveNumber(value.stallKillAfterMs, 0),
     maxRetries: positiveNumber(value.maxRetries, 0),
+    watchdog: sanitizeWatchdog(value.watchdog),
     widget: oneOf(WIDGET_MODES, value.widget),
     notifications: oneOf(NOTIFICATION_MODES, value.notifications),
   });
@@ -214,6 +248,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Partial<Sub
     stallAfterMs: positiveNumber(env.PI_SUBAGENT_STALL_AFTER_MS, 0),
     stallKillAfterMs: positiveNumber(env.PI_SUBAGENT_STALL_KILL_AFTER_MS, 0),
     maxRetries: positiveNumber(env.PI_SUBAGENT_MAX_RETRIES, 0),
+    watchdog: watchdogFromEnv(env),
     widget: oneOf(WIDGET_MODES, env.PI_SUBAGENT_WIDGET),
     notifications: oneOf(NOTIFICATION_MODES, env.PI_SUBAGENT_NOTIFICATIONS),
   });

@@ -9,7 +9,12 @@ export { runTasks } from "./orchestrator.js";
 export type { OrchestratedRun, OrchestratorDeps } from "./orchestrator.js";
 
 export { ChildRunner, runSubagent } from "./runner.js";
-export type { GetPiCommand, RunnerOptions } from "./runner.js";
+export type { GetPiCommand, RunnerOptions, WatchdogEvent } from "./runner.js";
+
+export { ensureDispatchDelivery, publishDispatch, suppressDispatch } from "./dispatch.js";
+export type { DispatchPriority, DispatchUrgency, SubagentDispatch } from "./dispatch.js";
+
+export type { WatchdogConfig } from "./config.js";
 
 export { WorktreeManager } from "./worktree.js";
 export type {
@@ -50,6 +55,7 @@ export type { UsageLedger } from "./usage.js";
 
 export { emptyUsage } from "./types.js";
 export type {
+  KeepAliveStatus,
   RunMode,
   RunSnapshot,
   RunState,
@@ -57,4 +63,5 @@ export type {
   TaskResult,
   TaskSpec,
   UsageStats,
+  WatchdogStatus,
 } from "./types.js";
