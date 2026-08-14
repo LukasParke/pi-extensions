@@ -14,7 +14,13 @@ export { buildModelEntry, generateModels } from "./generate.ts";
 export type { GeneratedModel } from "./generate.ts";
 export { EXCEPTIONS, overridesForModel, staleExceptions, surfaceForModel } from "./rules.ts";
 export type { ModelOverride, RoutedApi, SurfaceException } from "./rules.ts";
-export { mergeModelsJson, PROVIDER_DEFAULTS, readModelsJson, renderModelsJson, syncModelsJson } from "./sync.ts";
+export {
+	mergeModelsJson,
+	PROVIDER_DEFAULTS,
+	readModelsJson,
+	renderModelsJson,
+	syncModelsJson,
+} from "./sync.ts";
 export type { ProviderDefaults, SyncResult } from "./sync.ts";
 export {
 	createToolHarness,

@@ -62,10 +62,7 @@ export function toCost(pricing: ApiModel["pricing"]) {
 	};
 }
 
-export async function fetchApiModels(
-	config: { baseUrl: string },
-	fetchImpl = fetch,
-): Promise<ApiModel[]> {
+export async function fetchApiModels(config: { baseUrl: string }, fetchImpl = fetch): Promise<ApiModel[]> {
 	const response = await fetchImpl(`${config.baseUrl.replace(/\/+$/, "")}/models`, {
 		signal: AbortSignal.timeout(10_000),
 	});

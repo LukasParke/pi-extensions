@@ -48,7 +48,9 @@ describe("mergeModelsJson", () => {
 	it("replaces the models array wholesale", () => {
 		const existing = { providers: { openrouter: { models: [entry("old/model")] } } };
 		const merged = mergeModelsJson(existing, [entry("new/model")]);
-		expect((merged.providers!.openrouter!.models as GeneratedModel[]).map((m) => m.id)).toEqual(["new/model"]);
+		expect((merged.providers!.openrouter!.models as GeneratedModel[]).map((m) => m.id)).toEqual([
+			"new/model",
+		]);
 	});
 });
 
