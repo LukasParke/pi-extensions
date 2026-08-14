@@ -68,6 +68,12 @@ export interface SubagentConfig {
   graceTurns: number;
   /** Milliseconds of protocol silence before a running child is flagged as stalled. 0 disables. */
   stallAfterMs: number;
+  /**
+   * Minimum interval between streamed live-text progress emissions per run
+   * (latest-wins coalescing). Terminal and turn-boundary updates are never
+   * throttled. 0 disables throttling.
+   */
+  progressThrottleMs: number;
   /** Additional silence after the stall flag before the child is killed (feeds retry). 0 disables kill. */
   stallKillAfterMs: number;
   /** Default extra attempts on transient failures (queued timeout, stall, provider error). */
@@ -103,6 +109,7 @@ export const defaultConfig: SubagentConfig = {
   lockRetentionDays: 7,
   graceTurns: 2,
   stallAfterMs: 90_000,
+  progressThrottleMs: 100,
   stallKillAfterMs: 90_000,
   maxRetries: 1,
   widget: "background",
@@ -188,6 +195,7 @@ export function sanitizeConfigOverrides(raw: unknown): Partial<SubagentConfig> {
     lockRetentionDays: positiveNumber(value.lockRetentionDays, 0),
     graceTurns: positiveNumber(value.graceTurns, 0),
     stallAfterMs: positiveNumber(value.stallAfterMs, 0),
+    progressThrottleMs: positiveNumber(value.progressThrottleMs, 0),
     stallKillAfterMs: positiveNumber(value.stallKillAfterMs, 0),
     maxRetries: positiveNumber(value.maxRetries, 0),
     widget: oneOf(WIDGET_MODES, value.widget),
@@ -212,6 +220,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Partial<Sub
     lockRetentionDays: positiveNumber(env.PI_SUBAGENT_LOCK_RETENTION_DAYS, 0),
     graceTurns: positiveNumber(env.PI_SUBAGENT_GRACE_TURNS, 0),
     stallAfterMs: positiveNumber(env.PI_SUBAGENT_STALL_AFTER_MS, 0),
+    progressThrottleMs: positiveNumber(env.PI_SUBAGENT_PROGRESS_THROTTLE_MS, 0),
     stallKillAfterMs: positiveNumber(env.PI_SUBAGENT_STALL_KILL_AFTER_MS, 0),
     maxRetries: positiveNumber(env.PI_SUBAGENT_MAX_RETRIES, 0),
     widget: oneOf(WIDGET_MODES, env.PI_SUBAGENT_WIDGET),

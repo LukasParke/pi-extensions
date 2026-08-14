@@ -26,6 +26,8 @@ export interface OrchestratorDeps {
   /** Stall watchdog windows (0 disables). */
   stallAfterMs?: number;
   stallKillAfterMs?: number;
+  /** Throttle for streamed progress updates (0 disables). */
+  progressThrottleMs?: number;
   /** Default extra attempts on transient failures (per-spec maxRetries overrides). */
   maxRetries?: number;
 }
@@ -177,7 +179,7 @@ export async function runTasks(
         taskRunId,
         options.parentSessionKey,
         undefined,
-        { graceTurns: options.graceTurns, stallAfterMs: options.stallAfterMs, stallKillAfterMs: options.stallKillAfterMs },
+        { graceTurns: options.graceTurns, stallAfterMs: options.stallAfterMs, stallKillAfterMs: options.stallKillAfterMs, progressThrottleMs: options.progressThrottleMs },
       );
       options.onRunnerCreated?.(index, runner);
       result = await runner.run(attemptSpec, options.signal);

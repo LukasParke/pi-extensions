@@ -13,7 +13,7 @@ import {
   SPINNERS,
   stateGlyph,
 } from "./format.js";
-import { sessionLineRenderer, tailSessionFile, type TailSessionStatus } from "./transcript.js";
+import { sessionLineRenderer, TranscriptTailer, type TailSessionStatus } from "./transcript.js";
 
 export interface SubagentAdapter {
   getActiveRuns(): RunSnapshot[];
@@ -127,6 +127,8 @@ export class SubagentsOverlay implements Component {
   private transcriptFollow = true;
   private transcriptLines: string[] = [];
   private transcriptStatus: TailSessionStatus | "unset" = "unset";
+  private tailer?: TranscriptTailer;
+  private tailerPath?: string;
   private transcriptPoll?: NodeJS.Timeout;
 
   constructor(
@@ -178,6 +180,8 @@ export class SubagentsOverlay implements Component {
     this.transcriptFollow = true;
     this.transcriptLines = [];
     this.transcriptStatus = "unset";
+    this.tailer = undefined;
+    this.tailerPath = undefined;
     this.stopTranscriptPoll();
   }
 
@@ -197,7 +201,11 @@ export class SubagentsOverlay implements Component {
     }
     // Each backend writes its own transcript dialect; pick the matching renderer.
     const backend = run.results.find((entry) => entry.sessionId)?.backend ?? "pi";
-    const result = tailSessionFile(path, undefined, undefined, sessionLineRenderer(backend));
+    if (!this.tailer || this.tailerPath !== path) {
+      this.tailer = new TranscriptTailer(undefined, undefined, sessionLineRenderer(backend));
+      this.tailerPath = path;
+    }
+    const result = this.tailer.poll(path);
     this.transcriptStatus = result.status;
     this.transcriptLines = result.lines;
   }
