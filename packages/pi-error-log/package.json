@@ -1,0 +1,59 @@
+{
+  "name": "@parke.dev/pi-error-log",
+  "version": "0.1.0",
+  "description": "Captures every tool error in a pi session into one reviewable JSONL log",
+  "type": "module",
+  "license": "MIT",
+  "author": "Luke Parke",
+  "homepage": "https://github.com/LukasParke/pi-extensions/tree/main/packages/pi-error-log#readme",
+  "bugs": {
+    "url": "https://github.com/LukasParke/pi-extensions/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LukasParke/pi-extensions.git",
+    "directory": "packages/pi-error-log"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "errors",
+    "logging",
+    "observability",
+    "extension",
+    "parke.dev"
+  ],
+  "files": [
+    "extensions",
+    "src",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "pi": {
+    "extensions": [
+      "./extensions/error-log.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "dependencies": {
+    "@parke.dev/pi-ext-config": "^0.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}
