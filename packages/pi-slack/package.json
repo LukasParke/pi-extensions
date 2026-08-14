@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-slack",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Slack channels, threads, search and messages for the Pi coding agent",
   "type": "module",
   "license": "MIT",
