@@ -1,7 +1,4 @@
 export {
-	buildModel,
-	buildSurfaceModels,
-	FALLBACK_MODELS,
 	fetchApiModels,
 	perMillion,
 	providerId,
@@ -10,12 +7,15 @@ export {
 	surfaceBaseUrl,
 	toCost,
 } from "./catalog.ts";
-export type { ApiModel, CatalogModel, Surface } from "./catalog.ts";
+export type { ApiModel, Surface } from "./catalog.ts";
 export { attributionHeaders, defaultConfig, openrouterConfig, resetConfigCache } from "./config.ts";
 export type { OpenRouterConfig } from "./config.ts";
-export { buildAllProviders, buildProviderConfig, buildRoutedProvider } from "./provider.ts";
-export { API_SURFACE, modelRoutingTable, resolveModelRoute } from "./routing.ts";
-export type { RoutedApi, RoutingRule } from "./routing.ts";
+export { buildModelEntry, generateModels } from "./generate.ts";
+export type { GeneratedModel } from "./generate.ts";
+export { EXCEPTIONS, overridesForModel, staleExceptions, surfaceForModel } from "./rules.ts";
+export type { ModelOverride, RoutedApi, SurfaceException } from "./rules.ts";
+export { mergeModelsJson, PROVIDER_DEFAULTS, readModelsJson, renderModelsJson, syncModelsJson } from "./sync.ts";
+export type { ProviderDefaults, SyncResult } from "./sync.ts";
 export {
 	createToolHarness,
 	mean,

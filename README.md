@@ -28,7 +28,7 @@ done. UI-only and library-only packages (no tools) do not need skills.
 | [`@parke.dev/pi-integrations`](packages/pi-integrations)                 | 35    | One-install bundle for Git, GitHub, Slack, Linear, and Notion                                                                                           |
 | [`@parke.dev/pi-dashboard`](packages/pi-dashboard)                       | —     | Optional header/footer dashboard (cwd, model, full cost, tok/s, git, PR); off by default                                                                |
 | [`@parke.dev/pi-memory`](packages/pi-memory)                             | 4     | Local semantic memory engine plus remember, recall, forget, and stats tools                                                                             |
-| [`@parke.dev/pi-openrouter`](packages/pi-openrouter)                     | —     | OpenRouter's three API surfaces (chat completions, responses, messages) as selectable providers, plus a benchmark harness comparing them                |
+| [`@parke.dev/pi-openrouter`](packages/pi-openrouter)                     | —     | CLI that syncs the full OpenRouter catalog into models.json, routing each model to its best-fit API surface, plus a benchmark harness that keeps the rules honest |
 
 [`@parke.dev/pi-memory`](packages/pi-memory) is the canonical local semantic-memory engine and Pi extension; Circle consumes the same package through a thin product-specific wrapper.
 
