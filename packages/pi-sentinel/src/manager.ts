@@ -254,11 +254,15 @@ export class SentinelManager {
 		this.idle = idle;
 		if (!idle || !this.active) return;
 		for (const entry of this.entries.values()) {
+			if (entry.mode === "stream") continue;
+			// A poll timer that fired mid-turn is consumed without rescheduling
+			// (pollEntry returns early when busy). Revive those entries here or
+			// they never poll again. Entries with a pending timer keep it.
+			const missedPoll = !entry.timer && !entry.running;
 			if (
-				entry.mode !== "stream" &&
-				(entry.state === "waiting" ||
-					(entry.state === "failing" && entry.kind !== "pr") ||
-					(entry.kind === "pr" && entry.prSnapshot === undefined && !entry.consecutiveFailures))
+				entry.state === "waiting" ||
+				(entry.state === "failing" && entry.kind !== "pr") ||
+				(entry.kind === "pr" && (missedPoll || (entry.prSnapshot === undefined && !entry.consecutiveFailures)))
 			) {
 				this.scheduleEntry(entry, 0);
 			}
