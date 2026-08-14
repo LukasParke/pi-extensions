@@ -30,6 +30,14 @@ export interface TaskDefaults {
 
 export type TaskDefaultsByProfile = Partial<Record<TaskProfile, TaskDefaults>>;
 
+/** Doom-loop watchdog thresholds. 0 disables that detector. */
+export interface WatchdogConfig {
+  /** Consecutive wakeup turns (started from waiting) with no progress before pause. */
+  wakeupsWithoutProgress: number;
+  /** Consecutive turns with an identical tool-call sequence before pause. */
+  repeatedActionRuns: number;
+}
+
 export interface SubagentConfig {
   maxTasksPerRun: number;
   maxActiveProcesses: number;
@@ -68,10 +76,18 @@ export interface SubagentConfig {
   graceTurns: number;
   /** Milliseconds of protocol silence before a running child is flagged as stalled. 0 disables. */
   stallAfterMs: number;
+  /**
+   * Minimum interval between streamed live-text progress emissions per run
+   * (latest-wins coalescing). Terminal and turn-boundary updates are never
+   * throttled. 0 disables throttling.
+   */
+  progressThrottleMs: number;
   /** Additional silence after the stall flag before the child is killed (feeds retry). 0 disables kill. */
   stallKillAfterMs: number;
   /** Default extra attempts on transient failures (queued timeout, stall, provider error). */
   maxRetries: number;
+  /** Doom-loop watchdog thresholds (runner-level, deterministic). */
+  watchdog: WatchdogConfig;
   /**
    * Ambient background-run widget above the editor. `"off"` clears any existing
    * widget and skips refreshes.
@@ -103,8 +119,10 @@ export const defaultConfig: SubagentConfig = {
   lockRetentionDays: 7,
   graceTurns: 2,
   stallAfterMs: 90_000,
+  progressThrottleMs: 100,
   stallKillAfterMs: 90_000,
   maxRetries: 1,
+  watchdog: { wakeupsWithoutProgress: 3, repeatedActionRuns: 3 },
   widget: "background",
   notifications: "batched",
 };
@@ -163,6 +181,28 @@ function sanitizeTaskDefaultsByProfile(raw: unknown): TaskDefaultsByProfile | un
   return Object.keys(result).length ? result : undefined;
 }
 
+function sanitizeWatchdog(raw: unknown): WatchdogConfig | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Record<string, unknown>;
+  const wakeupsWithoutProgress = positiveNumber(value.wakeupsWithoutProgress, 0);
+  const repeatedActionRuns = positiveNumber(value.repeatedActionRuns, 0);
+  if (wakeupsWithoutProgress === undefined && repeatedActionRuns === undefined) return undefined;
+  return {
+    wakeupsWithoutProgress: wakeupsWithoutProgress ?? defaultConfig.watchdog.wakeupsWithoutProgress,
+    repeatedActionRuns: repeatedActionRuns ?? defaultConfig.watchdog.repeatedActionRuns,
+  };
+}
+
+function watchdogFromEnv(env: NodeJS.ProcessEnv): WatchdogConfig | undefined {
+  const wakeupsWithoutProgress = positiveNumber(env.PI_SUBAGENT_WATCHDOG_WAKEUPS_WITHOUT_PROGRESS, 0);
+  const repeatedActionRuns = positiveNumber(env.PI_SUBAGENT_WATCHDOG_REPEATED_ACTION_RUNS, 0);
+  if (wakeupsWithoutProgress === undefined && repeatedActionRuns === undefined) return undefined;
+  return {
+    wakeupsWithoutProgress: wakeupsWithoutProgress ?? defaultConfig.watchdog.wakeupsWithoutProgress,
+    repeatedActionRuns: repeatedActionRuns ?? defaultConfig.watchdog.repeatedActionRuns,
+  };
+}
+
 /** Validate untrusted JSON overrides field-by-field; unknown keys are dropped. */
 export function sanitizeConfigOverrides(raw: unknown): Partial<SubagentConfig> {
   if (!raw || typeof raw !== "object") return {};
@@ -188,8 +228,10 @@ export function sanitizeConfigOverrides(raw: unknown): Partial<SubagentConfig> {
     lockRetentionDays: positiveNumber(value.lockRetentionDays, 0),
     graceTurns: positiveNumber(value.graceTurns, 0),
     stallAfterMs: positiveNumber(value.stallAfterMs, 0),
+    progressThrottleMs: positiveNumber(value.progressThrottleMs, 0),
     stallKillAfterMs: positiveNumber(value.stallKillAfterMs, 0),
     maxRetries: positiveNumber(value.maxRetries, 0),
+    watchdog: sanitizeWatchdog(value.watchdog),
     widget: oneOf(WIDGET_MODES, value.widget),
     notifications: oneOf(NOTIFICATION_MODES, value.notifications),
   });
@@ -212,8 +254,10 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Partial<Sub
     lockRetentionDays: positiveNumber(env.PI_SUBAGENT_LOCK_RETENTION_DAYS, 0),
     graceTurns: positiveNumber(env.PI_SUBAGENT_GRACE_TURNS, 0),
     stallAfterMs: positiveNumber(env.PI_SUBAGENT_STALL_AFTER_MS, 0),
+    progressThrottleMs: positiveNumber(env.PI_SUBAGENT_PROGRESS_THROTTLE_MS, 0),
     stallKillAfterMs: positiveNumber(env.PI_SUBAGENT_STALL_KILL_AFTER_MS, 0),
     maxRetries: positiveNumber(env.PI_SUBAGENT_MAX_RETRIES, 0),
+    watchdog: watchdogFromEnv(env),
     widget: oneOf(WIDGET_MODES, env.PI_SUBAGENT_WIDGET),
     notifications: oneOf(NOTIFICATION_MODES, env.PI_SUBAGENT_NOTIFICATIONS),
   });

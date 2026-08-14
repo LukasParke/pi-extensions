@@ -4,6 +4,7 @@ import { Semaphore } from "../src/semaphore.js";
 import * as fs from "node:fs/promises";
 // @ts-expect-error test helper is plain ESM without types
 import { getFakePiCommand } from "./helpers/fake-pi.mjs";
+import { makeIsolatedDirs, type IsolatedDirs } from "./helpers/test-config.js";
 import type { TaskSpec } from "../src/types.js";
 
 describe("ChildRunner", () => {
@@ -13,10 +14,14 @@ describe("ChildRunner", () => {
   let checkpointCalls: unknown[];
   let previousMode: string | undefined;
   let previousDelay: string | undefined;
+  let dirs: IsolatedDirs;
+  let sessionDir: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     previousMode = process.env.FAKE_PI_MODE;
     previousDelay = process.env.FAKE_PI_DELAY_MS;
+    dirs = await makeIsolatedDirs("pi-subagent-runner-");
+    sessionDir = dirs.sessionDir;
     semaphore = new Semaphore(2, 10);
     checkpointCalls = [];
     onCheckpoint = (partial) => {
@@ -26,13 +31,14 @@ describe("ChildRunner", () => {
     runner = new ChildRunner(
       semaphore,
       () => fake,
-      "/tmp/test-sessions-pi-subagent",
+      sessionDir,
       onCheckpoint,
       50,
     );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await dirs.cleanup();
     if (previousMode === undefined) delete process.env.FAKE_PI_MODE;
     else process.env.FAKE_PI_MODE = previousMode;
     if (previousDelay === undefined) delete process.env.FAKE_PI_DELAY_MS;
@@ -137,7 +143,7 @@ describe("ChildRunner", () => {
     const stallRunner = new ChildRunner(
       semaphore,
       () => getFakePiCommand(),
-      "/tmp/test-sessions-pi-subagent",
+      sessionDir,
       onCheckpoint,
       50,
       undefined,
@@ -160,7 +166,7 @@ describe("ChildRunner", () => {
     const activeRunner = new ChildRunner(
       semaphore,
       () => getFakePiCommand(),
-      "/tmp/test-sessions-pi-subagent",
+      sessionDir,
       onCheckpoint,
       50,
       undefined,
@@ -180,7 +186,7 @@ describe("ChildRunner", () => {
     process.env.FAKE_PI_MODE = "signal";
     const tight = new Semaphore(1, 10);
     const fake = getFakePiCommand();
-    const makeRunner = () => new ChildRunner(tight, () => fake, "/tmp/test-sessions-pi-subagent", undefined, 50);
+    const makeRunner = () => new ChildRunner(tight, () => fake, sessionDir, undefined, 50);
     const hog = makeRunner().run({ ...defaultSpec, timeoutMs: 400 });
     await new Promise((resolve) => setTimeout(resolve, 30));
     // Second task queues behind the hog and must time out while still queued.

@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-subagent",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Production-grade isolated subagents for the Pi coding agent",
   "type": "module",
   "license": "MIT",
@@ -57,5 +57,8 @@
   },
   "engines": {
     "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@parke.dev/pi-dispatch": "^0.1.0"
   }
 }

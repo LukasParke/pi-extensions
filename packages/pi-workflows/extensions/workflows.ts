@@ -287,7 +287,7 @@ export default async function (pi: ExtensionAPI) {
 			"isolation: 'workflow' (default shared lane) | 'worktree' (independent writer).",
 			"profile 'explore'/'review' are read-only; 'general' writes on the shared workflow worktree (serialized).",
 			"",
-			`Limits: ${config.maxAgentRequests} agent calls, concurrency ${config.maxConcurrency}, ${config.agentMaxTurns} turns and $${config.agentMaxCost} per agent.`,
+			`Limits: ${config.maxAgentRequests} agent calls, concurrency ${config.maxConcurrency}, ${config.agentMaxTurns} turns per agent${config.agentMaxCost === undefined ? ", no cost ceiling (set agentMaxCost to add one)" : `, $${config.agentMaxCost} per agent`}.`,
 			"Background by default: start returns a run id; completion is delivered as a follow-up.",
 		].join("\n"),
 		parameters: Type.Object(

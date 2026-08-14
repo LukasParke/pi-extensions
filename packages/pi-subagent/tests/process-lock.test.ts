@@ -88,6 +88,56 @@ describe("ProcessLockManager", () => {
     expect(c).toBeTruthy();
   });
 
+  it("admission reconcile: dead records never block a real spawn and are pruned", () => {
+    // Seed dead records: dead-pid slots, a pid=0 slot, an unparseable slot,
+    // plus dead "running" run records (incl. one pid=0). maxGlobalActive is 2,
+    // so the raw file count would refuse without liveness reconcile.
+    const deadPid = 999_999_998;
+    const slotDir = path.join(root, "slots");
+    const deadIdentity = { pid: deadPid, startTime: 1, hostname: os.hostname() };
+    fs.writeFileSync(
+      path.join(slotDir, "dead-1.slot"),
+      JSON.stringify({ slotId: "dead-1", runId: "dead-run-1", depth: 0, process: deadIdentity, acquiredAt: now }),
+    );
+    fs.writeFileSync(
+      path.join(slotDir, "dead-zero.slot"),
+      JSON.stringify({ slotId: "dead-zero", runId: "dead-run-zero", depth: 0, process: { pid: 0, startTime: 0, hostname: os.hostname() }, acquiredAt: now }),
+    );
+    fs.writeFileSync(path.join(slotDir, "dead-corrupt.slot"), "{not json");
+    locks.writeRunRecord({
+      runId: "dead-run-1",
+      parentSessionKey: "s",
+      childSessionId: "test-session-123",
+      process: deadIdentity,
+      startedAt: now,
+      state: "running",
+      updatedAt: now,
+    });
+    locks.writeRunRecord({
+      runId: "dead-run-zero",
+      parentSessionKey: "/tmp/root-session.jsonl",
+      process: { pid: 0, startTime: 0, hostname: os.hostname() },
+      startedAt: now,
+      state: "running",
+      updatedAt: now,
+    });
+    // One genuinely alive record: this process.
+    const alive = locks.tryAcquireGlobalSlot("alive-run", 0);
+    expect(alive).toBeTruthy();
+
+    // Raw count (2 dead-parsable slots + 1 alive) would hit the cap of 2;
+    // reconcile must prune the dead records and admit anyway.
+    const admitted = locks.tryAcquireGlobalSlot("real-spawn", 0);
+    expect(admitted).toBeTruthy();
+
+    // Dead slots and dead run records are gone from disk.
+    expect(fs.readdirSync(slotDir).filter((n) => n.startsWith("dead-"))).toEqual([]);
+    expect(locks.readRunRecord("dead-run-1")).toBeUndefined();
+    expect(locks.readRunRecord("dead-run-zero")).toBeUndefined();
+    locks.releaseGlobalSlot(alive);
+    locks.releaseGlobalSlot(admitted);
+  });
+
   it("writes and reaps run records for dead orphans", async () => {
     locks.writeRunRecord({
       runId: "orphan-1",

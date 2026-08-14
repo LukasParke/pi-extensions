@@ -215,6 +215,45 @@ describe('format helpers', () => {
     expect(withRetry.split('\n')).toHaveLength(1);
   });
 
+  it('status preview shows waiting age and paused reason', () => {
+    const now = 1_000_000;
+    const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 } as UsageStats;
+    const base = {
+      schemaVersion: 1 as const,
+      id: 'runkeep0xxxx',
+      sessionKey: 'key',
+      mode: 'single' as const,
+      startedAt: now - 120_000,
+      taskPreviews: [] as string[],
+      delivered: false,
+    };
+    const waiting: RunSnapshot = {
+      ...base,
+      state: 'waiting' as RunState,
+      results: [{ label: 't', task: 'x', state: 'waiting' as RunState, exitCode: null, usage, waitingSince: now - 90_000 }],
+    };
+    const waitingPreview = format.formatStatusPreview(waiting, now);
+    expect(waitingPreview).toContain('waiting');
+    expect(waitingPreview).toContain('[waiting 1m30s]');
+
+    const paused: RunSnapshot = {
+      ...base,
+      state: 'paused' as RunState,
+      endedAt: now,
+      results: [{
+        label: 't',
+        task: 'x',
+        state: 'paused' as RunState,
+        exitCode: 1,
+        usage,
+        errorMessage: 'doom-loop watchdog: 3 consecutive wakeups without progress',
+      }],
+    };
+    const pausedPreview = format.formatStatusPreview(paused, now);
+    expect(pausedPreview).toContain('paused');
+    expect(pausedPreview).toContain('[doom-loop watchdog: 3 consecutive wakeups without progr');
+  });
+
   it('status preview plain case unchanged without reliability flags', () => {
     const snap: RunSnapshot = {
       schemaVersion: 1 as const,
@@ -230,5 +269,82 @@ describe('format helpers', () => {
     expect(format.formatStatusPreview(snap, 1000 + 45_000)).toBe(
       '[plain000] parallel running 45s ready',
     );
+  });
+});
+
+describe('statLine', () => {
+  const parts = { cost: 0.012, turns: 8, model: 'moonshotai/kimi-k3', tps: 42.4, tokens: 33800, durationMs: 12_000 };
+
+  it('orders cost, model, tps, turns, tokens, duration', () => {
+    expect(format.statLine(parts, { live: true })).toBe('$0.012 · kimi-k3 · 42 tps · ↻8 · 34k tok · 12s');
+  });
+
+  it('strips the provider prefix from model ids', () => {
+    expect(format.shortModelId('moonshotai/kimi-k3')).toBe('kimi-k3');
+    expect(format.shortModelId('kimi-k3')).toBe('kimi-k3');
+    expect(format.shortModelId(undefined)).toBeUndefined();
+  });
+
+  it('shows any positive cost on live rows, keeps the threshold on terminal rows', () => {
+    expect(format.statLine({ cost: 0.0004, turns: 1 }, { live: true })).toBe('<$0.001 · ↻1');
+    expect(format.statLine({ cost: 0.00004, turns: 1 }, { live: false })).toBe('↻1');
+    expect(format.statLine({ cost: 0.0004, turns: 1 }, { live: false })).toBe('<$0.001 · ↻1');
+  });
+
+  it('renders ~0 tps for a stalled live run, integer otherwise', () => {
+    expect(format.statLine({ tps: 0.2 }, { live: true })).toBe('~0 tps');
+    expect(format.statLine({ tps: 0.2 }, { live: false })).toBe('0 tps');
+    expect(format.statLine({ tps: 41.6 }, { live: true })).toBe('42 tps');
+  });
+
+  it('drops duration, then tokens, then tps under narrow width; cost/turns/model survive', () => {
+    const full = format.statLine(parts, { live: true, width: 100 });
+    expect(full).toContain('12s');
+    const noDuration = format.statLine(parts, { live: true, width: 42 });
+    expect(noDuration).not.toContain('12s');
+    expect(noDuration).toContain('34k tok');
+    const noTokens = format.statLine(parts, { live: true, width: 30 });
+    expect(noTokens).not.toContain('tok');
+    expect(noTokens).toContain('42 tps');
+    const minimal = format.statLine(parts, { live: true, width: 22 });
+    expect(minimal).not.toContain('tps');
+    expect(minimal).toContain('$0.012');
+    expect(minimal).toContain('↻8');
+    expect(minimal).toContain('kimi-k3');
+  });
+
+  it('finds a shared model for header elision, undefined when mixed', () => {
+    expect(format.commonModelId(['moonshotai/kimi-k3', 'kimi-k3'])).toBe('kimi-k3');
+    expect(format.commonModelId(['a/x', 'b/y'])).toBeUndefined();
+    expect(format.commonModelId([undefined, undefined])).toBeUndefined();
+  });
+});
+
+describe('computeTps', () => {
+  const now = 1_000_000;
+
+  it('uses the rolling window when ≥2 samples fall inside it', () => {
+    const samples = [
+      { t: now - 20_000, output: 100 },
+      { t: now - 10_000, output: 520 },
+    ];
+    expect(format.computeTps({ output: 520, samples, startedAt: now - 90_000, now, live: true })).toBeCloseTo(42);
+  });
+
+  it('falls back to lifetime output/elapsed with fewer than 2 recent samples', () => {
+    const stale = [
+      { t: now - 50_000, output: 100 },
+      { t: now - 40_000, output: 520 },
+    ];
+    expect(format.computeTps({ output: 900, samples: stale, startedAt: now - 30_000, now, live: true })).toBeCloseTo(30);
+    expect(format.computeTps({ output: 900, samples: [{ t: now - 5_000, output: 900 }], startedAt: now - 30_000, now, live: true })).toBeCloseTo(30);
+  });
+
+  it('uses the lifetime average for terminal runs, freezing at endedAt', () => {
+    const samples = [
+      { t: now - 20_000, output: 100 },
+      { t: now - 10_000, output: 520 },
+    ];
+    expect(format.computeTps({ output: 600, samples, startedAt: now - 60_000, endedAt: now - 30_000, now, live: false })).toBeCloseTo(20);
   });
 });

@@ -197,6 +197,90 @@ export function tailSessionFile(
   }
 }
 
+/**
+ * Incremental transcript tailer for the live-transcript poll loop. Seeks from
+ * the last read offset and caps bytes per poll, so a fast-growing session
+ * file never triggers full (or 64KB-window) re-reads every 500ms. Rotation /
+ * truncation (size < offset) resets to a bounded end-window read.
+ */
+export class TranscriptTailer {
+  private offset = 0;
+  private started = false;
+  private remainder = "";
+  private lines: string[] = [];
+
+  constructor(
+    private readonly maxLines: number = DEFAULT_MAX_LINES,
+    private readonly maxBytesPerPoll: number = DEFAULT_MAX_BYTES,
+    private readonly render: (raw: string) => string | null = renderSessionLine,
+  ) {}
+
+  poll(filePath: string): TailSessionResult {
+    if (!filePath) return { status: "missing", lines: [] };
+    let fd: number;
+    try {
+      fd = fs.openSync(filePath, "r");
+    } catch {
+      return { status: "missing", lines: [] };
+    }
+    try {
+      const stat = fs.fstatSync(fd);
+      if (!stat.size) return { status: "empty", lines: [] };
+      let start: number;
+      if (stat.size < this.offset) {
+        // Rotated/truncated: fall back to a bounded end-window read.
+        this.offset = 0;
+        this.remainder = "";
+        this.lines = [];
+        start = Math.max(0, stat.size - this.maxBytesPerPoll);
+      } else if (!this.started) {
+        // First poll opens at the tail, not the top, of an existing file.
+        start = Math.max(0, stat.size - this.maxBytesPerPoll);
+      } else {
+        start = this.offset;
+      }
+      this.started = true;
+      const window = Math.min(stat.size - start, this.maxBytesPerPoll);
+      if (window <= 0) return this.snapshot();
+      const buf = Buffer.alloc(window);
+      const bytesRead = fs.readSync(fd, buf, 0, window, start);
+      const freshMidlineStart = start > 0 && this.remainder === "" && this.offset === 0;
+      this.offset = start + bytesRead;
+      let body = this.remainder + buf.toString("utf8", 0, bytesRead);
+      if (freshMidlineStart) {
+        // Mid-line entry into a fresh/rotated file: drop the leading fragment.
+        const firstNl = body.indexOf("\n");
+        body = firstNl === -1 ? "" : body.slice(firstNl + 1);
+      }
+      const rawLines = body.split("\n");
+      // Last element is a partial line (or ""); carry it into the next poll.
+      this.remainder = rawLines.pop() ?? "";
+      for (const raw of rawLines) {
+        const compact = this.render(raw);
+        if (compact === null) continue;
+        for (const line of compact.split("\n")) {
+          if (line) this.lines.push(line);
+        }
+      }
+      if (this.lines.length > this.maxLines) {
+        this.lines = this.lines.slice(this.lines.length - this.maxLines);
+      }
+      return this.snapshot();
+    } finally {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  private snapshot(): TailSessionResult {
+    if (!this.lines.length) return { status: "empty", lines: [] };
+    return { status: "ok", lines: [...this.lines] };
+  }
+}
+
 function isErrno(error: unknown): error is NodeJS.ErrnoException {
   return typeof error === "object" && error !== null && "code" in error;
 }

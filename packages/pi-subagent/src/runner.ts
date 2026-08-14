@@ -1,18 +1,21 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type {
   ChildProcessIdentity,
+  KeepAliveStatus,
   TaskResult,
   TaskSpec,
   TimeoutPhase,
   UsageStats,
+  WatchdogStatus,
 } from "./types.js";
 import { emptyUsage } from "./types.js";
 import { ProtocolParser, type ProtocolUpdate } from "./protocol.js";
 import { Semaphore } from "./semaphore.js";
-import { defaultConfig } from "./config.js";
+import { defaultConfig, type WatchdogConfig } from "./config.js";
 import { DEPTH_ENV_VAR, SPAWNS_ENV_VAR, parseDepth } from "./policy.js";
 import {
   processStartTime,
@@ -58,19 +61,88 @@ export interface RunnerOptions {
   graceTurns?: number;
   /** Protocol-silence window before flagging a running child as stalled. 0 disables. */
   stallAfterMs?: number;
+  /** Latest-wins coalescing interval for streamed live-text progress. 0 disables. */
+  progressThrottleMs?: number;
   /** Additional silence after the stall flag before the child is killed. 0 disables kill. */
   stallKillAfterMs?: number;
   /** Backend adapter override (defaults to the spec's backend, then pi). */
   backend?: BackendAdapter;
+  /** Doom-loop watchdog thresholds (defaults from config; 0 disables a detector). */
+  watchdog?: WatchdogConfig;
+  /**
+   * Watchdog signals: soft budget warnings (50%/80%) and doom-loop pauses.
+   * Wire this to dispatch/notifications; checkpoints also carry the counters.
+   */
+  onWatchdogEvent?: (event: WatchdogEvent) => void;
 }
 
+export type WatchdogEvent =
+  | { kind: "budget-warning"; message: string; usage: UsageStats }
+  | {
+      kind: "pause";
+      reason: string;
+      counters: { wakeupsWithoutProgress: number; repeatedActions: number };
+      usage: UsageStats;
+    };
+
 type StopReason =
-  "cancelled" | "timeout" | "max_turns" | "max_cost" | "fatal" | "stalled";
+  | "cancelled"
+  | "timeout"
+  | "max_turns"
+  | "max_cost"
+  | "fatal"
+  | "stalled"
+  /** Doom-loop watchdog pause: child terminated, session preserved for resume. */
+  | "watchdog";
 
 /** Budget stops preserve completed work: they end as "partial", not "failed". */
 const BUDGET_STOPS = new Set<StopReason>(["max_turns", "max_cost"]);
 
 const DEFAULT_MAX_TASK_BYTES = 512 * 1024;
+
+/** One turn's progress signals for the doom-loop watchdog ledger. */
+interface TurnProgressEntry {
+  /** Hash of the turn's ordered tool names + arguments. */
+  toolCallSequenceHash: string;
+  toolCalls: number;
+  /** Hash of the turn's final assistant text. */
+  outputHash: string;
+  /** Worktree artifact signal (git status + diff stat); shared runs skip it. */
+  artifactHash?: string;
+}
+
+const hashText = (value: string): string =>
+  createHash("sha1").update(value).digest("hex");
+
+function entryFromAssistantMessage(message: {
+  content?: unknown;
+}): TurnProgressEntry {
+  const parts = Array.isArray(message.content) ? (message.content as any[]) : [];
+  const toolCalls = parts.filter((part) => part?.type === "toolCall");
+  const text = parts
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("");
+  return {
+    toolCallSequenceHash: hashText(
+      toolCalls
+        .map((part) => `${String(part.name)}(${JSON.stringify(part.arguments ?? {})})`)
+        .join("\n"),
+    ),
+    toolCalls: toolCalls.length,
+    outputHash: hashText(text),
+  };
+}
+
+/** A sentinel gate ALL PASS wakeup, detected from the event stream (never model trust). */
+function hasAllPassStatus(details: unknown): boolean {
+  if (!details || typeof details !== "object") return false;
+  const value = details as Record<string, any>;
+  if (value.status === "all_pass") return true;
+  if (value.event && typeof value.event === "object" && value.event.status === "all_pass") return true;
+  if (Array.isArray(value.events) && value.events.some((event: any) => event?.status === "all_pass")) return true;
+  return false;
+}
 
 const WRAP_UP_MESSAGE =
   "You have reached your budget for this task. Stop all tool use and provide your final answer NOW, " +
@@ -83,9 +155,12 @@ export class ChildRunner {
   private readonly graceTurns: number;
   private readonly stallAfterMs: number;
   private readonly stallKillAfterMs: number;
+  private readonly progressThrottleMs: number;
   private readonly backendOverride?: BackendAdapter;
   /** Backend for the in-flight run; set at spawn so steer() uses the right dialect. */
   private backend: BackendAdapter = resolveBackend("pi");
+  /** True while the run idles in the keep-alive "waiting" state (child settled, stdin open). */
+  private waiting = false;
 
   constructor(
     private readonly semaphore = new Semaphore(
@@ -102,7 +177,13 @@ export class ChildRunner {
     private readonly maxTaskBytes = DEFAULT_MAX_TASK_BYTES,
     options: Pick<
       RunnerOptions,
-      "graceTurns" | "stallAfterMs" | "stallKillAfterMs" | "backend"
+      | "graceTurns"
+      | "stallAfterMs"
+      | "stallKillAfterMs"
+      | "backend"
+      | "progressThrottleMs"
+      | "watchdog"
+      | "onWatchdogEvent"
     > = {},
   ) {
     this.backendOverride = options.backend;
@@ -110,15 +191,26 @@ export class ChildRunner {
     this.stallAfterMs = options.stallAfterMs ?? defaultConfig.stallAfterMs;
     this.stallKillAfterMs =
       options.stallKillAfterMs ?? defaultConfig.stallKillAfterMs;
+    this.watchdogConfig = options.watchdog ?? defaultConfig.watchdog;
+    this.onWatchdogEvent = options.onWatchdogEvent;
+    this.progressThrottleMs =
+      options.progressThrottleMs ?? defaultConfig.progressThrottleMs;
   }
 
+  private readonly watchdogConfig: WatchdogConfig;
+  private readonly onWatchdogEvent?: (event: WatchdogEvent) => void;
+
   /**
-   * Queue a steering message into the running child (delivered after the
-   * current assistant turn, before the next LLM call). Returns false when the
-   * child is not running or its stdin is closed.
+   * Inject a message into the child. The verb is picked by run state: a
+   * mid-turn child takes "steer" (queued before the next LLM call), while a
+   * waiting (settled, keep-alive) child is idle and needs "prompt" to start a
+   * new turn at all. Returns false when the child is not running or its stdin
+   * is closed.
    */
   steer(message: string): boolean {
-    const command = this.backend.steerCommand?.(message);
+    const command = this.waiting
+      ? (this.backend.promptCommand?.(message) ?? this.backend.steerCommand?.(message))
+      : this.backend.steerCommand?.(message);
     if (command === undefined) return false;
     return this.sendCommand?.(command) === true;
   }
@@ -180,6 +272,27 @@ export class ChildRunner {
     let lastEventAt = Date.now();
     let stallTimer: NodeJS.Timeout | undefined;
     let stalledAt: number | undefined;
+
+    // Keep-alive lifecycle (child-reported; default inactive = one-shot runs
+    // behave exactly as before). A settle with keep-alive active leaves stdin
+    // open and parks the run in "waiting"; the next turn flips it back.
+    let keepAlive: KeepAliveStatus = { active: false, reasons: [] };
+    let waiting = false;
+    this.waiting = false;
+    let gateAllPass = false;
+
+    // Doom-loop watchdog ledger (deterministic; no model judgment).
+    const watchdogStatus: WatchdogStatus = {
+      wakeupsWithoutProgress: 0,
+      repeatedActions: 0,
+      warnings: [],
+    };
+    let turnFromWaiting = false;
+    let lastTurnEntry: TurnProgressEntry | undefined;
+    let lastSettledEntry: TurnProgressEntry | undefined;
+    let repeatedActionHash: string | undefined;
+    let watchdogPause: string | undefined;
+    const warningsFired = new Set<string>();
 
     // Internal signal combines the caller's abort with the run timeout so both
     // interrupt semaphore queue waits. Queue time counts against timeoutMs.
@@ -302,6 +415,9 @@ export class ChildRunner {
       );
       stallTimer = setInterval(() => {
         if (requestedStop) return stopStallWatchdog();
+        // A waiting child is silent by design (keep-alive between turns);
+        // protocol-silence detection only applies to live turns.
+        if (waiting) return;
         const silence = Date.now() - lastEventAt;
         if (silence < this.stallAfterMs) {
           if (stalledAt !== undefined) {
@@ -335,6 +451,11 @@ export class ChildRunner {
       this.sendCommand = undefined;
       clearTimeout(timeout);
       stopStallWatchdog();
+      if (liveTrailing) {
+        clearTimeout(liveTrailing);
+        liveTrailing = undefined;
+      }
+      chunkQueue.length = 0;
       if (forceKillTimer) clearTimeout(forceKillTimer);
       abortSignal?.removeEventListener("abort", onExternalAbort);
       if (abortSignal && abortHandler)
@@ -358,6 +479,132 @@ export class ChildRunner {
       if (withTranscript) checkpoint.transcript = parser.getTranscript();
       else delete checkpoint.transcript;
       this.onCheckpoint?.(checkpoint);
+    };
+
+    const endStdin = () => {
+      try {
+        processHandle?.stdin?.end();
+      } catch {
+        /* already closed */
+      }
+    };
+
+    /** Worktree artifact signal: hash of git status + diff stat. Shared runs skip it. */
+    const artifactSignal = (): string | undefined => {
+      if (spec.isolation !== "worktree" || !spec.cwd) return undefined;
+      try {
+        const options = { timeout: 5_000, encoding: "utf8" } as const;
+        const status = execFileSync("git", ["-C", spec.cwd, "status", "--porcelain"], options);
+        const diff = execFileSync("git", ["-C", spec.cwd, "diff", "--stat"], options);
+        return hashText(`${status}\n${diff}`);
+      } catch {
+        return undefined;
+      }
+    };
+
+    const watchdogSnapshot = (): WatchdogStatus => ({
+      ...watchdogStatus,
+      warnings: [...watchdogStatus.warnings],
+    });
+
+    /**
+     * Doom-loop pause: terminate the child via the existing stop machinery but
+     * resolve as "paused" (session preserved, resumable) instead of failed.
+     */
+    const pause = (reason: string) => {
+      if (watchdogPause || requestedStop) return;
+      watchdogPause = reason;
+      progress({ watchdog: watchdogSnapshot() });
+      this.onWatchdogEvent?.({
+        kind: "pause",
+        reason,
+        counters: {
+          wakeupsWithoutProgress: watchdogStatus.wakeupsWithoutProgress,
+          repeatedActions: watchdogStatus.repeatedActions,
+        },
+        usage: { ...result.usage },
+      });
+      requestStop("watchdog");
+    };
+
+    /** Soft budget warnings at 50%/80% of max_cost / max_turns, fired once each. */
+    const fireBudgetWarnings = (usage: UsageStats) => {
+      for (const [ratio, label] of [
+        [0.5, "50%"],
+        [0.8, "80%"],
+      ] as const) {
+        if (spec.maxCost !== undefined) {
+          const key = `cost:${label}`;
+          if (!warningsFired.has(key) && usage.cost >= ratio * spec.maxCost) {
+            warningsFired.add(key);
+            const message = `watchdog: cost $${usage.cost.toFixed(4)} reached ${label} of max_cost $${spec.maxCost}`;
+            watchdogStatus.warnings.push(message);
+            progress({ watchdog: watchdogSnapshot() });
+            this.onWatchdogEvent?.({ kind: "budget-warning", message, usage: { ...usage } });
+          }
+        }
+        if (spec.maxTurns !== undefined) {
+          const key = `turns:${label}`;
+          if (!warningsFired.has(key) && usage.turns >= ratio * spec.maxTurns) {
+            warningsFired.add(key);
+            const message = `watchdog: ${usage.turns} turns reached ${label} of max_turns ${spec.maxTurns}`;
+            watchdogStatus.warnings.push(message);
+            progress({ watchdog: watchdogSnapshot() });
+            this.onWatchdogEvent?.({ kind: "budget-warning", message, usage: { ...usage } });
+          }
+        }
+      }
+    };
+
+    /**
+     * Live-text progress is latest-wins coalesced to ~1 emission per
+     * progressThrottleMs per run; ultrafast streams (750+ tok/s) must not
+     * turn every delta into an onUpdate. Structural updates (session,
+     * message/usage, terminal) are never throttled and always carry the
+     * latest liveText via progress().
+     */
+    let lastLiveProgressAt = 0;
+    let liveTrailing: NodeJS.Timeout | undefined;
+    const progressLive = () => {
+      lastLiveProgressAt = Date.now();
+      progress({ liveText: parser.getLiveText() });
+    };
+    const progressLiveThrottled = () => {
+      const throttle = this.progressThrottleMs;
+      if (throttle <= 0) return progressLive();
+      const elapsed = Date.now() - lastLiveProgressAt;
+      if (elapsed >= throttle) {
+        if (liveTrailing) {
+          clearTimeout(liveTrailing);
+          liveTrailing = undefined;
+        }
+        progressLive();
+        return;
+      }
+      if (!liveTrailing) {
+        liveTrailing = setTimeout(() => {
+          liveTrailing = undefined;
+          progressLive();
+        }, throttle - elapsed);
+        liveTrailing.unref?.();
+      }
+    };
+
+    /**
+     * Guaranteed drain: no synchronous parse/dispatch work in the stdout
+     * "data" callback. Chunks queue up and are parsed + dispatched in
+     * setImmediate batches so the pipe always drains and a fast child never
+     * stalls on a full OS buffer.
+     */
+    const chunkQueue: Buffer[] = [];
+    let drainScheduled = false;
+    const drainChunks = () => {
+      drainScheduled = false;
+      if (!chunkQueue.length) return;
+      const batch = chunkQueue.splice(0, chunkQueue.length);
+      const updates: ProtocolUpdate[] = [];
+      for (const chunk of batch) updates.push(...parser.feed(chunk));
+      handleUpdates(updates);
     };
 
     /**
@@ -394,13 +641,60 @@ export class ChildRunner {
         }
       }
       for (const update of updates) {
+        // A waiting run that produces turn activity is running again; the
+        // turn is a wakeup turn for the doom-loop ledger.
+        if ((update.type === "message" || update.type === "live-text") && waiting) {
+          waiting = false;
+          this.waiting = false;
+          turnFromWaiting = true;
+          result.waitingSince = undefined;
+          progress({ state: "running", waitingSince: undefined });
+        }
         if (update.type === "session")
           progress({ sessionId: update.sessionId });
-        if (update.type === "live-text")
-          progress({ liveText: update.liveText });
+        if (update.type === "custom") {
+          if (update.customType === "keep-alive") {
+            const details = (update.details ?? {}) as {
+              active?: unknown;
+              reasons?: unknown;
+            };
+            keepAlive = {
+              active: details.active === true,
+              reasons: Array.isArray(details.reasons)
+                ? details.reasons.filter(
+                    (reason): reason is string => typeof reason === "string",
+                  )
+                : [],
+            };
+            progress({ keepAlive: { ...keepAlive } });
+            // Triggers exhausted while the child is idle: nothing more can
+            // arrive, so close stdin and complete instead of idling until the
+            // timeout.
+            if (!keepAlive.active && waiting) {
+              waiting = false;
+              this.waiting = false;
+              endStdin();
+            }
+          }
+          // Gate ALL PASS is detected from the stream (deterministic, no
+          // trust in the model): the run's completion condition is met.
+          if (update.customType === "sentinel-wakeup" && hasAllPassStatus(update.details)) {
+            gateAllPass = true;
+            if (waiting) {
+              waiting = false;
+              this.waiting = false;
+              endStdin();
+            }
+          }
+        }
+        if (update.type === "live-text") progressLiveThrottled();
         if (update.type === "message") {
           result.messages = parser.getMessages();
           result.usage = update.usage;
+          // Ring of usage samples feeding the live rolling-tps stat.
+          const samples = (result.usageSamples ??= []);
+          samples.push({ t: Date.now(), output: update.usage.output });
+          if (samples.length > 64) samples.splice(0, samples.length - 64);
           progress(
             {
               messages: result.messages,
@@ -409,6 +703,37 @@ export class ChildRunner {
             },
             true,
           );
+          if (update.message.role === "assistant") {
+            lastTurnEntry = entryFromAssistantMessage(update.message);
+            // Repeated-action detection: identical tool-call sequence N turns
+            // running (regardless of waiting). Text-only turns break the
+            // streak; turns without tool calls never count.
+            if (this.watchdogConfig.repeatedActionRuns > 0) {
+              if (
+                lastTurnEntry.toolCalls > 0 &&
+                lastTurnEntry.toolCallSequenceHash === repeatedActionHash
+              ) {
+                watchdogStatus.repeatedActions++;
+              } else {
+                repeatedActionHash =
+                  lastTurnEntry.toolCalls > 0
+                    ? lastTurnEntry.toolCallSequenceHash
+                    : undefined;
+                watchdogStatus.repeatedActions = lastTurnEntry.toolCalls > 0 ? 1 : 0;
+              }
+              if (watchdogStatus.repeatedActions >= this.watchdogConfig.repeatedActionRuns) {
+                pause(
+                  `doom-loop watchdog: identical tool-call sequence repeated ` +
+                    `${watchdogStatus.repeatedActions} turns running (threshold ` +
+                    `${this.watchdogConfig.repeatedActionRuns}); turns=${update.usage.turns} ` +
+                    `cost=$${update.usage.cost.toFixed(4)}; last output: ${parser.getLiveText().slice(-200)}`,
+                );
+              } else {
+                progress({ watchdog: watchdogSnapshot() });
+              }
+            }
+            fireBudgetWarnings(update.usage);
+          }
           if (pendingBudgetStop) {
             if (update.usage.turns >= pendingBudgetStop.deadlineTurns)
               requestStop(pendingBudgetStop.reason);
@@ -428,7 +753,8 @@ export class ChildRunner {
           fatalError = update.error;
           requestStop("fatal");
         }
-        // RPC children stay alive until stdin closes; end it once the run settles.
+        // RPC children stay alive until stdin closes; what happens at settle
+        // depends on keep-alive liveness, gate results, and the watchdog.
         if (update.type === "agent-settled") {
           // A settle during the wrap-up window means the child finished its
           // final answer in time.
@@ -436,7 +762,7 @@ export class ChildRunner {
           // Structured-output gate: validate before letting the child exit.
           // Invalid → one steer-based repair round (a fresh prompt keeps the
           // RPC child alive and produces a new settle when it finishes).
-          if (spec.outputSchema && !requestedStop && !pendingBudgetStop) {
+          if (spec.outputSchema && !requestedStop && !pendingBudgetStop && !watchdogPause) {
             const extracted = extractStructuredResult(parser.getLiveText());
             const check =
               extracted.value !== undefined
@@ -462,11 +788,65 @@ export class ChildRunner {
               }
             }
           }
-          try {
-            processHandle?.stdin?.end();
-          } catch {
-            /* already closed */
+
+          // Doom-loop watchdog: evaluate the completed turn before deciding
+          // the run's fate. Only wakeup turns (started from waiting) count
+          // toward wakeups-without-progress; every settle refreshes the
+          // progress baseline.
+          const settledEntry: TurnProgressEntry | undefined = lastTurnEntry
+            ? { ...lastTurnEntry, artifactHash: artifactSignal() }
+            : undefined;
+          if (
+            turnFromWaiting &&
+            this.watchdogConfig.wakeupsWithoutProgress > 0 &&
+            !watchdogPause
+          ) {
+            const unchanged =
+              !!settledEntry &&
+              !!lastSettledEntry &&
+              settledEntry.toolCallSequenceHash === lastSettledEntry.toolCallSequenceHash &&
+              settledEntry.outputHash === lastSettledEntry.outputHash &&
+              settledEntry.artifactHash === lastSettledEntry.artifactHash;
+            watchdogStatus.wakeupsWithoutProgress = unchanged
+              ? watchdogStatus.wakeupsWithoutProgress + 1
+              : 0;
+            if (watchdogStatus.wakeupsWithoutProgress >= this.watchdogConfig.wakeupsWithoutProgress) {
+              pause(
+                `doom-loop watchdog: ${watchdogStatus.wakeupsWithoutProgress} consecutive ` +
+                  `wakeups without progress (threshold ${this.watchdogConfig.wakeupsWithoutProgress}); ` +
+                  `turns=${result.usage.turns} cost=$${result.usage.cost.toFixed(4)}; ` +
+                  `last output: ${parser.getLiveText().slice(-200)}`,
+              );
+            } else {
+              progress({ watchdog: watchdogSnapshot() });
+            }
           }
+          turnFromWaiting = false;
+          if (settledEntry) lastSettledEntry = settledEntry;
+
+          // Completion paths that must keep working for waiting runs:
+          // watchdog pause, explicit stops, budget wrap-up, gate ALL PASS,
+          // and the one-shot default (keep-alive inactive).
+          if (
+            watchdogPause ||
+            requestedStop ||
+            pendingBudgetStop ||
+            gateAllPass ||
+            !keepAlive.active
+          ) {
+            endStdin();
+            continue;
+          }
+          // Keep-alive active: the child has live triggers, so leave stdin
+          // open and park the run in "waiting" until the next turn.
+          waiting = true;
+          this.waiting = true;
+          result.waitingSince = Date.now();
+          progress({
+            state: "waiting",
+            waitingSince: result.waitingSince,
+            keepAlive: { ...keepAlive },
+          });
         }
       }
     };
@@ -621,9 +1001,13 @@ export class ChildRunner {
 
       // Attach readers BEFORE writing stdin so a chatty child cannot fill the
       // OS pipe buffer and deadlock waiting for us to drain.
-      processHandle.stdout?.on("data", (chunk: Buffer) =>
-        handleUpdates(parser.feed(chunk)),
-      );
+      processHandle.stdout?.on("data", (chunk: Buffer) => {
+        chunkQueue.push(chunk);
+        if (!drainScheduled) {
+          drainScheduled = true;
+          setImmediate(drainChunks);
+        }
+      });
       processHandle.stderr?.on("data", (chunk: Buffer) => {
         stderr = (stderr + chunk.toString()).slice(-50 * 1024);
         result.stderr = stderr;
@@ -673,6 +1057,9 @@ export class ChildRunner {
         );
       });
 
+      // Drain anything queued between the last setImmediate batch and close
+      // before projecting the final result.
+      drainChunks();
       handleUpdates(parser.flush());
       // The child owns a dedicated process group. Reap descendants even when the
       // direct Pi process exits normally after a tool backgrounds work — unless
@@ -717,6 +1104,13 @@ export class ChildRunner {
           result.exitCode = closed.code ?? 1;
           result.stalledSince = stalledAt;
           result.errorMessage = `Child produced no protocol activity for ${Math.round((this.stallAfterMs + this.stallKillAfterMs) / 1000)}s and was stopped`;
+        } else if (requestedStop === "watchdog") {
+          // Doom-loop pause: the child was stopped deliberately with its
+          // session preserved, so the run is resumable rather than failed.
+          result.state = "paused";
+          result.stopReason = "watchdog";
+          result.exitCode = closed.code ?? 1;
+          result.errorMessage = watchdogPause;
         } else if (BUDGET_STOPS.has(requestedStop) && result.usage.turns > 0) {
           result.state = "partial";
           result.stopReason = requestedStop;
@@ -744,7 +1138,8 @@ export class ChildRunner {
       // Structured-output verdict: validate the final text once, after any
       // repair round. Failure downgrades completed → partial (paid work is
       // still delivered; the parent sees why it is not machine-readable).
-      if (spec.outputSchema) {
+      // A paused run has no final answer to validate; its session resumes first.
+      if (spec.outputSchema && result.state !== "paused") {
         const extracted = extractStructuredResult(result.liveText);
         const check =
           extracted.value !== undefined
@@ -786,6 +1181,10 @@ export class ChildRunner {
           result.timeoutPhase === "queued"
             ? "Timed out waiting for a process slot (never started)"
             : (error?.message ?? "Timed out");
+      } else if (requestedStop === "watchdog") {
+        result.state = "paused";
+        result.stopReason = "watchdog";
+        result.errorMessage = watchdogPause ?? error?.message ?? String(error);
       } else {
         result.state = cancelled ? "cancelled" : "failed";
         result.stopReason =
@@ -843,6 +1242,9 @@ export function runSubagent(
       stallAfterMs: options.stallAfterMs,
       stallKillAfterMs: options.stallKillAfterMs,
       backend: options.backend,
+      watchdog: options.watchdog,
+      onWatchdogEvent: options.onWatchdogEvent,
+      progressThrottleMs: options.progressThrottleMs,
     },
   ).run(spec, options.signal);
 }

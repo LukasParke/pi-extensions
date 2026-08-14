@@ -44,7 +44,7 @@ export type RegistryEvent =
   | { type: "changed"; sessionKey: string; runId: string }
   | { type: "terminal"; sessionKey: string; runId: string; state: RunState };
 
-const terminalStates = new Set<RunState>(["completed", "partial", "failed", "cancelled", "lost", "timeout"]);
+const terminalStates = new Set<RunState>(["completed", "partial", "failed", "cancelled", "lost", "timeout", "paused"]);
 
 /** Trailing coalesce window for high-frequency "changed" events. */
 const EMIT_COALESCE_MS = 100;
@@ -85,6 +85,7 @@ export function toPersistedResult(result: TaskResult): PersistedResult {
     timeoutPhase: result.timeoutPhase,
     errorMessage: result.errorMessage,
     usage: result.usage,
+    usageSamples: result.usageSamples,
     model: result.model,
     thinking: result.thinking,
     profile: result.profile,
@@ -99,6 +100,7 @@ export function toPersistedResult(result: TaskResult): PersistedResult {
     worktree: result.worktree,
     wrappedUp: result.wrappedUp,
     stalledSince: result.stalledSince,
+    waitingSince: result.waitingSince,
     attempts: result.attempts,
     attemptedModels: result.attemptedModels,
     structuredOutput: result.structuredOutput,
@@ -119,12 +121,14 @@ function resultFingerprint(result: TaskResult): string {
     result.state,
     result.usage.turns,
     result.usage.cost,
+    result.usageSamples?.length ?? 0,
     result.sessionId ?? "",
     result.messages.length,
     result.liveText?.length ?? 0,
     result.transcript?.length ?? 0,
     result.errorMessage?.length ?? 0,
     result.stalledSince ?? 0,
+    result.waitingSince ?? 0,
     result.attempts ?? 0,
     result.worktree ? 1 : 0,
     result.structuredOutput !== undefined ? 1 : 0,
@@ -156,6 +160,7 @@ export function toCheckpointResult(result: TaskResult): PersistedResult {
     timeoutPhase: result.timeoutPhase,
     errorMessage: utf8Prefix(result.errorMessage, 1_000),
     usage: result.usage,
+    usageSamples: result.usageSamples,
     model: result.model,
     thinking: result.thinking,
     profile: result.profile,
@@ -168,6 +173,7 @@ export function toCheckpointResult(result: TaskResult): PersistedResult {
     worktree: result.worktree,
     wrappedUp: result.wrappedUp,
     stalledSince: result.stalledSince,
+    waitingSince: result.waitingSince,
     attempts: result.attempts,
     attemptedModels: result.attemptedModels,
   };

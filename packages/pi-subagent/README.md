@@ -228,6 +228,7 @@ Defaults can be overridden in `~/.pi/subagent.json` and per-field via env vars
 | `stallAfterMs`          | `PI_SUBAGENT_STALL_AFTER_MS`          | 90000                                 |
 | `stallKillAfterMs`      | `PI_SUBAGENT_STALL_KILL_AFTER_MS`     | 90000                                 |
 | `maxRetries`            | `PI_SUBAGENT_MAX_RETRIES`             | 1                                     |
+| `watchdog`              | `PI_SUBAGENT_WATCHDOG_WAKEUPS_WITHOUT_PROGRESS`, `PI_SUBAGENT_WATCHDOG_REPEATED_ACTION_RUNS` | `{ wakeupsWithoutProgress: 3, repeatedActionRuns: 3 }` |
 | `widget`                | `PI_SUBAGENT_WIDGET`                  | `background` (`off` disables)         |
 | `notifications`         | `PI_SUBAGENT_NOTIFICATIONS`           | `batched` (`off` disables)            |
 | (bin)                   | `PI_SUBAGENT_BIN`                     | auto (`process.execPath` + CLI entry) |
@@ -334,6 +335,28 @@ Notes on behavior:
   results record `attempts` and `attemptedModels`. Task-quality failures
   (nonzero exit with complete protocol, cancellations, budget stops, running
   timeouts) never retry.
+- **Keep-alive lifecycle**: a child extension (e.g. pi-sentinel) can signal
+  live wakeup triggers with custom `keep-alive` messages on the RPC stream.
+  A settle with triggers active parks the run in `waiting` (stdin stays open)
+  instead of ending it; the child's next self-triggered turn flips it back to
+  `running`. Runs complete when triggers exhaust and the child settles, when
+  a sentinel gate reports ALL PASS, or via the usual budget/timeout/cancel
+  paths. `steer` while waiting sends a `prompt` (fresh turn); mid-turn it
+  sends a `steer`. One-shot children emit no keep-alive events and behave
+  exactly as before.
+- A **doom-loop watchdog** guards long-lived runs deterministically: a turn
+  starting from `waiting` that changes no progress signal (tool-call sequence
+  hash, output hash, worktree artifact hash) increments
+  `wakeupsWithoutProgress`; an identical tool-call sequence
+  `repeatedActionRuns` turns running trips the repeated-action detector. At
+  either threshold the run is terminated and marked `paused`
+  (`stopReason: "watchdog"`) with its session preserved — resume it with
+  `resume: "<session id>"`. Soft warnings fire once at 50% and 80% of
+  `max_cost` / `max_turns`. When `@parke.dev/pi-dispatch` is installed,
+  warnings and pauses publish as info/escalation dispatch items; otherwise
+  they fall back to nextTurn messages and the existing completion
+  notification. Thresholds are set via the `watchdog` config object; `0`
+  disables a detector.
 - `context: "fork"` starts a single child from a real branched copy of the
   parent conversation (`--fork` on the parent's session file). It requires a
   persisted parent session, cannot combine with `resume`, and is rejected for

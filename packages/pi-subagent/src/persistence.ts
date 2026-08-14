@@ -22,6 +22,8 @@ export interface PersistedResult {
   timeoutPhase?: TimeoutPhase;
   errorMessage?: string;
   usage: UsageStats;
+  /** Rolling (ts, outputTokens) samples for live tps; capped at 64. */
+  usageSamples?: import("./types.js").UsageSample[];
   model?: string;
   thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   profile?: TaskProfile;
@@ -37,6 +39,8 @@ export interface PersistedResult {
   wrappedUp?: boolean;
   /** Set while no protocol activity has been seen for the stall window. */
   stalledSince?: number;
+  /** Set when the run entered the keep-alive "waiting" state. */
+  waitingSince?: number;
   /** Total attempts including retries (present when > 1). */
   attempts?: number;
   /** Models tried across attempts, in order. */
@@ -74,9 +78,18 @@ export interface PersistenceEvent {
 }
 
 function isRunState(value: unknown): value is RunState {
-  return ["queued", "running", "completed", "partial", "failed", "cancelled", "lost", "timeout"].includes(
-    String(value),
-  );
+  return [
+    "queued",
+    "running",
+    "waiting",
+    "completed",
+    "partial",
+    "failed",
+    "cancelled",
+    "lost",
+    "timeout",
+    "paused",
+  ].includes(String(value));
 }
 
 function isTimeoutPhase(value: unknown): value is TimeoutPhase {
@@ -140,6 +153,11 @@ function normalizeResult(value: unknown): PersistedResult | undefined {
     timeoutPhase: isTimeoutPhase(r.timeoutPhase) ? r.timeoutPhase : undefined,
     errorMessage: typeof r.errorMessage === "string" ? utf8Prefix(r.errorMessage, 2_000) : undefined,
     usage: normalizeUsage(r.usage),
+    usageSamples: Array.isArray(r.usageSamples)
+      ? r.usageSamples
+          .filter((s): s is import("./types.js").UsageSample => !!s && typeof s.t === "number" && typeof s.output === "number")
+          .slice(-64)
+      : undefined,
     model: typeof r.model === "string" ? r.model : undefined,
     thinking: ["off", "minimal", "low", "medium", "high", "xhigh"].includes(String(r.thinking)) ? r.thinking : undefined,
     profile: ["explore", "review", "general"].includes(String(r.profile)) ? r.profile : undefined,
@@ -159,6 +177,7 @@ function normalizeResult(value: unknown): PersistedResult | undefined {
     transcript: typeof r.transcript === "string" ? utf8Prefix(r.transcript, 32_768) : undefined,
     wrappedUp: r.wrappedUp === true ? true : undefined,
     stalledSince: typeof r.stalledSince === "number" && Number.isFinite(r.stalledSince) ? r.stalledSince : undefined,
+    waitingSince: typeof r.waitingSince === "number" && Number.isFinite(r.waitingSince) ? r.waitingSince : undefined,
     attempts: typeof r.attempts === "number" && Number.isInteger(r.attempts) && r.attempts > 1 ? r.attempts : undefined,
     attemptedModels: Array.isArray(r.attemptedModels)
       ? r.attemptedModels.filter((m): m is string => typeof m === "string").slice(0, 10)
@@ -277,7 +296,7 @@ export class PersistenceLayer {
     }
 
     for (const [id, snapshot] of snapshots) {
-      if (snapshot.state === "running" || snapshot.state === "queued") {
+      if (snapshot.state === "running" || snapshot.state === "queued" || snapshot.state === "waiting") {
         // "lost" means ownership cannot be proven after a parent disruption.
         // Orphan reconcile (ProcessLockManager) must have run before callers
         // consider the session safe to resume; rebuild keeps resumeBlocked set

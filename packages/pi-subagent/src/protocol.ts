@@ -9,6 +9,13 @@ export type ProtocolUpdate =
   | { type: "message"; message: Message; usage: UsageStats }
   | { type: "agent-end"; willRetry?: boolean }
   | { type: "agent-settled" }
+  /**
+   * Extension-injected custom message (pi.sendMessage). RPC mode forwards
+   * every session event unfiltered, so these arrive as message_end with
+   * role "custom" — this is how children signal keep-alive liveness and
+   * sentinel gate results to the runner.
+   */
+  | { type: "custom"; customType: string; display: boolean; details: unknown }
   /** RPC extension UI dialog awaiting an answer; headless children auto-cancel. */
   | { type: "ui-request"; id: string }
   /** The child rejected the prompt; no agent events will follow. */
@@ -17,6 +24,8 @@ export type ProtocolUpdate =
 /** Strict-enough, line-buffered parser for Pi's documented JSON event stream. */
 export class ProtocolParser {
   private buffer = "";
+  /** Byte length of `buffer`, tracked incrementally so feed() stays O(chunk). */
+  private bufferBytes = 0;
   private sessionId?: string;
   private messages: Message[] = [];
   private usage = emptyUsage();
@@ -77,15 +86,22 @@ export class ProtocolParser {
   }
 
   feed(data: Buffer | string): ProtocolUpdate[] {
-    this.buffer += data.toString();
+    const text = data.toString();
+    this.buffer += text;
+    this.bufferBytes += Buffer.byteLength(text, "utf8");
     // If a single line grows past the hard limit without a newline, drop it as a parse error.
-    if (Buffer.byteLength(this.buffer, "utf8") > ProtocolParser.MAX_BUFFER_BYTES) {
+    if (this.bufferBytes > ProtocolParser.MAX_BUFFER_BYTES) {
       this.parseErrors++;
       this.buffer = "";
+      this.bufferBytes = 0;
       return [];
     }
+    // No complete line yet: appending is enough — never re-split the whole
+    // buffer per chunk (that is O(n²) on long lines).
+    if (!text.includes("\n")) return [];
     const lines = this.buffer.split("\n");
     this.buffer = lines.pop() ?? "";
+    this.bufferBytes = Buffer.byteLength(this.buffer, "utf8");
     return lines.flatMap((line) => this.parseLine(line));
   }
 
@@ -94,6 +110,7 @@ export class ProtocolParser {
     if (!this.buffer.trim()) return [];
     const line = this.buffer;
     this.buffer = "";
+    this.bufferBytes = 0;
     return this.parseLine(line);
   }
 
@@ -160,6 +177,19 @@ export class ProtocolParser {
       // Cap live text growth: keep the last 64KB of visible text so long runs stay bounded.
       this.liveText = (this.liveText + delta).slice(-64 * 1024);
       return [{ type: "live-text", delta, liveText: this.liveText }];
+    }
+
+    // Custom messages (role "custom") are extension signals, not LLM turns:
+    // surface them to the runner without polluting messages/usage/transcript.
+    if (event.type === "message_end" && event.message?.role === "custom") {
+      return [
+        {
+          type: "custom",
+          customType: String(event.message.customType ?? ""),
+          display: event.message.display === true,
+          details: event.message.details,
+        },
+      ];
     }
 
     if (event.type === "message_end" && event.message) {

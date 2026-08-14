@@ -16,7 +16,7 @@ export interface ApprovalRequest {
 	scriptPreview: string;
 	maxAgentRequests: number;
 	maxConcurrency: number;
-	agentMaxCost: number;
+	agentMaxCost?: number;
 	agentMaxTurns: number;
 	workflowTimeoutMs: number;
 	writersPossible: boolean;
@@ -52,7 +52,7 @@ export async function requestLaunchApproval(options: {
 		request.description ?? request.label,
 		request.savedName ? `saved: ${request.savedName}` : "inline script",
 		`max agents: ${request.maxAgentRequests} · concurrency: ${request.maxConcurrency}`,
-		`per-agent: ≤${request.agentMaxTurns} turns · ≤$${request.agentMaxCost} · timeout ${Math.round(request.workflowTimeoutMs / 60000)}m workflow`,
+		`per-agent: ≤${request.agentMaxTurns} turns · ${request.agentMaxCost === undefined ? "no cost ceiling" : `≤$${request.agentMaxCost}`} · timeout ${Math.round(request.workflowTimeoutMs / 60000)}m workflow`,
 		request.writersPossible
 			? "writers: allowed (workflow-owned worktree)"
 			: "writers: read-only profiles only",

@@ -6,7 +6,10 @@
   stdout — a superset of `--mode json`), cancellation, process trees, budgets, and a live
   stdin command channel used for mid-run steering. Extension UI dialogs from headless
   children are auto-cancelled so they can never hang a run; stdin is closed after
-  `agent_settled` so RPC children shut down cleanly. Budget breaches steer a wrap-up
+  `agent_settled` so RPC children shut down cleanly — unless the child signaled
+  live wakeup triggers (custom `keep-alive` messages on the RPC stream), in which
+  case the run parks in `waiting` with stdin open until triggers exhaust, a gate
+  reports ALL PASS, or a stop path fires. Budget breaches steer a wrap-up
   message and allow grace turns before SIGTERM (`wrappedUp` marks a clean conclusion).
   A stall watchdog flags protocol silence, probes liveness via `get_state`, and kills
   after a second window so retry can take over. Group kills verify process start-time
@@ -113,6 +116,20 @@ Invariants:
     repair round downgrades completed → partial with `structuredError`, and the raw
     text still delivers. Validation is enforced on the parent side of the process
     boundary — the child cannot self-attest.
+26. Keep-alive liveness is child-reported over the existing event stream (custom
+    `keep-alive` / `sentinel-wakeup` messages, never a spawn flag): default
+    inactive, so one-shot runs are byte-identical to pre-0.10 behavior. `waiting`
+    is a first-class run state (steer uses `prompt` there, `steer` mid-turn);
+    completion is settle-with-inactive-triggers, gate ALL PASS detected from the
+    stream, or the existing budget/timeout/cancel paths.
+27. The doom-loop watchdog is deterministic runner code, never model judgment: a
+    wakeup turn (started from `waiting`) that changes no progress signal
+    (tool-call sequence hash, output hash, worktree artifact hash) increments
+    `wakeupsWithoutProgress`; an identical tool-call sequence
+    `repeatedActionRuns` turns running trips the repeated-action detector. At a
+    threshold the child is stopped via the existing machinery but the run
+    resolves `paused` (session preserved, resumable) with an escalation carrying
+    the evidence. Soft warnings fire once at 50%/80% of `max_cost`/`max_turns`.
 26. Arg repair only decodes free-text fields with high-signal escape patterns
     (literal \n or \") and no real newlines; identifier fields, tool lists, and
     Windows-path-like strings are never modified.

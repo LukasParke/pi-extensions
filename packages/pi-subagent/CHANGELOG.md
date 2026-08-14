@@ -1,5 +1,79 @@
 # Changelog
 
+## 0.10.0
+
+### Keep-alive lifecycle
+
+- Subagent runs no longer end unconditionally at the first `agent_settled`.
+  A child extension signals liveness over the existing RPC event stream with
+  custom messages (`pi.sendMessage` with `customType: "keep-alive"`,
+  `display: false`, `details: { active, reasons }`). The runner tracks the
+  last-known keep-alive state per run (default inactive: one-shot runs are
+  byte-identical to before).
+- On settle with keep-alive **active** — and no stop requested, no pending
+  budget wrap-up, and no structured-output repair round in flight — the
+  runner leaves stdin open and parks the run in a new **`waiting`** state.
+  The child's next self-triggered turn flips it back to `running`; the next
+  settle re-evaluates.
+- Run completion conditions: keep-alive goes inactive and the child settles
+  (stdin closed, normal completion); a sentinel gate ALL PASS wakeup
+  (`customType: "sentinel-wakeup"` whose details carry an event with
+  `status: "all_pass"`) auto-completes the run; and the existing
+  budget/timeout/cancel paths, which keep working for waiting runs (cancel
+  while waiting terminates cleanly).
+- `steer` picks the verb by run state: `prompt` while waiting (the child is
+  idle and needs a fresh turn), `steer` mid-turn (queued before the next LLM
+  call). Backends gain an optional `promptCommand`; pi implements it.
+- Custom messages surface through `ProtocolParser` as a new `custom` update
+  (they are extension signals, not LLM turns — no usage/messages pollution).
+
+### Doom-loop watchdog
+
+- Deterministic, runner-level progress ledger per turn: hash of the ordered
+  tool-call sequence, hash of the turn's final text, and a worktree artifact
+  signal (`git status --porcelain` + `git diff --stat`, worktree runs only).
+- **`wakeupsWithoutProgress`** (default 3): a turn that starts from `waiting`
+  and ends with every progress signal unchanged increments the counter; any
+  change resets it. At threshold the run **pauses**.
+- **`repeatedActionRuns`** (default 3): identical tool-call-sequence hash N
+  turns running (regardless of waiting) pauses. Turns without tool calls
+  break the streak.
+- **Soft budget warnings** at 50% and 80% of `max_cost` / `max_turns` fire
+  once each via the new `onWatchdogEvent` hook (wired to an info-priority
+  dispatch item when `@parke.dev/pi-dispatch` is available at runtime —
+  feature-detected, never hard-depended — and to a `nextTurn` message
+  otherwise).
+- **Pause semantics**: the child is terminated via the existing stop
+  machinery, but the run resolves as **`paused`** (a new terminal state),
+  with `stopReason: "watchdog"` and an evidence message (turns, cost,
+  counters, last output snippet). The session is preserved and resumable via
+  the existing `resume: sessionId` flow. Paused runs never auto-retry and
+  show their reason in status output; pauses escalate via dispatch (or the
+  existing completion notification for async runs).
+- Thresholds are configurable via `watchdog` in `~/.pi/subagent.json`
+  (`wakeupsWithoutProgress`, `repeatedActionRuns`; 0 disables a detector) or
+  `PI_SUBAGENT_WATCHDOG_WAKEUPS_WITHOUT_PROGRESS` /
+  `PI_SUBAGENT_WATCHDOG_REPEATED_ACTION_RUNS`.
+- The stall watchdog no longer fires while a run is `waiting` (a waiting
+  child is silent by design).
+
+### UI / status
+
+- `waiting` and `paused` thread through `RunState`, the registry,
+  persistence, status previews, and the /subagents overlay: waiting runs show
+  their wait age (`[waiting 2m]`), paused runs show the watchdog reason.
+
+### Unified stat line
+
+- All five TUI stat-line surfaces (inline run blocks, overlay list, detail
+  view, live widget, completion messages) now share one `statLine()` helper
+  rendering `$cost · model · tps · ↻turns · tokens · duration` — cost sits
+  first with the turn count right after tps, model shows as a provider-stripped
+  short id (elided per-task when a parallel run shares one model), and tps
+  is a 30s rolling output-token rate for live runs (`~0 tps` when stalled —
+  a visual doom-loop tell) with lifetime average for finished runs.
+
+
 ## 0.9.0
 
 ### Anthropic-compatible tool schema

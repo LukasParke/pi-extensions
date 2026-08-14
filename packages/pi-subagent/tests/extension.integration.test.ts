@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import register from "../src/extension.js";
 import { RUN_ENTRY_TYPE } from "../src/persistence.js";
+import { isolateConfigEnv, makeIsolatedDirs, type IsolatedDirs } from "./helpers/test-config.js";
 
 interface Harness {
   tool: any;
@@ -27,9 +28,14 @@ function rootAssistant(cost: number) {
   };
 }
 
+// Set per-test in beforeEach; harness() routes all config dirs here so no
+// test ever writes to the real ~/.pi/subagent-* dirs.
+let testDirs: IsolatedDirs;
+
 function harness(): Harness {
   const handlers = new Map<string, Function>();
   const entries: any[] = [rootAssistant(0.2)];
+  const sessionFile = path.join(testDirs.root, "root-session.jsonl");
   let tool: any;
   let waitTool: any;
   const commands = new Map<string, any>();
@@ -41,7 +47,7 @@ function harness(): Harness {
   const ctx = {
     cwd: process.cwd(), hasUI: false, ui, model: { provider: "fake", id: "model" },
     sessionManager: {
-      getSessionFile: () => "/tmp/root-session.jsonl",
+      getSessionFile: () => sessionFile,
       getSessionId: () => "root-session",
       getBranch: () => entries,
     },
@@ -89,6 +95,7 @@ describe("extension end-to-end wiring", () => {
   let originalBin: string | undefined;
   let originalWidget: string | undefined;
   let originalNotifications: string | undefined;
+  let restoreConfigEnv: () => void;
 
 
   beforeEach(async () => {
@@ -99,6 +106,8 @@ describe("extension end-to-end wiring", () => {
     originalWidget = process.env.PI_SUBAGENT_WIDGET;
     originalNotifications = process.env.PI_SUBAGENT_NOTIFICATIONS;
 
+    testDirs = await makeIsolatedDirs("pi-subagent-integration-");
+    restoreConfigEnv = isolateConfigEnv(testDirs);
     bin = await fs.mkdtemp(path.join(os.tmpdir(), "pi-subagent-bin-"));
     const fake = path.join(path.dirname(fileURLToPath(import.meta.url)), "helpers/fake-pi.mjs");
     const script = `#!/bin/sh\nexec "${process.execPath}" "${fake}" "$@"\n`;
@@ -127,7 +136,9 @@ describe("extension end-to-end wiring", () => {
 
     const { _resetLaunchCacheForTests } = await import("../src/launch.js");
     _resetLaunchCacheForTests();
+    restoreConfigEnv();
     await fs.rm(bin, { recursive: true, force: true });
+    await testDirs.cleanup();
   });
 
 
@@ -364,12 +375,11 @@ describe("extension end-to-end wiring", () => {
     const h = harness();
     await h.handlers.get("session_start")!({}, h.ctx);
     // The parent session file must exist for the fork preflight.
-    await fs.writeFile("/tmp/root-session.jsonl", "{}\n");
+    await fs.writeFile(h.ctx.sessionManager.getSessionFile(), "{}\n");
     const result = await execute(h, { task: "continue our discussion", context: "fork", profile: "explore" });
     expect(result.isError).not.toBe(true);
     expect(result.content[0].text).toBe("Hello world!");
     await h.handlers.get("session_shutdown")!();
-    await fs.rm("/tmp/root-session.jsonl", { force: true });
   });
 
   it("resolves named agent files end-to-end through the tool", async () => {

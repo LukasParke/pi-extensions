@@ -77,7 +77,11 @@ export interface CompletionDetailsRun {
   preview: string;
   turns: number;
   tokens: number;
+  /** Total output tokens, for lifetime tps on the completion row. */
+  output: number;
   cost: number;
+  /** Shared short model id; undefined when tasks used mixed models. */
+  model?: string;
   durationMs: number;
   pointers: string[];
 }
