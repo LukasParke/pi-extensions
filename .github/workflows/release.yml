@@ -27,12 +27,6 @@ jobs:
       # Trusted publishing (OIDC) requires npm >= 11.5.1
       - run: npm install -g npm@latest
       - run: npm ci
-      - name: Cache embedding model
-        uses: actions/cache@v4
-        with:
-          path: packages/pi-memory/models
-          key: memory-model-${{ hashFiles('scripts/fetch-memory-model.mjs') }}
-      - run: node scripts/fetch-memory-model.mjs
       - run: npm run release:check
 
       - name: Resolve package-scoped tag
