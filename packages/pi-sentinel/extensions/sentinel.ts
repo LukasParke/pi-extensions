@@ -1,5 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { dispatchQueue, ensureDelivery } from "@parke.dev/pi-dispatch";
+import type { DispatchPriority } from "@parke.dev/pi-dispatch";
 import { NO_REPO_MESSAGE, parseRepo, resolveRepo, resolveToken } from "@parke.dev/pi-github";
 import { SentinelManager } from "../src/manager.ts";
 import type {
@@ -14,8 +16,6 @@ import { createGitHubPrProbe, formatPrSnapshot, prNeedsAction } from "../src/pr.
 import type { Predicate } from "../src/index.ts";
 
 const UI_KEY = "sentinel";
-const MESSAGE_TYPE = "sentinel-wakeup";
-const DELIVERY_QUIET_MS = 2_000;
 
 const predicateSchema = Type.Object(
 	{
@@ -100,17 +100,11 @@ function statusText(items: SentinelSnapshot[], gate?: GateSnapshot) {
 	return lines.length ? lines.join("\n") : "No sentinels are registered.";
 }
 
-function activeSnapshot(items: SentinelSnapshot[], gate?: GateSnapshot) {
-	const lines = [...items.filter(isActive).map(itemLine), gate?.active ? gateLine(gate) : undefined].filter(
-		Boolean,
-	);
-	return lines.length ? `Active sentinels:\n${lines.join("\n")}` : "Active sentinels: none.";
-}
-
-export function coalescedMessage(events: SentinelEvent[], items: SentinelSnapshot[], gate?: GateSnapshot) {
-	const body =
-		events.length === 1 ? events[0]!.message : events.map((event) => `- ${event.message}`).join("\n");
-	return `${events.length === 1 ? "Sentinel wakeup" : `Sentinel wakeup (${events.length} events)`}:\n\n${body}\n\n${activeSnapshot(items, gate)}`;
+export function eventPriority(event: SentinelEvent): DispatchPriority {
+	if (event.details.status === "all_pass") return "escalation";
+	if (event.details.status === "complete" || event.details.status === "elapsed") return "completion";
+	if (event.details.type === "merged" || event.details.type === "closed") return "completion";
+	return "info";
 }
 
 function asPredicate(value?: Record<string, unknown>) {
@@ -119,9 +113,9 @@ function asPredicate(value?: Record<string, unknown>) {
 }
 
 export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager()) {
-	const pending = new Map<string, SentinelEvent>();
 	let uiCtx: ExtensionContext | undefined;
-	let flushTimer: NodeJS.Timeout | undefined;
+
+	ensureDelivery(pi);
 
 	const refreshUi = () => {
 		if (!uiCtx?.hasUI) return;
@@ -136,44 +130,18 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 		]);
 	};
 
-	const flush = () => {
-		if (!pending.size || !uiCtx?.isIdle()) return;
-		const events = [...pending.values()];
-		const snapshot = manager.snapshot();
-		try {
-			pi.sendMessage(
-				{
-					customType: MESSAGE_TYPE,
-					content: coalescedMessage(events, snapshot.items, snapshot.gate),
-					display: true,
-					details: { events: events.map((event) => event.details), snapshot },
-				},
-				{
-					deliverAs: "followUp",
-					...(events.some((event) => event.urgency === "wake") ? { triggerTurn: true } : {}),
-				},
-			);
-			for (const event of events) pending.delete(event.id);
-		} catch {
-			// Keep the batch queued for the next idle flush.
-		}
-	};
-
-	const scheduleFlush = () => {
-		if (flushTimer) clearTimeout(flushTimer);
-		flushTimer = setTimeout(() => {
-			flushTimer = undefined;
-			flush();
-		}, DELIVERY_QUIET_MS);
-		flushTimer.unref?.();
-	};
-
 	manager.onEvent((event) => {
-		pending.set(event.id, event);
-		scheduleFlush();
+		dispatchQueue().publish({
+			id: event.id,
+			source: `sentinel:${event.source}`,
+			priority: eventPriority(event),
+			urgency: event.urgency,
+			message: event.message,
+			details: event.details,
+		});
 	});
 	manager.onSuppress((sources) => {
-		for (const [id, event] of pending) if (sources.includes(event.source)) pending.delete(id);
+		for (const source of sources) dispatchQueue().suppress(`sentinel:${source}`);
 	});
 	manager.onChange(refreshUi);
 
@@ -186,12 +154,8 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	pi.on("agent_start", () => manager.setIdle(false));
 	pi.on("agent_settled", () => {
 		manager.setIdle(true);
-		scheduleFlush();
 	});
 	pi.on("session_shutdown", () => {
-		if (flushTimer) clearTimeout(flushTimer);
-		flushTimer = undefined;
-		pending.clear();
 		manager.dispose();
 		uiCtx?.ui.setStatus(UI_KEY, undefined);
 		uiCtx?.ui.setWidget(UI_KEY, undefined);
