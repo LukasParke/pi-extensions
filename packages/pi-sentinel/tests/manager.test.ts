@@ -126,6 +126,46 @@ describe("SentinelManager", () => {
 		expect(manager.snapshot().items[0]?.state).toBe("passing");
 	});
 
+	it("resumes PR polling when a poll is skipped while busy", async () => {
+		vi.useFakeTimers();
+		const snapshot: PrSnapshot = {
+			repo: "o/r",
+			number: 7,
+			title: "PR",
+			url: "https://github.com/o/r/pull/7",
+			viewer: "agent",
+			lifecycle: "open",
+			headSha: "abc",
+			merge: "clean",
+			checks: "passing",
+			failingChecks: [],
+			reviewDecision: "approved",
+			unresolvedThreads: 0,
+			activities: [],
+		};
+		const probe = vi.fn(async () => snapshot);
+		const manager = new SentinelManager();
+		manager.attachPr({
+			name: "pr-7",
+			repo: "o/r",
+			number: 7,
+			probe,
+			initialSnapshot: snapshot,
+			intervalMs: 1_000,
+		});
+		manager.startSession();
+		manager.setIdle(false);
+		// The scheduled poll fires mid-turn and is skipped.
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(probe).not.toHaveBeenCalled();
+		// Settling must resume polling, not leave the sentinel dead.
+		manager.setIdle(true);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(probe).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(probe).toHaveBeenCalledTimes(2);
+	});
+
 	it("implements sleep without shell probes", async () => {
 		vi.useFakeTimers();
 		const runner = vi.fn();
