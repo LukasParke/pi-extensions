@@ -46,6 +46,35 @@ describe("getHerdrTaskStatus", () => {
 		).resolves.toEqual({ status: "gone", worktreePath: null });
 	});
 
+	it("degrades to an unknown status when agent status polling times out", async () => {
+		const herdr: HerdrRunner = async () => {
+			throw new Error("herdr agent get: timed out waiting for agent status");
+		};
+		let searched = 0;
+		await expect(
+			getHerdrTaskStatus(
+				{ agent: "fix", worktreeRoots: ["/worktrees"] },
+				{
+					herdr,
+					findOrphan: () => {
+						searched += 1;
+						return "/worktrees/app/agent-fix";
+					},
+				},
+			),
+		).resolves.toEqual({ status: "unknown", note: "herdr agent get: timed out waiting for agent status" });
+		expect(searched).toBe(0);
+	});
+
+	it("propagates other agent-get errors", async () => {
+		const herdr: HerdrRunner = async () => {
+			throw new Error("herdr agent get: server_unavailable: gone");
+		};
+		await expect(
+			getHerdrTaskStatus({ agent: "fix", worktreeRoots: ["/worktrees"] }, { herdr }),
+		).rejects.toThrow(/server_unavailable/);
+	});
+
 	it("looks up a live pane id without treating it as an agent name", async () => {
 		const herdr: HerdrRunner = async (args) => {
 			expect(args).toEqual(["agent", "get", "w7:p3"]);

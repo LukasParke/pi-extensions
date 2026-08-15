@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import { herdr as realHerdr } from "./cli.ts";
 import type { HerdrRunner } from "./dispatch.ts";
@@ -18,6 +19,8 @@ export interface CleanupOptions {
 	herdr?: HerdrRunner;
 	git?: GitRunner;
 	findOrphan?: (agentName: string, roots: string[]) => string | undefined;
+	/** Injectable path-existence check for tests. */
+	existsPath?: (path: string) => boolean;
 }
 
 export interface CleanupResult {
@@ -25,7 +28,9 @@ export interface CleanupResult {
 	problems?: string[];
 	reason?: "nothing-found" | "ambiguous";
 	matches?: string[];
-	removal?: "herdr" | "git";
+	removal?: "herdr" | "git" | "gone";
+	/** Present on degraded successes, e.g. the checkout was already deleted. */
+	note?: string;
 	workspaceId: string | null;
 	worktreePath: string | null;
 }
@@ -42,6 +47,7 @@ export async function cleanupHerdrTask(
 	assertAgentTarget(input.agent);
 	const herdr = options.herdr ?? realHerdr;
 	const git = options.git ?? realGit;
+	const existsPath = options.existsPath ?? existsSync;
 	let status: string;
 	let cwd: string;
 	let workspaceId: string | undefined;
@@ -84,6 +90,19 @@ export async function cleanupHerdrTask(
 		throw new Error(
 			`Refusing cleanup: agent cwd ${cwd} is not a herdr-managed worktree. Only dispatched-task worktrees are removable.`,
 		);
+	}
+
+	// The checkout was already deleted (commonly alongside its workspace):
+	// cleanup is complete, and the safety checks cannot run against a
+	// missing path. The pushed branch survives on the remote.
+	if (!existsPath(cwd)) {
+		return {
+			cleaned: true,
+			removal: "gone",
+			note: `worktree path ${cwd} no longer exists; nothing to remove`,
+			workspaceId: workspaceId ?? null,
+			worktreePath: cwd,
+		};
 	}
 
 	if (!input.force) {
@@ -130,7 +149,22 @@ export async function cleanupHerdrTask(
 	const gitRemoveArgs = ["-C", baseRepo, "worktree", "remove"];
 	if (input.force) gitRemoveArgs.push("--force");
 	gitRemoveArgs.push(cwd);
-	await git(gitRemoveArgs);
+	try {
+		await git(gitRemoveArgs);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		// Another process may have removed the checkout between the existence
+		// check and the removal — still a successful cleanup outcome.
+		if (!message.includes("is not a working tree") && !message.includes("No such file")) throw error;
+		await git(["-C", baseRepo, "worktree", "prune"]);
+		return {
+			cleaned: true,
+			removal: "gone",
+			note: `worktree ${cwd} was already gone; pruned stale metadata`,
+			workspaceId: workspaceId ?? null,
+			worktreePath: cwd,
+		};
+	}
 	await git(["-C", baseRepo, "worktree", "prune"]);
 
 	return {

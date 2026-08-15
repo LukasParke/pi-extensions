@@ -7,11 +7,15 @@
  * prompt-swallow guard — is unit-testable without the herdr CLI.
  */
 
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { herdr as realHerdr } from "./cli.ts";
 import { type NameGenerator, resolveHerdrTaskName } from "./names.ts";
 
 /** Runs a herdr command and returns the parsed `result` from its envelope. */
 export type HerdrRunner = (args: string[]) => Promise<any>;
+
+export type WriteTextFile = (path: string, contents: string) => Promise<void>;
 
 export interface DispatchOptions {
 	herdr?: HerdrRunner;
@@ -21,6 +25,8 @@ export interface DispatchOptions {
 	now?: () => number;
 	/** Optional model-backed name for omitted `name`. Explicit names never use this. */
 	generateName?: NameGenerator;
+	/** Injectable brief writer for tests. */
+	writeFile?: WriteTextFile;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -202,6 +208,35 @@ export async function promptWithVerify(
 		: lastError;
 }
 
+/**
+ * Long or multi-line tasks cannot be passed as argv: herdr refuses to encode
+ * them for the target shell (invalid_agent_argument). Instead the task is
+ * written to a brief file in the worktree and the agent is pointed at it —
+ * the same brief-on-disk pattern the herdr-pi-orchestration skill prescribes.
+ */
+export const BRIEF_FILENAME = ".pi-herdr-brief.md";
+
+export const BRIEF_POINTER = `Read the file ${BRIEF_FILENAME} in the current directory and execute it as your complete, self-contained task.`;
+
+/** Conservative threshold below herdr's shell-encoding ceiling. */
+export const INLINE_TASK_MAX_LENGTH = 2000;
+
+export function needsBriefFile(task: string): boolean {
+	return /[\r\n]/.test(task) || task.length > INLINE_TASK_MAX_LENGTH;
+}
+
+/** herdr start errors caused by the task text itself. */
+export function isPromptEncodingError(message: string): boolean {
+	return message.includes("invalid_agent_argument") && message.includes("herdr agent start");
+}
+
+async function writeBrief(worktreePath: string, task: string, options: DispatchOptions): Promise<string> {
+	const path = join(worktreePath, BRIEF_FILENAME);
+	const writer: WriteTextFile = options.writeFile ?? ((p, contents) => writeFile(p, contents, "utf8"));
+	await writer(path, task);
+	return path;
+}
+
 export interface HerdrTaskResult {
 	agentName: string;
 	paneId: string;
@@ -209,6 +244,8 @@ export interface HerdrTaskResult {
 	worktreePath: string;
 	branch: string;
 	repoPath: string;
+	/** Set when the task was too large/unsafe for argv and written to a brief file. */
+	briefPath?: string;
 }
 
 export async function dispatchHerdrTask(
@@ -219,7 +256,24 @@ export async function dispatchHerdrTask(
 	const branch = `agent/${name}`;
 
 	const worktree = await ensureWorktree(input.repoPath, branch, name, options);
-	const { agentName, launchedWithTask } = await ensurePiAgent(name, worktree.paneId, input.task, options);
+	let briefPath: string | undefined;
+	let task = input.task;
+	if (needsBriefFile(task)) {
+		briefPath = await writeBrief(worktree.worktreePath, task, options);
+		task = BRIEF_POINTER;
+	}
+	let started: { agentName: string; launchedWithTask: boolean };
+	try {
+		started = await ensurePiAgent(name, worktree.paneId, task, options);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (briefPath || !isPromptEncodingError(message)) throw error;
+		// The CLI rejected argv that looked safe; switch to brief-on-disk and retry once.
+		briefPath = await writeBrief(worktree.worktreePath, input.task, options);
+		task = BRIEF_POINTER;
+		started = await ensurePiAgent(name, worktree.paneId, task, options);
+	}
+	const { agentName, launchedWithTask } = started;
 	const herdr = options.herdr ?? realHerdr;
 	if (launchedWithTask) {
 		try {
@@ -228,10 +282,10 @@ export async function dispatchHerdrTask(
 			const message = error instanceof Error ? error.message : String(error);
 			if (!message.includes("wait_timeout")) throw error;
 			const info = await herdr(["agent", "get", agentName]);
-			if (info.agent?.agent_status === "idle") await promptWithVerify(agentName, input.task, options);
+			if (info.agent?.agent_status === "idle") await promptWithVerify(agentName, task, options);
 		}
 	} else {
-		await promptWithVerify(agentName, input.task, options);
+		await promptWithVerify(agentName, task, options);
 	}
 
 	return {
@@ -241,5 +295,6 @@ export async function dispatchHerdrTask(
 		worktreePath: worktree.worktreePath,
 		branch,
 		repoPath: input.repoPath,
+		briefPath,
 	};
 }

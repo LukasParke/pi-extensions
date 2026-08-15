@@ -124,15 +124,24 @@ export default function (pi: ExtensionAPI) {
 						: `Agent "${params.agent}" is gone and no matching worktree was found under the configured roots.`;
 				return { content: [{ type: "text" as const, text }], details: status };
 			}
-			const output = await herdrText(
-				["agent", "read", params.agent, "--lines", String(params.lines ?? 60), "--format", "text"],
-				signal as AbortSignal | undefined,
-			);
+			let output: string;
+			try {
+				output = await herdrText(
+					["agent", "read", params.agent, "--lines", String(params.lines ?? 60), "--format", "text"],
+					signal as AbortSignal | undefined,
+				);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				// A busy agent rejects terminal reads; that is a normal status, not an error.
+				if (!message.includes("agent_not_idle")) throw error;
+				output =
+					"transcript: unavailable (agent busy) — its lifecycle state is authoritative; retry the read when it settles";
+			}
 			return {
 				content: [
 					{
 						type: "text",
-						text: `state: ${status.status}\ncwd: ${status.cwd}\n\n--- recent output ---\n${output}`,
+						text: `state: ${status.status}${status.note ? ` (${status.note})` : ""}\ncwd: ${status.cwd ?? "unknown"}\n\n--- recent output ---\n${output}`,
 					},
 				],
 				details: status,
@@ -174,7 +183,9 @@ export default function (pi: ExtensionAPI) {
 			const text =
 				result.removal === "herdr"
 					? `Cleaned up "${params.agent}": workspace ${result.workspaceId} and worktree ${result.worktreePath} removed. The pushed branch survives on the remote.`
-					: `Cleaned up "${params.agent}": worktree ${result.worktreePath} removed via git (workspace was already gone). The pushed branch survives on the remote.`;
+					: result.removal === "gone"
+						? `Cleaned up "${params.agent}": ${result.note ?? "the worktree was already gone"}. The pushed branch survives on the remote.`
+						: `Cleaned up "${params.agent}": worktree ${result.worktreePath} removed via git (workspace was already gone). The pushed branch survives on the remote.`;
 			return { content: [{ type: "text" as const, text }], details: result };
 		},
 	});

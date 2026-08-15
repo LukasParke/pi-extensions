@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+	BRIEF_FILENAME,
+	BRIEF_POINTER,
 	dispatchHerdrTask,
 	ensurePiAgent,
 	ensureWorktree,
+	INLINE_TASK_MAX_LENGTH,
+	isPromptEncodingError,
 	isPromptStallError,
 	isTransientStartError,
+	needsBriefFile,
 	parsePrUrl,
 	promptWithVerify,
 	slugify,
@@ -116,6 +121,28 @@ describe("transient-error classification", () => {
 		// The CLI died waiting, but the prompt may already have reached the
 		// agent — re-sending would duplicate it.
 		expect(isPromptStallError("Command failed: timeout of 120000ms exceeded")).toBe(false);
+	});
+
+	it("classifies argv-encoding rejections on agent start as prompt-encoding errors", () => {
+		expect(
+			isPromptEncodingError(
+				"herdr agent start: invalid_agent_argument: agent arguments cannot be encoded safely for the target shell",
+			),
+		).toBe(true);
+		expect(isPromptEncodingError("herdr agent prompt: invalid_agent_argument: nope")).toBe(false);
+		expect(isPromptEncodingError("herdr agent start: agent_name_taken: fix")).toBe(false);
+	});
+});
+
+describe("needsBriefFile", () => {
+	it("flags multi-line and overlong tasks", () => {
+		expect(needsBriefFile("line one\nline two")).toBe(true);
+		expect(needsBriefFile("a".repeat(INLINE_TASK_MAX_LENGTH + 1))).toBe(true);
+	});
+
+	it("accepts short single-line tasks as argv", () => {
+		expect(needsBriefFile("Fix the thing.")).toBe(false);
+		expect(needsBriefFile("a".repeat(INLINE_TASK_MAX_LENGTH))).toBe(false);
 	});
 });
 
@@ -350,6 +377,160 @@ describe("promptWithVerify", () => {
 });
 
 describe("dispatchHerdrTask", () => {
+	it("writes a brief file and starts with a pointer for multi-line tasks", async () => {
+		const written: { path: string; contents: string }[] = [];
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": () => ({ agent: { name: "fix-thing" } }),
+			"agent wait": () => ({}),
+		});
+		const task = "Fix the thing.\n\nSteps:\n1. read the file\n2. fix it";
+		const result = await dispatchHerdrTask(
+			{ repoPath: "/repo", task, name: "fix-thing" },
+			{
+				herdr: run,
+				writeFile: async (path, contents) => {
+					written.push({ path, contents });
+				},
+				...noSleep,
+			},
+		);
+		expect(written).toEqual([{ path: `/wt/agent-fix-thing/${BRIEF_FILENAME}`, contents: task }]);
+		expect(result.briefPath).toBe(`/wt/agent-fix-thing/${BRIEF_FILENAME}`);
+		expect(calls.find((call) => call[1] === "start")?.slice(-2)).toEqual(["--", BRIEF_POINTER]);
+	});
+
+	it("writes a brief file and starts with a pointer for overlong single-line tasks", async () => {
+		const written: string[] = [];
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": () => ({ agent: { name: "fix-thing" } }),
+			"agent wait": () => ({}),
+		});
+		const task = "x".repeat(INLINE_TASK_MAX_LENGTH + 1);
+		const result = await dispatchHerdrTask(
+			{ repoPath: "/repo", task, name: "fix-thing" },
+			{
+				herdr: run,
+				writeFile: async (path) => {
+					written.push(path);
+				},
+				...noSleep,
+			},
+		);
+		expect(written).toEqual([`/wt/agent-fix-thing/${BRIEF_FILENAME}`]);
+		expect(result.briefPath).toBe(`/wt/agent-fix-thing/${BRIEF_FILENAME}`);
+		expect(calls.find((call) => call[1] === "start")?.slice(-2)).toEqual(["--", BRIEF_POINTER]);
+	});
+
+	it("falls back to a brief file when the CLI rejects argv encoding", async () => {
+		const written: string[] = [];
+		let starts = 0;
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": () => {
+				starts += 1;
+				if (starts === 1) {
+					throw new Error(
+						"herdr agent start: invalid_agent_argument: agent arguments cannot be encoded safely for the target shell",
+					);
+				}
+				return { agent: { name: "fix-thing" } };
+			},
+			"agent wait": () => ({}),
+		});
+		const result = await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "quote: ' single-line but unsafe", name: "fix-thing" },
+			{
+				herdr: run,
+				writeFile: async (path) => {
+					written.push(path);
+				},
+				...noSleep,
+			},
+		);
+		expect(starts).toBe(2);
+		expect(written).toEqual([`/wt/agent-fix-thing/${BRIEF_FILENAME}`]);
+		expect(result.briefPath).toBe(`/wt/agent-fix-thing/${BRIEF_FILENAME}`);
+		const startCalls = calls.filter((call) => call[1] === "start");
+		expect(startCalls[1].slice(-2)).toEqual(["--", BRIEF_POINTER]);
+	});
+
+	it("re-throws invalid_agent_argument when a brief file was already used", async () => {
+		const { run } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": () => {
+				throw new Error(
+					"herdr agent start: invalid_agent_argument: agent arguments cannot be encoded safely for the target shell",
+				);
+			},
+		});
+		await expect(
+			dispatchHerdrTask(
+				{ repoPath: "/repo", task: "one\ntwo", name: "fix-thing" },
+				{ herdr: run, writeFile: async () => {}, ...noSleep },
+			),
+		).rejects.toThrow(/invalid_agent_argument/);
+	});
+
+	it("prompts the pointer, not the brief, when an argv-launched brief task stays idle", async () => {
+		const { run, calls } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": (args) => {
+				if (args[2] === "pane-1") throw new Error("agent_not_found");
+				return { agent: { agent_status: "idle" } };
+			},
+			"agent start": () => ({ agent: { name: "fix-thing" } }),
+			"agent wait": () => {
+				throw new Error("wait_timeout");
+			},
+			"agent prompt": () => ({}),
+		});
+		await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "line one\nline two", name: "fix-thing" },
+			{ herdr: run, writeFile: async () => {}, ...noSleep },
+		);
+		expect(calls.filter((call) => call[1] === "prompt")).toEqual([
+			["agent", "prompt", "fix-thing", BRIEF_POINTER, "--wait", "--until", "working"],
+		]);
+	});
+
+	it("does not write a brief file for short single-line tasks", async () => {
+		let written = 0;
+		const { run } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": () => ({ agent: { name: "fix-thing" } }),
+			"agent wait": () => ({}),
+		});
+		const result = await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "Fix the thing", name: "fix-thing" },
+			{
+				herdr: run,
+				writeFile: async () => {
+					written += 1;
+				},
+				...noSleep,
+			},
+		);
+		expect(written).toBe(0);
+		expect(result.briefPath).toBeUndefined();
+	});
+
 	it("launches with the task and does not prompt when pi starts working", async () => {
 		const { run, calls } = fakeHerdr({
 			"worktree create": () => createdWorktree,

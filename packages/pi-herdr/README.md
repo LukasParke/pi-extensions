@@ -48,6 +48,17 @@ Dispatch is fire-and-forget and resilient:
   startup prompt-swallow race. Dispatch waits up to 30 seconds for `working`
   and falls back to a verified prompt only if the agent remains idle. Adopted
   agents are already running, so they always use the verified prompt path.
+- Tasks that cannot be encoded as argv — multi-line prompts, or prompts over
+  2000 characters — are written to `.pi-herdr-brief.md` in the worktree and
+  the agent is started with a short pointer prompt referencing that file
+  (the brief-on-disk pattern). If herdr still rejects an argv that looked
+  safe (`invalid_agent_argument`), dispatch retries once with a brief file.
+
+Status degrades instead of failing on transient conditions: if `herdr agent
+read` rejects a busy agent (`agent_not_idle`), the tool returns the lifecycle
+state with a `transcript: unavailable (agent busy)` note rather than an
+error, and a status-poll timeout (`timed out waiting for agent status`)
+returns `state: unknown` with the underlying message.
 
 ## Lifecycle
 
@@ -74,7 +85,9 @@ lists every problem to resolve. `force` bypasses those safety checks for
 deliberately abandoned work. Cleanup asks Herdr to remove the worktree and its
 workspace together. If the workspace or agent is already gone, it resolves the
 base repo with `git rev-parse --path-format=absolute --git-common-dir`, removes the orphaned checkout
-with `git worktree remove`, and prunes stale worktree metadata. The pushed
+with `git worktree remove`, and prunes stale worktree metadata. A checkout that
+is already deleted — or vanishes between the check and the removal — is treated
+as a successful cleanup with a note instead of an error. The pushed
 branch remains on the remote.
 
 ## Slash commands

@@ -59,6 +59,10 @@ herdr_task { task: "<complete self-contained prompt>", repo: "pi-extensions", na
 - Newly started agents receive the task in pi's launch argv. Dispatch waits up
   to 30 seconds for `working`, then uses the verified prompt path only if the
   agent remains idle. Adopted agents always use the verified prompt path.
+- Multi-line tasks or tasks over 2000 characters cannot travel in argv: they
+  are written to `.pi-herdr-brief.md` in the worktree and the agent starts
+  with a short pointer prompt. If herdr rejects argv encoding anyway
+  (`invalid_agent_argument`), dispatch retries once with a brief file.
 
 ## Monitor
 
@@ -75,6 +79,12 @@ to the surviving orphan worktree when one exists; verify its branch/PR, then
 clean it up. If no worktree is found under the configured roots, status says
 so without claiming cleanup. If multiple worktrees match, resolve the ambiguity
 before cleanup.
+
+A busy agent rejects terminal reads (`agent_not_idle`); status then returns the
+lifecycle state with a `transcript: unavailable (agent busy)` note — a normal
+result, not an error. Retry the read once the agent settles. A status-poll
+timeout returns `state: unknown` with the underlying message instead of
+failing.
 
 If Sentinel tools are available, register `sentinel_watch` against
 `herdr agent get <name>` reaching `idle` or `done`. Go idle and let Sentinel
@@ -99,8 +109,9 @@ not present on a remote. Resolve those problems and retry.
 Use `force: true` only to discard deliberately abandoned work. Cleanup removes
 the Herdr worktree and workspace together. If the workspace or agent is already
 gone, it finds the orphan by agent name and falls back to Git removal and
-pruning from the base repo. If neither agent nor orphan exists, there is nothing
-to clean up. The pushed branch remains on the remote.
+pruning from the base repo. A checkout that is already deleted is a successful
+cleanup with a note, not an error. If neither agent nor orphan exists, there is
+nothing to clean up. The pushed branch remains on the remote.
 
 Lifecycle: **dispatch → monitor/wake → verify the gate → cleanup**.
 
