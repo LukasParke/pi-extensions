@@ -284,9 +284,9 @@ export default function (pi: ExtensionAPI) {
 
 			const searchPath = normalizePath(params.path);
 			if (searchPath) {
-				const stat = await fs.stat(searchPath).catch(() => null);
+				const resolved = path.isAbsolute(searchPath) ? searchPath : path.resolve(ctx.cwd, searchPath);
+				const stat = await fs.stat(resolved).catch(() => null);
 				if (!stat?.isDirectory()) {
-					const resolved = path.isAbsolute(searchPath) ? searchPath : path.resolve(ctx.cwd, searchPath);
 					throw new Error(
 						`Search path '${searchPath}' (resolved to '${resolved}', cwd '${ctx.cwd}') is not a directory. Check that the path exists and is relative to the current working directory.`,
 					);
@@ -426,9 +426,6 @@ export default function (pi: ExtensionAPI) {
 				throw new Error(`rg failed: ${result.stderr.trim() || `exit code ${result.code}`}`);
 			}
 			if (result.code > 1) notes.push("some paths were unreadable; results may be incomplete");
-			if (result.code === 1 && result.stderr.trim() && !result.stdout.trim()) {
-				throw new Error(`rg failed: ${result.stderr.trim()}`);
-			}
 			if (!result.stdout.trim()) {
 				return { content: [{ type: "text" as const, text: "No matches found" }], details: { matches: 0 } };
 			}

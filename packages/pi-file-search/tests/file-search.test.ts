@@ -136,4 +136,13 @@ describe.skipIf(!hasFd)("fd resilience", () => {
 		fs.writeFileSync(path.join(dir, "f.txt"), "");
 		await expect(fd({ pattern: "x", path: "f.txt" })).rejects.toThrow(/is not a directory/);
 	});
+
+	it("accepts a relative path that is valid under ctx.cwd but not process.cwd()", async () => {
+		// Guards against stat() resolving relative paths against process.cwd():
+		// `sub` exists only under the tmpdir ctx.cwd, not under vitest's cwd.
+		fs.mkdirSync(path.join(dir, "sub"));
+		fs.writeFileSync(path.join(dir, "sub", "target.txt"), "");
+		const result = await fd({ pattern: "target", path: "sub" });
+		expect(result.content[0]!.text).toContain("target.txt");
+	});
 });
