@@ -21,6 +21,24 @@ export type ProtocolUpdate =
   /** The child rejected the prompt; no agent events will follow. */
   | { type: "fatal"; error: string };
 
+/**
+ * Last meaningful stderr lines, ANSI-stripped, for embedding in a failure
+ * message. A child that dies before speaking the protocol (e.g. a failed
+ * resume: "No session found matching '…'") only explains itself on stderr;
+ * without this the parent sees a bare "exited with code 1".
+ */
+export function stderrExcerpt(stderr: string, max = 300): string {
+  const lines = stderr
+    .replace(/\x1b\[[0-9;]*m/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-3);
+  const text = lines.join(" | ");
+  if (!text) return "";
+  return `: ${text.length > max ? `${text.slice(0, max - 1)}…` : text}`;
+}
+
 /** Strict-enough, line-buffered parser for Pi's documented JSON event stream. */
 export class ProtocolParser {
   private buffer = "";
@@ -295,7 +313,7 @@ export class ProtocolParser {
       errorMessage:
         this.errorMessage ||
         (signal ? `Subagent terminated unexpectedly by ${signal}` : undefined) ||
-        (exitCode !== 0 ? `Subagent exited with code ${exitCode}` : undefined) ||
+        (exitCode !== 0 ? `Subagent exited with code ${exitCode}${stderrExcerpt(stderr)}` : undefined) ||
         (state === "partial" && !completeProtocol
           ? "Protocol stream truncated; partial output preserved"
           : undefined),

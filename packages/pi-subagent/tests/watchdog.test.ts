@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { ChildRunner, type WatchdogEvent } from "../src/runner.js";
 import { Semaphore } from "../src/semaphore.js";
 // @ts-expect-error test helper is plain ESM without types
@@ -143,6 +145,9 @@ describe("ChildRunner doom-loop watchdog", () => {
     expect(paused.state).toBe("paused");
     expect(paused.sessionId).toBe("test-session-123");
 
+    // A paused child persists its session file; mirror that so resume resolves.
+    fs.mkdirSync("/tmp/test-sessions-pi-subagent", { recursive: true });
+    fs.writeFileSync(path.join("/tmp/test-sessions-pi-subagent", "test-session-123.jsonl"), '{"type":"session"}\n');
     // Resume the preserved session: the child must be invoked with --session.
     process.env.FAKE_PI_MODE = "require-session-arg";
     const resumed = await makeRunner({ wakeupsWithoutProgress: 3, repeatedActionRuns: 100 }).run({

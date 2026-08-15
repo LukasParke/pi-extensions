@@ -215,7 +215,7 @@ Defaults can be overridden in `~/.pi/subagent.json` and per-field via env vars
 | `maxActiveProcesses`    | `PI_SUBAGENT_MAX_ACTIVE`              | 4                                     |
 | `maxQueuedTasks`        | `PI_SUBAGENT_MAX_QUEUED`              | 32                                    |
 | `maxGlobalActive`       | `PI_SUBAGENT_MAX_GLOBAL_ACTIVE`       | 16                                    |
-| `defaultTimeoutMs`      | `PI_SUBAGENT_TIMEOUT_MS`              | 900000                                |
+| `defaultTimeoutMs`      | `PI_SUBAGENT_TIMEOUT_MS`              | 1800000 (30 min; implementation missions regularly exceed 15 min) |
 | `maxDepth`              | `PI_SUBAGENT_MAX_DEPTH`               | 2                                     |
 | `killGraceMs`           | `PI_SUBAGENT_KILL_GRACE_MS`           | 3000                                  |
 | `sessionDir`            | `PI_SUBAGENT_SESSION_DIR`             | `~/.pi/subagent-sessions`             |
@@ -386,7 +386,10 @@ Notes on behavior:
   a logged last resort.
 - Direct resume is exclusive **across processes** via durable locks under
   `lockDir`. Lost runs block resume until startup orphan reconciliation kills
-  (or confirms dead) the recorded child process group.
+  (or confirms dead) the recorded child process group. Bare session ids are
+  resolved to their file under `sessionDir` before launch (pi's own id lookup
+  is cwd-filtered and can prompt interactively, which is fatal in rpc mode);
+  an id with no matching file fails fast with an actionable error.
 - `maxGlobalActive` bounds concurrent children across every Pi parent process
   on the machine (in addition to the per-session semaphore).
 - Nested children at the depth ceiling do not re-register the subagent tool;

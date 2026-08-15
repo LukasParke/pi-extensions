@@ -13,7 +13,27 @@ import * as path from "node:path";
 import type { BackendAdapter, BackendCapabilities, BackendInvocation, BackendLaunchContext, BackendParser } from "../backend.js";
 import { ProtocolParser } from "../protocol.js";
 import { schemaContract } from "../structured.js";
+import { resolveSessionFilePath } from "../transcript.js";
 import type { TaskSpec } from "../types.js";
+
+/**
+ * Resolve a bare session id to its file inside our own session dir so pi gets
+ * a PATH. Handing pi a bare id makes it do a cwd-filtered lookup; on mismatch
+ * (e.g. resuming a worktree child from the parent cwd) it falls back to a
+ * global search with an interactive stdin prompt — fatal in rpc mode. Seen in
+ * production as instant exit-1 failures resuming timed-out children.
+ */
+function resolveResumeTarget(sessionRef: string, sessionDir: string): string {
+  if (sessionRef.includes("/") || sessionRef.includes("\\") || sessionRef.endsWith(".jsonl")) return sessionRef;
+  const resolved = resolveSessionFilePath(sessionDir, sessionRef);
+  if (!resolved) {
+    throw new Error(
+      `Cannot resume child session '${sessionRef}': no session file found under ${sessionDir}. ` +
+        `Confirm the id from /subagents (or action:'status'), or run fresh without resume.`,
+    );
+  }
+  return resolved;
+}
 
 const PI_CAPABILITIES: BackendCapabilities = {
   steer: true,
@@ -34,8 +54,8 @@ export class PiBackend implements BackendAdapter {
     // RPC mode keeps a live stdin command channel so steering messages can be
     // injected mid-run. The event stream on stdout is a superset of json mode.
     const args = ["--mode", "rpc", "--session-dir", context.sessionDir];
-    if (spec.forkResume && spec.resume) args.push("--fork", spec.resume);
-    else if (spec.resume) args.push("--session", spec.resume);
+    if (spec.forkResume && spec.resume) args.push("--fork", resolveResumeTarget(spec.resume, context.sessionDir));
+    else if (spec.resume) args.push("--session", resolveResumeTarget(spec.resume, context.sessionDir));
     else if (spec.contextFork) {
       // Context fork: the child starts from a real branched copy of the
       // parent conversation, then receives the task as its next prompt.

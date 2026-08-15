@@ -348,3 +348,48 @@ describe('computeTps', () => {
     expect(format.computeTps({ output: 600, samples, startedAt: now - 60_000, endedAt: now - 30_000, now, live: false })).toBeCloseTo(20);
   });
 });
+
+describe('composeRunFailureMessage', () => {
+  it('leads with the per-task failure reason, not the delivered pointer', () => {
+    const message = format.composeRunFailureMessage(
+      {
+        state: 'failed',
+        summary: '[task-1] failed\nOutput written to /tmp/x.md',
+        results: [{ label: 'task-1', state: 'failed', errorMessage: 'Subagent exited with code 1' }],
+      },
+      'Output written to /tmp/x.md',
+    );
+    expect(message).toContain('Subagent run failed.');
+    expect(message).toContain('[task-1] failed: Subagent exited with code 1');
+    expect(message).toContain('Output written to /tmp/x.md');
+    expect(message.indexOf('exited with code 1')).toBeLessThan(message.indexOf('Output written to /tmp/x.md'));
+  });
+
+  it('names the reason when output is empty', () => {
+    const message = format.composeRunFailureMessage(
+      { state: 'failed', results: [{ label: 'worker', state: 'failed', errorMessage: 'model exploded' }] },
+      '(no output)',
+    );
+    expect(message).toContain('[worker] failed: model exploded');
+    expect(message).not.toContain('(no output)');
+  });
+
+  it('falls back to the run summary when no task carries an errorMessage', () => {
+    const message = format.composeRunFailureMessage(
+      { state: 'lost', summary: '[task-1] lost\npartial answer', results: [{ label: 'task-1', state: 'lost' }] },
+      'partial answer',
+    );
+    expect(message).toContain('Subagent run lost.');
+    expect(message).toContain('[task-1] lost partial answer');
+  });
+
+  it('does not repeat the delivered text when it is the summary', () => {
+    const summary = '[task-1] failed\nOutput written to /tmp/x.md';
+    const message = format.composeRunFailureMessage({ state: 'failed', summary, results: [] }, summary);
+    expect(message.match(/Output written to \/tmp\/x\.md/g)).toHaveLength(1);
+  });
+
+  it('still names the state when nothing else is known', () => {
+    expect(format.composeRunFailureMessage({ state: 'failed' }, '(no output)')).toBe('Subagent run failed.');
+  });
+});

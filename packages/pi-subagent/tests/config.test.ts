@@ -148,3 +148,9 @@ describe("config", () => {
     expect(fileAndEnv.notifications).toBe("off"); // file, no env override
   });
 });
+
+describe("default timeout", () => {
+  it("defaults runs to 30 minutes", () => {
+    expect(defaultConfig.defaultTimeoutMs).toBe(30 * 60_000);
+  });
+});

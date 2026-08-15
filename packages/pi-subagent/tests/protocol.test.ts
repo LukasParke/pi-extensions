@@ -171,3 +171,24 @@ describe("ProtocolParser", () => {
     expect(result.state).toBe("completed");
   });
 });
+
+describe("stderr in failure messages", () => {
+  it("appends the stderr tail to nonzero-exit errors so failed resumes are diagnosable", () => {
+    const parser = new ProtocolParser();
+    const result = parser.finalize(1, undefined, "\x1b[31mNo session found matching 'abc123'\x1b[39m\n");
+    expect(result.state).toBe("failed");
+    expect(result.errorMessage).toBe("Subagent exited with code 1: No session found matching 'abc123'");
+  });
+
+  it("keeps the bare exit-code message when stderr is empty", () => {
+    const parser = new ProtocolParser();
+    expect(parser.finalize(1).errorMessage).toBe("Subagent exited with code 1");
+  });
+
+  it("truncates long stderr output", () => {
+    const parser = new ProtocolParser();
+    const result = parser.finalize(1, undefined, `noise\n${"x".repeat(500)}`);
+    expect(result.errorMessage!.length).toBeLessThan(400);
+    expect(result.errorMessage).toContain("Subagent exited with code 1: ");
+  });
+});

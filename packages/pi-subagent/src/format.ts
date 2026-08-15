@@ -23,6 +23,36 @@ export function oneLine(text: string, max = 120): string {
   return collapsed.length > max ? `${collapsed.slice(0, Math.max(0, max - 1))}…` : collapsed;
 }
 
+export interface FailureMessageSource {
+  state?: string;
+  summary?: string;
+  results?: ReadonlyArray<{ label?: string; state?: string; errorMessage?: string }>;
+}
+
+/**
+ * Thrown error text for a failed/lost run delivery. The delivered payload
+ * alone can be a useless pointer ("Output written to /tmp/x.md" for
+ * output_mode:'file-only', "(no output)" for empty output), so the reason
+ * leads: per-task failure summaries, with the payload trailing as context.
+ */
+export function composeRunFailureMessage(run: FailureMessageSource, deliveredText?: string): string {
+  const state = run.state ?? "failed";
+  const reasoned = (run.results ?? []).filter((result) => result.errorMessage?.trim());
+  const lines = [`Subagent run ${state}.`];
+  if (reasoned.length) {
+    for (const result of reasoned) {
+      lines.push(`- [${result.label ?? "task"}] ${result.state ?? "failed"}: ${oneLine(result.errorMessage!.trim(), 300)}`);
+    }
+  } else if (run.summary?.trim()) {
+    lines.push(oneLine(run.summary.trim(), 300));
+  }
+  const delivered = deliveredText?.trim();
+  if (delivered && delivered !== "(no output)" && delivered !== run.summary?.trim()) {
+    lines.push("", "Delivered output:", delivered);
+  }
+  return lines.join("\n");
+}
+
 export function formatDuration(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
   if (seconds < 60) return `${seconds}s`;

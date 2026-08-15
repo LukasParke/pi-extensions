@@ -104,7 +104,7 @@ export const defaultConfig: SubagentConfig = {
   maxTasksPerRun: 8,
   maxActiveProcesses: 4,
   maxQueuedTasks: 32,
-  defaultTimeoutMs: 15 * 60_000,
+  defaultTimeoutMs: 30 * 60_000,
   maxResultBytes: 50 * 1024,
   maxResultLines: 2_000,
   maxDetailsTextBytes: 10 * 1024,
