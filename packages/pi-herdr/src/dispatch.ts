@@ -7,8 +7,10 @@
  * prompt-swallow guard — is unit-testable without the herdr CLI.
  */
 
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { herdr as realHerdr } from "./cli.ts";
 import { type NameGenerator, resolveHerdrTaskName } from "./names.ts";
 
@@ -16,6 +18,9 @@ import { type NameGenerator, resolveHerdrTaskName } from "./names.ts";
 export type HerdrRunner = (args: string[]) => Promise<any>;
 
 export type WriteTextFile = (path: string, contents: string) => Promise<void>;
+
+/** Excludes a file in a worktree from git's index (per-worktree, never committable). */
+export type ExcludePath = (worktreePath: string, basename: string) => Promise<void>;
 
 export interface DispatchOptions {
 	herdr?: HerdrRunner;
@@ -27,9 +32,31 @@ export interface DispatchOptions {
 	generateName?: NameGenerator;
 	/** Injectable brief writer for tests. */
 	writeFile?: WriteTextFile;
+	/** Injectable exclude writer for tests. */
+	excludePath?: ExcludePath;
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+const exec = promisify(execFile);
+
+/**
+ * Append a filename to the worktree's `.git/info/exclude`. The exclude file
+ * lives in the git dir, never in the checkout, so the brief can never be
+ * committed into a PR and cleanup's dirty check never sees it. In a linked
+ * worktree `git rev-parse --absolute-git-dir` resolves to the worktree's own
+ * dir under `<base>/.git/worktrees/<name>`, which is where its info/exclude
+ * must go.
+ */
+const realExcludePath: ExcludePath = async (worktreePath, basename) => {
+	const { stdout } = await exec("git", ["rev-parse", "--absolute-git-dir"], {
+		cwd: worktreePath,
+		timeout: 30_000,
+	});
+	const exclude = join(stdout.trim(), "info", "exclude");
+	await mkdir(dirname(exclude), { recursive: true });
+	await appendFile(exclude, `${basename}\n`, "utf8");
+};
 
 const PR_URL = /github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/;
 
@@ -216,9 +243,14 @@ export async function promptWithVerify(
  */
 export const BRIEF_FILENAME = ".pi-herdr-brief.md";
 
-export const BRIEF_POINTER = `Read the file ${BRIEF_FILENAME} in the current directory and execute it as your complete, self-contained task.`;
+export const BRIEF_POINTER = `Read the file ${BRIEF_FILENAME} in the current directory and execute it as your complete, self-contained task. ${BRIEF_FILENAME} is dispatch metadata: do not commit it or include it in the PR.`;
 
-/** Conservative threshold below herdr's shell-encoding ceiling. */
+/**
+ * Conservative threshold for argv-passed tasks. Herdr's actual shell-encoding
+ * ceiling is not a published constant, so this only needs to be conservative:
+ * if a task below the limit still trips the encoding check, the
+ * invalid_agent_argument retry in dispatchHerdrTask switches to a brief file.
+ */
 export const INLINE_TASK_MAX_LENGTH = 2000;
 
 export function needsBriefFile(task: string): boolean {
@@ -233,7 +265,10 @@ export function isPromptEncodingError(message: string): boolean {
 async function writeBrief(worktreePath: string, task: string, options: DispatchOptions): Promise<string> {
 	const path = join(worktreePath, BRIEF_FILENAME);
 	const writer: WriteTextFile = options.writeFile ?? ((p, contents) => writeFile(p, contents, "utf8"));
+	// A same-name redispatch overwrites the previous brief intentionally: the
+	// brief is per-dispatch state for the agent, not history.
 	await writer(path, task);
+	await (options.excludePath ?? realExcludePath)(worktreePath, BRIEF_FILENAME);
 	return path;
 }
 

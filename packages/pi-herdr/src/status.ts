@@ -27,6 +27,10 @@ export async function getHerdrTaskStatus(
 		return { status: info.agent.agent_status, cwd: info.agent.cwd };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
+		// Empirically this message only ever comes from `agent wait`, never
+		// from `agent get`, so the wait=true path in extensions/herdr.ts
+		// handles it. Keep the match anyway: if a future herdr moves the
+		// timeout onto `agent get`, status should degrade, not fail.
 		if (message.includes("timed out waiting for agent status")) {
 			return { status: "unknown", note: message };
 		}

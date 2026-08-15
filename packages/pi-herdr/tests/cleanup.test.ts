@@ -172,8 +172,29 @@ describe("cleanupHerdrTask", () => {
 		expect(git).not.toHaveBeenCalled();
 	});
 
-	it("succeeds with a note when the worktree path is already gone", async () => {
+	it("removes the surviving workspace when the worktree path is already gone", async () => {
 		const { herdr, git, calls } = setup();
+		await expect(
+			cleanupHerdrTask(
+				{ agent: "fix", worktreeRoots: [worktreeRoot] },
+				{ herdr, git, existsPath: () => false },
+			),
+		).resolves.toEqual({
+			cleaned: true,
+			removal: "herdr",
+			note: `worktree path ${cwd} was already deleted; removed the surviving workspace`,
+			workspaceId: "ws-1",
+			worktreePath: cwd,
+		});
+		expect(git).not.toHaveBeenCalled();
+		expect(calls).toEqual([
+			["agent", "get", "fix"],
+			["worktree", "remove", "--workspace", "ws-1"],
+		]);
+	});
+
+	it("reports gone only when the workspace itself is confirmed gone", async () => {
+		const { herdr, git, calls } = setup({ removeFailsMissingWorkspace: true });
 		await expect(
 			cleanupHerdrTask(
 				{ agent: "fix", worktreeRoots: [worktreeRoot] },
@@ -187,7 +208,41 @@ describe("cleanupHerdrTask", () => {
 			worktreePath: cwd,
 		});
 		expect(git).not.toHaveBeenCalled();
-		expect(calls).toEqual([["agent", "get", "fix"]]);
+		expect(calls).toEqual([
+			["agent", "get", "fix"],
+			["worktree", "remove", "--workspace", "ws-1"],
+		]);
+	});
+
+	it.each(["working", "blocked"])(
+		"refuses to remove a surviving workspace while the agent is %s",
+		async (status) => {
+			const { herdr, git, calls } = setup({ status });
+			await expect(
+				cleanupHerdrTask(
+					{ agent: "fix", worktreeRoots: [worktreeRoot] },
+					{ herdr, git, existsPath: () => false },
+				),
+			).resolves.toMatchObject({
+				cleaned: false,
+				problems: [`agent is still ${status}`],
+			});
+			expect(calls).toEqual([["agent", "get", "fix"]]);
+		},
+	);
+
+	it("force removes a surviving workspace for a gone checkout", async () => {
+		const { herdr, git, calls } = setup({ status: "working" });
+		await expect(
+			cleanupHerdrTask(
+				{ agent: "fix", force: true, worktreeRoots: [worktreeRoot] },
+				{ herdr, git, existsPath: () => false },
+			),
+		).resolves.toMatchObject({ cleaned: true, removal: "herdr" });
+		expect(calls).toEqual([
+			["agent", "get", "fix"],
+			["worktree", "remove", "--workspace", "ws-1", "--force"],
+		]);
 	});
 
 	it("treats a vanished orphan checkout as already cleaned", async () => {

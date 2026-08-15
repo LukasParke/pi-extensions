@@ -92,10 +92,39 @@ export async function cleanupHerdrTask(
 		);
 	}
 
-	// The checkout was already deleted (commonly alongside its workspace):
-	// cleanup is complete, and the safety checks cannot run against a
-	// missing path. The pushed branch survives on the remote.
+	// The checkout was already deleted, but its herdr workspace may still be
+	// alive (a zombie pane/agent). Try to remove it before reporting done;
+	// only skip workspace removal when the workspace itself is confirmed
+	// gone. The safety checks cannot run against a missing path, and the
+	// pushed branch survives on the remote.
 	if (!existsPath(cwd)) {
+		// The state check still applies: a live workspace with a working or
+		// blocked agent must not be torn down without force.
+		if (!input.force && (status === "working" || status === "blocked")) {
+			return {
+				cleaned: false,
+				problems: [`agent is still ${status}`],
+				workspaceId: workspaceId ?? null,
+				worktreePath: cwd,
+			};
+		}
+		if (workspaceId) {
+			const removeArgs = ["worktree", "remove", "--workspace", workspaceId];
+			if (input.force) removeArgs.push("--force");
+			try {
+				await herdr(removeArgs);
+				return {
+					cleaned: true,
+					removal: "herdr",
+					note: `worktree path ${cwd} was already deleted; removed the surviving workspace`,
+					workspaceId,
+					worktreePath: cwd,
+				};
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				if (!message.includes("workspace_not_found")) throw error;
+			}
+		}
 		return {
 			cleaned: true,
 			removal: "gone",

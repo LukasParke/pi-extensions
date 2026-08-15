@@ -82,9 +82,10 @@ before cleanup.
 
 A busy agent rejects terminal reads (`agent_not_idle`); status then returns the
 lifecycle state with a `transcript: unavailable (agent busy)` note — a normal
-result, not an error. Retry the read once the agent settles. A status-poll
-timeout returns `state: unknown` with the underlying message instead of
-failing.
+result, not an error. Retry the read once the agent settles. A `wait=true`
+timeout falls through and reports the agent's current state instead of
+failing; if status polling itself times out, status returns `state: unknown`
+with the underlying message and skips the transcript read.
 
 If Sentinel tools are available, register `sentinel_watch` against
 `herdr agent get <name>` reaching `idle` or `done`. Go idle and let Sentinel

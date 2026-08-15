@@ -392,6 +392,7 @@ describe("dispatchHerdrTask", () => {
 			{ repoPath: "/repo", task, name: "fix-thing" },
 			{
 				herdr: run,
+				excludePath: async () => {},
 				writeFile: async (path, contents) => {
 					written.push({ path, contents });
 				},
@@ -401,6 +402,30 @@ describe("dispatchHerdrTask", () => {
 		expect(written).toEqual([{ path: `/wt/agent-fix-thing/${BRIEF_FILENAME}`, contents: task }]);
 		expect(result.briefPath).toBe(`/wt/agent-fix-thing/${BRIEF_FILENAME}`);
 		expect(calls.find((call) => call[1] === "start")?.slice(-2)).toEqual(["--", BRIEF_POINTER]);
+	});
+
+	it("excludes the brief via the worktree's git info/exclude at write time", async () => {
+		const excluded: { worktreePath: string; basename: string }[] = [];
+		const { run } = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"agent get": () => {
+				throw new Error("agent_not_found");
+			},
+			"agent start": () => ({ agent: { name: "fix-thing" } }),
+			"agent wait": () => ({}),
+		});
+		await dispatchHerdrTask(
+			{ repoPath: "/repo", task: "line one\nline two", name: "fix-thing" },
+			{
+				herdr: run,
+				writeFile: async () => {},
+				excludePath: async (worktreePath, basename) => {
+					excluded.push({ worktreePath, basename });
+				},
+				...noSleep,
+			},
+		);
+		expect(excluded).toEqual([{ worktreePath: "/wt/agent-fix-thing", basename: BRIEF_FILENAME }]);
 	});
 
 	it("writes a brief file and starts with a pointer for overlong single-line tasks", async () => {
@@ -418,6 +443,7 @@ describe("dispatchHerdrTask", () => {
 			{ repoPath: "/repo", task, name: "fix-thing" },
 			{
 				herdr: run,
+				excludePath: async () => {},
 				writeFile: async (path) => {
 					written.push(path);
 				},
@@ -452,6 +478,7 @@ describe("dispatchHerdrTask", () => {
 			{ repoPath: "/repo", task: "quote: ' single-line but unsafe", name: "fix-thing" },
 			{
 				herdr: run,
+				excludePath: async () => {},
 				writeFile: async (path) => {
 					written.push(path);
 				},
@@ -480,7 +507,7 @@ describe("dispatchHerdrTask", () => {
 		await expect(
 			dispatchHerdrTask(
 				{ repoPath: "/repo", task: "one\ntwo", name: "fix-thing" },
-				{ herdr: run, writeFile: async () => {}, ...noSleep },
+				{ herdr: run, excludePath: async () => {}, writeFile: async () => {}, ...noSleep },
 			),
 		).rejects.toThrow(/invalid_agent_argument/);
 	});
@@ -500,7 +527,7 @@ describe("dispatchHerdrTask", () => {
 		});
 		await dispatchHerdrTask(
 			{ repoPath: "/repo", task: "line one\nline two", name: "fix-thing" },
-			{ herdr: run, writeFile: async () => {}, ...noSleep },
+			{ herdr: run, excludePath: async () => {}, writeFile: async () => {}, ...noSleep },
 		);
 		expect(calls.filter((call) => call[1] === "prompt")).toEqual([
 			["agent", "prompt", "fix-thing", BRIEF_POINTER, "--wait", "--until", "working"],
@@ -521,6 +548,7 @@ describe("dispatchHerdrTask", () => {
 			{ repoPath: "/repo", task: "Fix the thing", name: "fix-thing" },
 			{
 				herdr: run,
+				excludePath: async () => {},
 				writeFile: async () => {
 					written += 1;
 				},

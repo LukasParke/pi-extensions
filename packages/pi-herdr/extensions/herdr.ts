@@ -112,7 +112,11 @@ export default function (pi: ExtensionAPI) {
 					await herdr(args);
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
-					if (!message.includes("agent_not_found")) throw error;
+					// `agent wait` is the only command that emits the wait timeout,
+					// and a timeout just means the agent didn't settle in time:
+					// fall through and report its current status via `agent get`.
+					if (!message.includes("agent_not_found") && !message.includes("timed out waiting for agent status"))
+						throw error;
 				}
 			}
 			const status = await getHerdrTaskStatus({ agent: params.agent, worktreeRoots: config.worktreeRoots });
@@ -125,17 +129,23 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text" as const, text }], details: status };
 			}
 			let output: string;
-			try {
-				output = await herdrText(
-					["agent", "read", params.agent, "--lines", String(params.lines ?? 60), "--format", "text"],
-					signal as AbortSignal | undefined,
-				);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				// A busy agent rejects terminal reads; that is a normal status, not an error.
-				if (!message.includes("agent_not_idle")) throw error;
-				output =
-					"transcript: unavailable (agent busy) — its lifecycle state is authoritative; retry the read when it settles";
+			if (status.status === "unknown") {
+				// The lifecycle state itself is unconfirmed; a terminal read
+				// cannot succeed. Skip it rather than let `agent read` throw.
+				output = "transcript: unavailable (status unknown) — retry once the agent responds";
+			} else {
+				try {
+					output = await herdrText(
+						["agent", "read", params.agent, "--lines", String(params.lines ?? 60), "--format", "text"],
+						signal as AbortSignal | undefined,
+					);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					// A busy agent rejects terminal reads; that is a normal status, not an error.
+					if (!message.includes("agent_not_idle")) throw error;
+					output =
+						"transcript: unavailable (agent busy) — its lifecycle state is authoritative; retry the read when it settles";
+				}
 			}
 			return {
 				content: [
