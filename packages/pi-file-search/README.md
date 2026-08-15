@@ -92,6 +92,29 @@ Search file contents. Respects `.gitignore`, skips binaries, returns
 Large result sets are truncated for the model and the full output is written to
 a temp file whose path is included in the response.
 
+## Error resilience
+
+Behaviors added after auditing live tool errors:
+
+- **`fd`: glob-looking patterns.** A pattern starting with `*` or `?` is never a
+  valid regex, so it is automatically treated as a glob (with a trailing note in
+  the output).
+- **`fd`: dotfile patterns.** A pattern starting with a literal dot (`.env`,
+  `\.github`) can only match hidden entries, so if the first pass finds nothing
+  the tool retries once with hidden files included and notes it.
+- **`fd`: bad search paths.** A non-directory `path` fails fast with the
+  resolved absolute path and the current working directory in the message.
+- **`rg`: newline patterns.** A pattern containing a literal newline (or a `\n`
+  escape) automatically enables `--multiline`, since ripgrep rejects such
+  patterns otherwise.
+- **`rg`: partial IO errors.** ripgrep exits 2 when some paths were unreadable
+  (e.g. broken `@scope` symlinks under bun/pnpm `node_modules`) even when it
+  printed real matches. Matches are returned as a success with a trailing
+  `some paths were unreadable` note (and `details.partial = true`); exit 2 with
+  no matches still fails with the real stderr. `--no-messages` was considered
+  and rejected: it suppresses the exit-2 diagnostics but not the exit code, and
+  would hide genuine per-path error details.
+
 ## License
 
 MIT

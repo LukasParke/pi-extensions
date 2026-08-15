@@ -1,4 +1,18 @@
 /**
+ * Resilience notes (from 113 live tool errors over 14 days):
+ * - rg exits 2 for per-path IO errors (e.g. broken `@scope` symlinks under
+ *   bun/pnpm node_modules) even when real matches were printed to stdout.
+ *   `--no-messages` does not fix the exit code (verified), so exit 2 with
+ *   stdout is returned as a success with a trailing note, and exit 2 with no
+ *   stdout stays an error so genuine failures keep their real message.
+ * - rg rejects a literal "\n" (and the `\n` escape) without --multiline; the
+ *   tool adds it automatically when the pattern contains one.
+ * - fd patterns are regexes; a pattern starting with `*` or `?` is a glob
+ *   retry-as-glob case (auto-converted with a note), and a pattern starting
+ *   with a literal dot targets dotfiles (auto-enables hidden with a note).
+ */
+
+/**
  * `fd` and `rg` as first-class tools.
  *
  * Faster and far more predictable than asking the model to compose shell
@@ -168,6 +182,22 @@ function normalizePath(value: string | undefined): string | undefined {
 	return out || undefined;
 }
 
+/** True when a (non-glob) fd pattern is actually a glob: leading `*`/`?` is never a valid regex. */
+export function looksLikeGlobPattern(pattern: string): boolean {
+	return /^[*?]/.test(pattern);
+}
+
+/** True when an fd pattern starts with a literal dot, i.e. it can only match hidden entries. */
+export function targetsDotfiles(pattern: string): boolean {
+	// Raw `.env` / `.github` (glob or regex), or a regex-escaped `\.env`.
+	return /^\.{1}\w/.test(pattern) || /^\\\.\w/.test(pattern);
+}
+
+/** True when an rg pattern contains a literal newline or a `\n` escape, both of which need --multiline. */
+export function needsMultiline(pattern: string): boolean {
+	return pattern.includes("\n") || /(^|[^\\])\\n/.test(pattern);
+}
+
 const clamp = (value: number | undefined, min: number, max: number, fallback: number): number =>
 	value === undefined ? fallback : Math.min(max, Math.max(min, Math.trunc(value)));
 
@@ -209,7 +239,7 @@ export default function (pi: ExtensionAPI) {
 		name: "fd",
 		label: "Find Files",
 		description:
-			"Find files and directories by name using fd. Respects .gitignore and skips hidden files by default. Much faster and more predictable than `find` via bash. The pattern is a regex unless glob:true.",
+			"Find files and directories by name using fd. Respects .gitignore and skips hidden files by default. Much faster and more predictable than `find` via bash. The pattern is a regex unless glob:true (a pattern starting with `*` or `?` is automatically treated as a glob, and a pattern starting with a literal dot automatically includes hidden files).",
 		parameters: Type.Object(
 			{
 				pattern: Type.Optional(
@@ -242,29 +272,78 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params: any, signal, _onUpdate, ctx: ExtensionContext) {
 			const tool = await resolveTool("fd");
 			if (!tool) throw new Error(missingMessage("fd"));
-			const args = ["--color=never"];
-			if (params.hidden) args.push("--hidden", "--no-ignore");
-			if (params.glob) args.push("--glob");
-			if (params.type)
-				args.push("--type", params.type === "file" ? "f" : params.type === "directory" ? "d" : "l");
-			if (params.extension) args.push("--extension", String(params.extension).replace(/^\.+/, ""));
-			args.push("--max-depth", String(clamp(params.max_depth, 1, FD_MAX_DEPTH, FD_MAX_DEPTH)));
-			args.push("--max-results", String(clamp(params.limit, 1, FD_MAX_LIMIT, FD_DEFAULT_LIMIT)));
-			// Everything after `--` is data: a pattern of "-rf" cannot become a flag.
-			args.push("--", params.pattern ?? "");
-			const searchPath = normalizePath(params.path);
-			if (searchPath) args.push(searchPath);
+			const notes: string[] = [];
 
-			const result = await run(tool.command, args, { cwd: ctx.cwd, signal });
+			// A non-glob pattern starting with `*` or `?` is never a valid regex
+			// ("repetition operator missing expression"); it is always meant as a glob.
+			let glob = Boolean(params.glob);
+			if (!glob && typeof params.pattern === "string" && looksLikeGlobPattern(params.pattern)) {
+				glob = true;
+				notes.push("pattern treated as a glob (leading `*`/`?` is not valid regex syntax)");
+			}
+
+			const searchPath = normalizePath(params.path);
+			if (searchPath) {
+				const stat = await fs.stat(searchPath).catch(() => null);
+				if (!stat?.isDirectory()) {
+					const resolved = path.isAbsolute(searchPath) ? searchPath : path.resolve(ctx.cwd, searchPath);
+					throw new Error(
+						`Search path '${searchPath}' (resolved to '${resolved}', cwd '${ctx.cwd}') is not a directory. Check that the path exists and is relative to the current working directory.`,
+					);
+				}
+			}
+
+			const buildArgs = (hidden: boolean): string[] => {
+				const args = ["--color=never"];
+				if (hidden) args.push("--hidden", "--no-ignore");
+				if (glob) args.push("--glob");
+				if (params.type)
+					args.push("--type", params.type === "file" ? "f" : params.type === "directory" ? "d" : "l");
+				if (params.extension) args.push("--extension", String(params.extension).replace(/^\.+/, ""));
+				args.push("--max-depth", String(clamp(params.max_depth, 1, FD_MAX_DEPTH, FD_MAX_DEPTH)));
+				args.push("--max-results", String(clamp(params.limit, 1, FD_MAX_LIMIT, FD_DEFAULT_LIMIT)));
+				// Everything after `--` is data: a pattern of "-rf" cannot become a flag.
+				args.push("--", params.pattern ?? "");
+				if (searchPath) args.push(searchPath);
+				return args;
+			};
+
+			let result = await run(tool.command, buildArgs(Boolean(params.hidden)), { cwd: ctx.cwd, signal });
+			// A pattern starting with a literal dot can only match hidden entries;
+			// retry once with hidden files included instead of returning nothing.
+			if (
+				!params.hidden &&
+				typeof params.pattern === "string" &&
+				targetsDotfiles(params.pattern) &&
+				!result.stdout.trim()
+			) {
+				const retried = await run(tool.command, buildArgs(true), { cwd: ctx.cwd, signal });
+				if (retried.stdout.trim()) {
+					result = retried;
+					notes.push("included hidden files (pattern targets dotfiles); pass hidden:true to skip this note");
+				}
+			}
 			if (result.code !== 0 && !result.stdout.trim()) {
 				throw new Error(`fd failed: ${result.stderr.trim() || `exit code ${result.code}`}`);
 			}
 			if (!result.stdout.trim()) {
-				return { content: [{ type: "text" as const, text: "No files found" }], details: { matches: 0 } };
+				const hint =
+					typeof params.pattern === "string" && targetsDotfiles(params.pattern) && params.hidden
+						? " (pattern targets dotfiles; hidden files were included)"
+						: "";
+				return {
+					content: [{ type: "text" as const, text: `No files found${hint}` }],
+					details: { matches: 0 },
+				};
 			}
 			const shown = await present(result.stdout, "fd");
 			return {
-				content: [{ type: "text" as const, text: shown.text }],
+				content: [
+					{
+						type: "text" as const,
+						text: shown.text + (notes.length ? `\n\n[note: ${notes.join("; ")}]` : ""),
+					},
+				],
 				details: { matches: shown.totalLines, truncated: shown.truncated, file: shown.file ?? null },
 			};
 		},
@@ -274,7 +353,7 @@ export default function (pi: ExtensionAPI) {
 		name: "rg",
 		label: "Search Content",
 		description:
-			"Search file contents with ripgrep. Respects .gitignore, skips binaries, and returns file:line:match. Much faster than grep via bash. Pattern is a regex unless fixed_strings:true.",
+			"Search file contents with ripgrep. Respects .gitignore, skips binaries, and returns file:line:match. Much faster than grep via bash. Pattern is a regex unless fixed_strings:true. Patterns containing a literal newline automatically enable multiline mode. If some paths are unreadable (e.g. broken symlinks), matches are still returned with a note.",
 		parameters: Type.Object(
 			{
 				pattern: Type.String({ description: "Regex to search for." }),
@@ -313,6 +392,13 @@ export default function (pi: ExtensionAPI) {
 			const tool = await resolveTool("rg");
 			if (!tool) throw new Error(missingMessage("rg"));
 			const args = ["--line-number", "--color=never", "--no-heading", "--with-filename"];
+			const notes: string[] = [];
+			// A literal newline (or a `\n` escape) is rejected unless multiline is
+			// enabled; enable it automatically since the intent is unambiguous.
+			if (needsMultiline(params.pattern)) {
+				args.push("--multiline");
+				notes.push("enabled multiline mode (pattern contains a newline)");
+			}
 			if (params.case_sensitive === true) args.push("--case-sensitive");
 			else if (params.case_sensitive === false) args.push("--ignore-case");
 			else args.push("--smart-case");
@@ -332,16 +418,34 @@ export default function (pi: ExtensionAPI) {
 			if (result.code === 1 && !result.stdout.trim()) {
 				return { content: [{ type: "text" as const, text: "No matches found" }], details: { matches: 0 } };
 			}
-			if (result.code > 1 || (result.code === 1 && result.stderr.trim())) {
+			// Exit 2 still prints real matches to stdout when only some paths were
+			// unreadable (e.g. broken symlinks under node_modules); --no-messages
+			// suppresses those messages but NOT the exit code, and it would also
+			// hide genuine per-path error details. So: matches win, with a note.
+			if (result.code > 1 && !result.stdout.trim()) {
 				throw new Error(`rg failed: ${result.stderr.trim() || `exit code ${result.code}`}`);
+			}
+			if (result.code > 1) notes.push("some paths were unreadable; results may be incomplete");
+			if (result.code === 1 && result.stderr.trim() && !result.stdout.trim()) {
+				throw new Error(`rg failed: ${result.stderr.trim()}`);
 			}
 			if (!result.stdout.trim()) {
 				return { content: [{ type: "text" as const, text: "No matches found" }], details: { matches: 0 } };
 			}
 			const shown = await present(result.stdout, "rg");
 			return {
-				content: [{ type: "text" as const, text: shown.text }],
-				details: { matches: shown.totalLines, truncated: shown.truncated, file: shown.file ?? null },
+				content: [
+					{
+						type: "text" as const,
+						text: shown.text + (notes.length ? `\n\n[note: ${notes.join("; ")}]` : ""),
+					},
+				],
+				details: {
+					matches: shown.totalLines,
+					truncated: shown.truncated,
+					file: shown.file ?? null,
+					partial: result.code > 1,
+				},
 			};
 		},
 	});
