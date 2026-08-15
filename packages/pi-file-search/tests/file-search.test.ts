@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -38,6 +39,10 @@ afterEach(() => {
 	fs.rmSync(dir, { recursive: true, force: true });
 });
 
+const hasBinary = (name: string) => spawnSync(name, ["--version"], { stdio: "ignore" }).status === 0;
+const hasRg = hasBinary("rg");
+const hasFd = hasBinary("fd");
+
 const ctx = () => ({ cwd: dir });
 const rg = (params: Record<string, unknown>) => tools.rg!.execute("t", params, undefined, undefined, ctx());
 const fd = (params: Record<string, unknown>) => tools.fd!.execute("t", params, undefined, undefined, ctx());
@@ -65,7 +70,7 @@ describe("pattern classifiers", () => {
 	});
 });
 
-describe("rg resilience", () => {
+describe.skipIf(!hasRg)("rg resilience", () => {
 	it("returns matches when rg exits 2 with unreadable paths, with a note", async () => {
 		fs.writeFileSync(path.join(dir, "real.txt"), "hello world\n");
 		// The real-world trigger: broken `@scope` symlinks under bun/pnpm node_modules.
@@ -104,7 +109,7 @@ describe("rg resilience", () => {
 	});
 });
 
-describe("fd resilience", () => {
+describe.skipIf(!hasFd)("fd resilience", () => {
 	it("treats a leading-* regex as a glob, with a note", async () => {
 		fs.writeFileSync(path.join(dir, "a.test.ts"), "");
 		fs.writeFileSync(path.join(dir, "a.ts"), "");

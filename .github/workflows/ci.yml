@@ -9,6 +9,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
+      - name: Install search binaries for pi-file-search tests
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ripgrep fd-find
+          sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
       - run: npm ci
       - run: npm run check
       - run: npm run pack:check
