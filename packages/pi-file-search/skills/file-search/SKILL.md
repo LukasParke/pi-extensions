@@ -16,7 +16,10 @@ fd { pattern?, path?, type?, extension?, glob?, hidden?, max_depth?, limit? }
 ```
 
 - `pattern` is a **regex by default**. Pass `glob: true` to treat it as a glob
-  instead. Omit `pattern` to list everything under `path` (or the session cwd).
+  instead. A pattern starting with `*` or `?` is auto-treated as a glob, and a
+  pattern starting with a literal dot (`.env`) auto-includes hidden files (both
+  with a note). Omit `pattern` to list everything under `path` (or the session
+  cwd).
 - `type`: `"file"` | `"directory"` | `"symlink"`.
 - `extension`: e.g. `"ts"` (leading dot optional).
 - `max_depth`: 1–64 (default 64). `limit`: 1–10000 (default 1000).
@@ -32,6 +35,10 @@ rg { pattern, path?, glob?, file_type?, case_sensitive?, fixed_strings?, hidden?
 - `case_sensitive`: `true` / `false`; omit for smart-case.
 - `context`: 0–20 lines around each match. `limit`: max matches **per file**
   (1–1000, default 100). Output is `file:line:match`.
+- Newlines in `pattern` automatically enable multiline mode. If some paths are
+  unreadable (broken symlinks, permissions), matches are still returned with a
+  `some paths were unreadable` note — treat those results as possibly
+  incomplete.
 
 ## Defaults that hide things
 
