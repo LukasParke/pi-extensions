@@ -217,6 +217,51 @@ describe("SentinelManager", () => {
 		expect(manager.snapshot().gate?.complete).toBe(true);
 	});
 
+	describe("idempotent creation", () => {
+		it("returns the existing watch on a same-spec re-create", () => {
+			const manager = new SentinelManager();
+			const first = manager.watch({ name: "ci", command: "check", cwd: "/tmp", intervalMs: 5_000 });
+			const second = manager.watch({
+				name: "ci",
+				command: "check",
+				cwd: "/tmp",
+				intervalMs: 5_000,
+			});
+			expect(first.created).toBe(true);
+			expect(second.created).toBe(false);
+			expect(second.sentinel).toEqual(first.sentinel);
+			expect(manager.snapshot().items).toHaveLength(1);
+		});
+
+		it("returns the existing PR sentinel on a same-spec re-attach", () => {
+			const manager = new SentinelManager();
+			const probe = async () => ({}) as never;
+			const options = { name: "pr-7", repo: "o/r", number: 7, probe };
+			expect(manager.attachPr(options).created).toBe(true);
+			expect(manager.attachPr(options).created).toBe(false);
+			expect(manager.snapshot().items).toHaveLength(1);
+		});
+
+		it("fails on a different spec, showing both, and suggests replace: true", () => {
+			const manager = new SentinelManager();
+			manager.watch({ name: "ci", command: "check", cwd: "/tmp" });
+			expect(() => manager.watch({ name: "ci", command: "check --fix", cwd: "/tmp" })).toThrow(
+				/different spec.*Existing:.*check.*Requested:.*check --fix.*replace: true/s,
+			);
+			expect(manager.snapshot().items[0]?.command).toBe("check");
+		});
+
+		it("replaces a same-name watch with a different spec when replace is true", () => {
+			const manager = new SentinelManager();
+			manager.watch({ name: "ci", command: "check", cwd: "/tmp" });
+			const replaced = manager.watch({ name: "ci", command: "check --fix", cwd: "/tmp", replace: true });
+			expect(replaced.created).toBe(true);
+			expect(replaced.sentinel.command).toBe("check --fix");
+			expect(manager.snapshot().items).toHaveLength(1);
+			expect(manager.watch({ name: "ci", command: "check --fix", cwd: "/tmp" }).created).toBe(false);
+		});
+	});
+
 	it("cancels named and all sentinels", async () => {
 		vi.useFakeTimers();
 		const manager = new SentinelManager(async () => ({ exitCode: 1, stdout: "", stderr: "" }));
