@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { isDeepStrictEqual } from "node:util";
 import { combinedOutput, evaluatePredicate, hashOutput, truncateOutput, updateGateState } from "./index.ts";
 import type { GateState, Predicate, ProbeResult } from "./index.ts";
 import {
@@ -31,6 +32,8 @@ export interface WatchOptions {
 	wakeOnChange?: boolean;
 	urgency?: EventUrgency;
 	note?: string;
+	/** Replace an existing sentinel with the same name but a different spec. */
+	replace?: boolean;
 }
 
 export interface PrOptions {
@@ -42,6 +45,7 @@ export interface PrOptions {
 	intervalMs?: number;
 	timeoutMs?: number;
 	note?: string;
+	replace?: boolean;
 }
 
 export interface CriterionOptions {
@@ -57,6 +61,12 @@ export interface GateOptions {
 	quietForMs?: number;
 	intervalMs?: number;
 	urgency?: EventUrgency;
+}
+
+export interface SentinelRegistration {
+	sentinel: SentinelSnapshot;
+	/** false when an identical sentinel already existed and was returned as-is. */
+	created: boolean;
 }
 
 export interface SentinelSnapshot {
@@ -110,6 +120,7 @@ export type StreamRunner = (
 ) => StreamHandle;
 
 interface Entry extends SentinelSnapshot {
+	spec?: Record<string, unknown>;
 	cwd?: string;
 	intervalMs?: number;
 	doneWhen?: Predicate;
@@ -271,13 +282,26 @@ export class SentinelManager {
 		if (this.gate && !this.gate.state.complete) this.scheduleGate(0);
 	}
 
-	watch(options: WatchOptions) {
+	watch(options: WatchOptions): SentinelRegistration {
 		const name = options.name.trim();
 		if (!name) throw new Error("name must not be empty");
 		if (name === "gate") throw new Error('"gate" is reserved for the session gate');
-		if (this.entries.has(name)) throw new Error(`Sentinel ${name} already exists`);
 		if (!options.command.trim()) throw new Error("command must not be empty");
 		const mode = options.mode ?? "poll";
+		const spec = {
+			kind: "watch",
+			command: options.command,
+			cwd: options.cwd,
+			mode,
+			intervalMs: options.intervalMs ?? DEFAULT_INTERVAL_MS,
+			doneWhen: options.doneWhen ?? null,
+			timeoutMs: options.timeoutMs ?? null,
+			wakeOnChange: options.wakeOnChange ?? false,
+			urgency: options.urgency ?? "wake",
+			note: options.note ?? null,
+		};
+		const existing = this.reuseOrReplace(name, spec, options.replace);
+		if (existing) return { sentinel: this.snapshotEntry(existing), created: false };
 		if (mode === "stream" && this.streamCount() >= MAX_STREAM_WATCHES) {
 			throw new Error(
 				`Max ${MAX_STREAM_WATCHES} stream watches can run at once. Cancel one before starting another.`,
@@ -290,6 +314,7 @@ export class SentinelManager {
 			mode,
 			command: options.command,
 			note: options.note,
+			spec,
 			state: "waiting",
 			createdAt: now,
 			cwd: options.cwd,
@@ -302,14 +327,23 @@ export class SentinelManager {
 		this.entries.set(name, entry);
 		this.scheduleEntry(entry, 0);
 		this.changed();
-		return this.snapshotEntry(entry);
+		return { sentinel: this.snapshotEntry(entry), created: true };
 	}
 
-	attachPr(options: PrOptions) {
+	attachPr(options: PrOptions): SentinelRegistration {
 		const name = options.name.trim();
 		if (!name) throw new Error("name must not be empty");
 		if (name === "gate") throw new Error('"gate" is reserved for the session gate');
-		if (this.entries.has(name)) throw new Error(`Sentinel ${name} already exists`);
+		const spec = {
+			kind: "pr",
+			repo: options.repo,
+			number: options.number,
+			intervalMs: options.intervalMs ?? DEFAULT_INTERVAL_MS,
+			timeoutMs: options.timeoutMs ?? null,
+			note: options.note ?? null,
+		};
+		const existing = this.reuseOrReplace(name, spec, options.replace);
+		if (existing) return { sentinel: this.snapshotEntry(existing), created: false };
 		const now = this.now();
 		const initial = options.initialSnapshot;
 		const entry: Entry = {
@@ -324,11 +358,12 @@ export class SentinelManager {
 			prProbe: options.probe,
 			prSnapshot: initial,
 			lastOutput: initial ? formatPrSnapshot(initial) : undefined,
+			spec,
 		};
 		this.entries.set(name, entry);
 		this.scheduleEntry(entry, initial ? entry.intervalMs! : 0);
 		this.changed();
-		return this.snapshotEntry(entry);
+		return { sentinel: this.snapshotEntry(entry), created: true };
 	}
 
 	sleep(name: string, wakeAt: number, note?: string) {
@@ -409,6 +444,26 @@ export class SentinelManager {
 		for (const entry of this.entries.values()) this.stopEntry(entry);
 		this.clearGate();
 		this.entries.clear();
+	}
+
+	/**
+	 * Returns the existing entry when a same-name sentinel has an equivalent spec
+	 * (idempotent re-registration). Throws when the spec differs and replace is
+	 * false; otherwise removes the existing entry so the caller can re-create it.
+	 */
+	private reuseOrReplace(name: string, spec: Record<string, unknown>, replace = false) {
+		const existing = this.entries.get(name);
+		if (!existing) return undefined;
+		if (isDeepStrictEqual(existing.spec, spec)) return existing;
+		if (!replace) {
+			throw new Error(
+				`Sentinel ${name} already exists with a different spec. ` +
+					`Existing: ${JSON.stringify(existing.spec)} Requested: ${JSON.stringify(spec)} ` +
+					"Re-create with replace: true to swap it.",
+			);
+		}
+		this.removeEntry(name, true);
+		return undefined;
 	}
 
 	private changed() {

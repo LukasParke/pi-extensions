@@ -77,6 +77,13 @@ GitHub user's own new comments/reviews to avoid feedback loops.
 Use a separate gate only when session completion requires sustained green checks or resolved reviews.
 Set `quiet_for_s: 600` when both CI and reviews must remain settled for ten minutes.
 
+## Re-registration is idempotent
+
+Re-registering a watch or PR sentinel with the same name and an equivalent spec succeeds and
+returns the existing sentinel — it is safe to re-establish a watch you may already hold. A
+same-name request with a different spec fails and shows both specs; pass `replace: true` to swap
+it. The concurrent stream-watch limit still errors.
+
 ## Predicates
 
 Commands pass on exit code `0` by default. Optional `done_when` / `pass_when` predicates are:

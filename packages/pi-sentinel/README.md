@@ -37,6 +37,15 @@ Sentinel therefore optimizes for fewer, better-timed turns:
 - blocking commands can run once in stream mode, eliminating poll latency;
 - replacing or cancelling a sentinel drops stale undelivered notifications.
 
+## Re-registration is idempotent
+
+Registering a `sentinel_watch` or `sentinel_pr` when a same-name sentinel with an
+**equivalent spec** (name, command, interval, predicate, timeouts, etc.) already
+exists succeeds and returns the existing sentinel instead of failing. Only a
+**different** spec errors, showing both the existing and requested specs; pass
+`replace: true` to swap it in that case. The concurrent stream-watch limit is
+unchanged and still errors.
+
 ## Pull requests
 
 Attach a PR once, then let the session idle:
@@ -47,7 +56,7 @@ Attach a PR once, then let the session idle:
 
 Parameters: `number` (required), `repo?` (defaults to the current checkout's
 GitHub `origin`), `name?` (default `pr-<n>`), `interval_s?` (minimum 10,
-default 60), `timeout_s?`, `note?`.
+default 60), `timeout_s?`, `note?`, `replace?`.
 
 Attachment validates access and
 establishes a baseline without waking the model. Later merge conflicts, CI failures, review comments,
@@ -66,7 +75,7 @@ agent's own PR activity cannot feedback-loop. See the
 
 Parameters: `name`, `command`, `mode?` (`poll` \| `stream`), `interval_s?`
 (default 60), `done_when?`, `timeout_s?`, `wake_on_change?`, `urgency?`,
-`note?`.
+`note?`, `replace?`.
 
 A command passes by default when it exits `0`. `done_when` can instead use one
 predicate:

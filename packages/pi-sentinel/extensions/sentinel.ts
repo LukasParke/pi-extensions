@@ -166,7 +166,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 		name: "sentinel_watch",
 		label: "Watch Sentinel",
 		description:
-			"Watch a shell command until it completes or times out. Poll mode runs it on an interval while idle. Stream mode spawns it once and reacts immediately when it exits. next-turn urgency queues information without triggering a model turn.",
+			"Watch a shell command until it completes or times out. Poll mode runs it on an interval while idle. Stream mode spawns it once and reacts immediately when it exits. next-turn urgency queues information without triggering a model turn. Re-registering a same-name, same-spec watch succeeds and returns the existing watch.",
 		parameters: Type.Object(
 			{
 				name: Type.String({ description: "Unique watch name." }),
@@ -180,11 +180,17 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 				wake_on_change: Type.Optional(Type.Boolean()),
 				urgency: Type.Optional(urgencySchema),
 				note: Type.Optional(Type.String()),
+				replace: Type.Optional(
+					Type.Boolean({
+						description:
+							"If a same-name watch exists with a different spec, replace it instead of failing. Same-spec re-registration always succeeds and returns the existing watch.",
+					}),
+				),
 			},
 			{ additionalProperties: false },
 		),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			const watch = manager.watch({
+			const { sentinel, created } = manager.watch({
 				name: params.name,
 				command: params.command,
 				cwd: ctx.cwd,
@@ -195,18 +201,16 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 				wakeOnChange: params.wake_on_change,
 				urgency: params.urgency,
 				note: params.note,
+				replace: params.replace,
 			});
+			const description = created
+				? sentinel.mode === "stream"
+					? `Streaming "${sentinel.name}". The command was spawned once and will wake on exit.`
+					: `Watching "${sentinel.name}". First poll runs when the agent is idle.`
+				: `"${sentinel.name}" was already registered with the same spec; existing ${sentinel.mode ?? "poll"} watch (${sentinel.state}) returned.`;
 			return {
-				content: [
-					{
-						type: "text" as const,
-						text:
-							watch.mode === "stream"
-								? `Streaming "${watch.name}". The command was spawned once and will wake on exit.`
-								: `Watching "${watch.name}". First poll runs when the agent is idle.`,
-					},
-				],
-				details: watch,
+				content: [{ type: "text" as const, text: description }],
+				details: sentinel,
 			};
 		},
 	});
@@ -215,7 +219,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 		name: "sentinel_pr",
 		label: "Attach PR Sentinel",
 		description:
-			"Attach a GitHub pull request to this session. Authenticated polling wakes the agent for merge conflicts, broken CI, review feedback, and closure or merge. Supports private and internal repositories through GitHub credentials.",
+			"Attach a GitHub pull request to this session. Authenticated polling wakes the agent for merge conflicts, broken CI, review feedback, and closure or merge. Supports private and internal repositories through GitHub credentials. Re-attaching the same PR with the same spec succeeds and returns the existing sentinel.",
 		parameters: Type.Object(
 			{
 				number: Type.Integer({ minimum: 1, description: "Pull request number." }),
@@ -230,6 +234,12 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 				),
 				timeout_s: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
 				note: Type.Optional(Type.String()),
+				replace: Type.Optional(
+					Type.Boolean({
+						description:
+							"If a same-name sentinel exists with a different spec, replace it instead of failing. Same-spec re-attach always succeeds and returns the existing sentinel.",
+					}),
+				),
 			},
 			{ additionalProperties: false },
 		),
@@ -245,7 +255,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 			const name = params.name ?? `pr-${params.number}`;
 			const probe = createGitHubPrProbe({ token: credential.token, repo, number: params.number });
 			const initialSnapshot = await probe();
-			const attached = manager.attachPr({
+			const { sentinel, created } = manager.attachPr({
 				name,
 				repo: repo.slug,
 				number: params.number,
@@ -254,15 +264,14 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 				intervalMs: params.interval_s === undefined ? undefined : params.interval_s * 1000,
 				timeoutMs: params.timeout_s === undefined ? undefined : params.timeout_s * 1000,
 				note: params.note,
+				replace: params.replace,
 			});
+			const attachedText = created
+				? `Attached ${repo.slug}#${params.number} as "${name}" using ${credential.detail}. Current state: ${formatPrSnapshot(initialSnapshot)}.${prNeedsAction(initialSnapshot) ? " Action is already required." : " Actionable updates wake the agent."}`
+				: `"${name}" was already registered with the same spec for ${repo.slug}#${params.number}; existing sentinel (state: ${sentinel.state}) returned. ${formatPrSnapshot(initialSnapshot)}`;
 			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `Attached ${repo.slug}#${params.number} as "${name}" using ${credential.detail}. Current state: ${formatPrSnapshot(initialSnapshot)}.${prNeedsAction(initialSnapshot) ? " Action is already required." : " Actionable updates wake the agent."}`,
-					},
-				],
-				details: attached,
+				content: [{ type: "text" as const, text: attachedText }],
+				details: sentinel,
 			};
 		},
 	});
