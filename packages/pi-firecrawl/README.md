@@ -17,7 +17,7 @@ Four tools:
 Ships a [`firecrawl` skill](skills/firecrawl/SKILL.md) teaching the model when
 to map-then-scrape versus crawl, and how to bound jobs with `limit`.
 
-### Parameters
+## Parameters
 
 - `firecrawl_scrape` — `url` (required); `formats?` (`markdown` \| `html` \|
   `rawHtml` \| `links` \| `screenshot` \| `summary`, default `["markdown"]`);

@@ -26,7 +26,7 @@ can get behind a login:
 | `steel_read`     | read the page as text, links, or **forms with selectors** |
 | `steel_look`     | screenshot the current page                               |
 
-### Parameters
+## Parameters
 
 - `steel_scrape` — `url`; `format?` (`markdown` \| `readability` \|
   `cleaned_html` \| `html`, default `markdown`); `delay?` (ms, 0–30000);

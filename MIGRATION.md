@@ -21,8 +21,10 @@ updated to `pi-extensions`.
 
 Publish in dependency order; independent packages within a step may publish in any order:
 
-1. `pi-ext-config`
-2. `pi-integration-http`, `pi-integration-auth`, and `pi-subagent`
+1. `pi-ext-config` and `pi-dispatch`
+2. `pi-integration-http`, `pi-integration-auth`, `pi-subagent`, `pi-sentinel`, and
+   `pi-graphiti` (the latter three depend on `pi-dispatch`, which is not yet
+   published — it must go first)
 3. `pi-git`, `pi-github`, `pi-slack`, `pi-linear`, `pi-notion`, and `pi-workflows`
 4. `pi-integrations` and `pi-dashboard` (dashboard depends on `pi-ext-config` + `pi-git`)
 

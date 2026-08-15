@@ -19,7 +19,7 @@ No credential, daemon, or network access is required.
 Ships a [`git-tools` skill](skills/git-tools/SKILL.md) teaching the model when
 to reach for these instead of shelling out to `git`.
 
-### Parameters and behavior
+## Parameters and behavior
 
 - `git_status` — optional `path` (a directory inside the repo; defaults to the
   session cwd). Reports branch, upstream ahead/behind, detached HEAD,

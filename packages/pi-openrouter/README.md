@@ -14,10 +14,16 @@ registered at runtime.
 ## Install
 
 ```bash
-npm i -g @parke.dev/pi-openrouter   # or: bunx / npx @parke.dev/pi-openrouter
+npm i -g @parke.dev/pi-openrouter
 pi-openrouter sync
+
+# or run it transiently:
+bunx @parke.dev/pi-openrouter sync
+npx @parke.dev/pi-openrouter sync
 ```
 
+The CLI ships TypeScript with a `#!/usr/bin/env bun` shebang, so
+[Bun](https://bun.sh) must be installed even when invoked via `npm`/`npx`.
 This is a CLI package, not a Pi extension — do not `pi install` it.
 
 ```sh
