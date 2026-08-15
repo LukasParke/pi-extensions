@@ -268,6 +268,8 @@ describe("extension end-to-end wiring", () => {
     const h = harness();
     await h.handlers.get("session_start")!({}, h.ctx);
     process.env.FAKE_PI_DELAY_MS = "150";
+    // Resume ids resolve to session files under sessionDir before launch.
+    await fs.writeFile(path.join(testDirs.sessionDir, "child-existing.jsonl"), '{"type":"session"}\n');
     const first = await execute(h, { task: "continue", resume: "child-existing", profile: "explore", async: true });
     const firstId = runId(first.content[0].text);
     await expect(execute(h, { task: "also continue", resume: "child-existing", profile: "explore", async: true }))

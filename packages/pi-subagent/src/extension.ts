@@ -9,6 +9,7 @@ import { Value } from "typebox/value";
 import { defaultConfig, loadConfig, readConfigFile, type SubagentConfig } from "./config.js";
 import {
   commonModelId,
+  composeRunFailureMessage,
   computeTps,
   formatDuration,
   formatStatusPreview,
@@ -1153,7 +1154,7 @@ export default function registerSubagent(pi: ExtensionAPI): void {
         // failures and “lost with resume blocked” raise so the agent notices.
         // (Thrown deliveries cannot carry native usage; the extension ledger
         // still counts them from persisted entries.)
-        if (terminal.state === "failed" || terminal.state === "lost") fail(text);
+        if (terminal.state === "failed" || terminal.state === "lost") fail(composeRunFailureMessage(terminal, text));
         return deliveredResult(text, details(terminal.mode, delivered.cappedResults as any, terminal), terminal.results);
       }
 
@@ -1360,7 +1361,7 @@ export default function registerSubagent(pi: ExtensionAPI): void {
         ? finished.run
         : { state: result.state };
       // timeout is reportable content (with timeoutPhase for retry policy), not a hard throw.
-      if (result.state === "failed") fail(text);
+      if (result.state === "failed") fail(composeRunFailureMessage(result, text));
       const resultDetails = details(result.mode, delivered.cappedResults as any, meta);
       return firstDelivery
         ? deliveredResult(text, resultDetails, result.results)

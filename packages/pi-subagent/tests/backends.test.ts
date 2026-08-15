@@ -287,3 +287,51 @@ describe("per-backend transcript renderers", () => {
     expect(tailed.lines.join("\n")).toMatch(/assistant:/);
   });
 });
+
+describe("PiBackend resume invocation", () => {
+  function tempSessionDir(): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-resume-"));
+  }
+
+  it("resolves a bare session id to its file so pi never does a cwd-filtered lookup", async () => {
+    const sessionDir = tempSessionDir();
+    const file = path.join(sessionDir, "2026-01-01T00-00-00-000Z_abc123.jsonl");
+    fs.writeFileSync(file, '{"type":"session"}\n');
+    const invocation = await new PiBackend().buildInvocation(spec({ resume: "abc123" }), {
+      sessionDir,
+      getPiCommand: (args) => ({ command: "pi", args }),
+    });
+    const flagIndex = invocation.args.indexOf("--session");
+    expect(flagIndex).toBeGreaterThan(-1);
+    expect(invocation.args[flagIndex + 1]).toBe(file);
+  });
+
+  it("fails fast with an actionable error when the session file is gone", async () => {
+    const sessionDir = tempSessionDir();
+    await expect(
+      new PiBackend().buildInvocation(spec({ resume: "missing-id" }), {
+        sessionDir,
+        getPiCommand: (args) => ({ command: "pi", args }),
+      }),
+    ).rejects.toThrow(/Cannot resume child session 'missing-id'/);
+  });
+
+  it("passes explicit session file paths through untouched", async () => {
+    const invocation = await new PiBackend().buildInvocation(spec({ resume: "/var/sessions/x.jsonl" }), {
+      sessionDir: tempSessionDir(),
+      getPiCommand: (args) => ({ command: "pi", args }),
+    });
+    expect(invocation.args[invocation.args.indexOf("--session") + 1]).toBe("/var/sessions/x.jsonl");
+  });
+
+  it("resolves fork_resume targets the same way", async () => {
+    const sessionDir = tempSessionDir();
+    const file = path.join(sessionDir, "forkme.jsonl");
+    fs.writeFileSync(file, '{"type":"session"}\n');
+    const invocation = await new PiBackend().buildInvocation(spec({ resume: "forkme", forkResume: true }), {
+      sessionDir,
+      getPiCommand: (args) => ({ command: "pi", args }),
+    });
+    expect(invocation.args[invocation.args.indexOf("--fork") + 1]).toBe(file);
+  });
+});
