@@ -16,6 +16,9 @@ While the loop is active a widget shows the goal, the iteration count, and a
 pi install npm:@parke.dev/pi-gauntlet
 ```
 
+Ships a [`gauntlet` skill](skills/gauntlet/SKILL.md) teaching the model when
+to `start` versus `run`, and not to start a loop without checks.
+
 ## Usage
 
 Slash commands:
@@ -27,6 +30,7 @@ Slash commands:
 /gauntlet rm types
 
 /goal make the refactor land cleanly   # set goal, start the loop
+/goal                                  # same as status
 /goal status                           # goal, iteration, per-check state
 /goal stop                             # stop the loop
 ```
@@ -34,14 +38,14 @@ Slash commands:
 The same surface is available to the model through the `gauntlet` tool, so
 "keep going until the tests pass" works in prose:
 
-| Action         | Fields            | Effect                                                |
-| -------------- | ----------------- | ----------------------------------------------------- |
-| `add_check`    | `name`, `command` | Add or replace a named check                          |
-| `remove_check` | `name`            | Remove a check                                        |
-| `start`        | `goal`            | Set the goal and start the loop                       |
-| `stop`         | —                 | Stop the loop                                         |
-| `status`       | —                 | Goal, iteration, per-check state                      |
-| `run`          | —                 | Run all checks once, return results, without the loop |
+| Action         | Fields            | Effect                                                                        |
+| -------------- | ----------------- | ----------------------------------------------------------------------------- |
+| `add_check`    | `name`, `command` | Add or replace a named check                                                  |
+| `remove_check` | `name`            | Remove a check                                                                |
+| `start`        | `goal`            | Set the goal and start the loop (`goal` may be omitted if one is already set) |
+| `stop`         | —                 | Stop the loop                                                                 |
+| `status`       | —                 | Goal, iteration, per-check state                                              |
+| `run`          | —                 | Run all checks once, return results, without the loop                         |
 
 Checks run via `bash -lc` in the project cwd, sequentially, each with its own
 timeout. State (goal, checks, iteration, last results) is stored in session

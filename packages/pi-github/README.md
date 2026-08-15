@@ -3,14 +3,19 @@
 GitHub pull requests, reviews, checks and issues, as a Pi extension.
 
 ```sh
-pi install npm:@parke.dev/pi-github      # once published
+pi install npm:@parke.dev/pi-github
 ```
 
 Nothing else. If you have the GitHub CLI authenticated, there is no credential step either.
 
+Ships a [`github` skill](skills/github/SKILL.md) teaching the model the
+status-first workflow, the review flow, and the approval policy.
+
 ---
 
 ## What it does
+
+Nine tools:
 
 | Tool                                   | What it is for                                                                     |
 | -------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -23,7 +28,14 @@ Nothing else. If you have the GitHub CLI authenticated, there is no credential s
 | `github_status`                        | Whether it works, which credential, and what it will not do                        |
 | `github_connect` / `github_disconnect` | Store or remove a token, if you need one                                           |
 
-**No repository argument needed** inside a checkout — it reads your `origin` remote.
+**No repository argument needed** inside a checkout — it reads your `origin` remote. Every tool also
+accepts an optional `repo` as `owner/name`.
+
+`github_prs` takes `state?` (`open` \| `closed` \| `all`), `limit?` (default 20, max 50), and `search?`
+(free text or GitHub search qualifiers). A `search` call is a title/metadata search — results render as
+plain rows without the per-PR checks/review rollup the default list shows.
+
+Illustrative agent usage (the `github_prs` tool with `repo: "vitest-dev/vitest"` — there is no `github` CLI):
 
 ```
 > what's failing on the vitest repo?

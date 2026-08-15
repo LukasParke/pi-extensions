@@ -26,6 +26,24 @@ can get behind a login:
 | `steel_read`     | read the page as text, links, or **forms with selectors** |
 | `steel_look`     | screenshot the current page                               |
 
+## Parameters
+
+- `steel_scrape` — `url`; `format?` (`markdown` \| `readability` \|
+  `cleaned_html` \| `html`, default `markdown`); `delay?` (ms, 0–30000);
+  `includeLinks?`.
+- `steel_screenshot` — `url`; `fullPage?`; `delay?`.
+- `steel_pdf` — `url`; `output?` (file path); `delay?`.
+- `steel_search` — `query`; `limit?` (1–50, default 10).
+- `steel_session` — `action`: `start` \| `status` \| `end`.
+- `steel_navigate` — `url`; `waitMs?` (extra settle time).
+- `steel_act` — `action`: `click` \| `type` \| `press` \| `select` \| `scroll`
+  \| `wait`; `selector?`; `text?`; `clear?`; `waitMs?` (default 1000).
+- `steel_read` — `mode?` (`text` \| `links` \| `forms` \| `all`); `selector?`.
+- `steel_look` — `fullPage?`.
+
+Only one persistent session is live at a time. It starts automatically on the
+first navigate/act/read/look, and is released on Pi session shutdown.
+
 Ships with a [`steel-browser` skill](skills/steel-browser/SKILL.md) that teaches
 the model when to use which tier and, critically, to discover selectors with
 `steel_read { mode: "forms" }` before acting. A live persistent session also

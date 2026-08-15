@@ -3,15 +3,32 @@
 Notion pages and databases: read, search and append, as a Pi extension.
 
 ```sh
-pi install npm:@parke.dev/pi-notion      # once published
+pi install npm:@parke.dev/pi-notion
 ```
+
+Ships a [`notion` skill](skills/notion/SKILL.md) teaching the model when to
+use the search, page, and append tools and how auth works.
 
 ---
 
 ## What it does
 
+Six tools:
+
+| Tool                | Purpose                                                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notion_search`     | Search/list pages the integration can see, most recently edited first. Params: `query?`, `limit?` (default 25, cap 50). Reports truncation. |
+| `notion_page`       | One page as structured blocks; unsupported types are labeled, never dropped. Param: `page` (UUID, with or without dashes).                  |
+| `notion_append`     | Append plain-text paragraphs, one per non-empty line — **not** a markdown converter. Confirms first. Params: `page`, `text`, `yes?`.        |
+| `notion_status`     | Reachability, credential source, capabilities/refuses. No params.                                                                           |
+| `notion_connect`    | Store an internal integration token (interactive confirm only; **no `yes`**). Params: `key`, `label?`.                                      |
+| `notion_disconnect` | Remove the stored key; environment variables are untouched. No params.                                                                      |
+
 Run `notion_status` first — it reports what is reachable, which credential is in use, and what this package deliberately will
 not do.
+
+`/notion-login` is the masked interactive setup command: it validates the
+token against Notion's `me` endpoint and stores it under `notion.default`.
 
 ## Credentials
 
@@ -39,8 +56,11 @@ almost always this, not a bug.
 
 ## Blocks are reduced, and say when they are
 
-Notion has around thirty block types. This renders about eight and labels the rest `unsupported` rather than dropping them,
-because a page that silently omits blocks looks complete when it is not.
+Notion has around thirty block types. This renders a small set — `heading`
+(1–3), `paragraph`, `list` (bulleted/numbered), `quote`, `divider`, and
+`code` — and labels the rest `unsupported` with their Notion type rather than
+dropping them, because a page that silently omits blocks looks complete when
+it is not.
 
 ## Writes ask first
 
@@ -64,6 +84,13 @@ injected instruction away from an attacker's token being used for all your write
 
 Published in `describe().refuses`, and a test asserts each is genuinely absent from the source — so the list cannot become a
 lie. Run `notion_status` to see it.
+
+| Not available       | Why                                                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **delete_page**     | Deleting a page destroys its history and every backlink; that belongs to a human in Notion's own UI.                              |
+| **create_database** | A database is a shared schema other people's views and automations depend on.                                                     |
+| **modify_schema**   | Renaming a property or changing its type quietly breaks every filter, rollup and integration keyed on the old one.                |
+| **admin**           | Workspace membership, permissions and billing are not page content; this package holds a content token and does not broker admin. |
 
 ## Using it from your own code
 

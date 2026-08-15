@@ -10,6 +10,16 @@ into and the one delivery path that drains it.
 
 It is a library, not an extension — it registers no tools and no skills.
 
+## Install
+
+```bash
+npm install @parke.dev/pi-dispatch
+```
+
+Do not `pi install` this package — there is no extension entry. Other
+extensions depend on it; one extension in the process should call
+`ensureDelivery(pi)` to wire delivery.
+
 ## Semantics
 
 - **Accumulate while busy.** Published items queue while the agent is mid-turn
@@ -82,7 +92,12 @@ export interface DispatchQueue {
 
 export function dispatchQueue(): DispatchQueue; // per-process singleton
 export function ensureDelivery(pi: ExtensionAPI): void; // idempotent
+export function formatBatch(items: DispatchItem[]): string; // markdown batch body
 ```
+
+Publishing before `ensureDelivery` runs is safe: items queue but do not flush
+until delivery is wired and the session is idle. `session_shutdown` clears the
+queue, and a failed `sendMessage` leaves the batch queued for the next drain.
 
 ## License
 

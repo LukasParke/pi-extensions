@@ -25,9 +25,11 @@ message, so the agent does not need to poll. Calling `bg_status` or `bg_kill` on
 an already-finished terminal **consumes** that result and suppresses the
 automatic message, so the same outcome is never delivered twice.
 
-Output is retained in memory (bounded per stream); status and completion
-messages show a truncated tail of what matters. While terminals are running,
-Pi's extension-status API exposes a terse count and `/ps` hint to custom
+Output is retained in memory (bounded at 2 MiB per stream); status and
+completion messages show a truncated tail of what matters. Redirect to a file
+in the command when you need full logs. Settled-terminal history is capped at
+32 tracked terminals; the oldest settled entries are pruned. While terminals
+are running, Pi's extension-status API exposes a terse count and `/ps` hint to custom
 footers such as `@parke.dev/pi-dashboard`.
 
 Ships with a [`background-terminals` skill](skills/background-terminals/SKILL.md)

@@ -45,7 +45,11 @@ Attach a PR once, then let the session idle:
 { "number": 123, "repo": "owner/repo" }
 ```
 
-`repo` defaults to the current checkout's GitHub `origin`. Attachment validates access and
+Parameters: `number` (required), `repo?` (defaults to the current checkout's
+GitHub `origin`), `name?` (default `pr-<n>`), `interval_s?` (minimum 10,
+default 60), `timeout_s?`, `note?`.
+
+Attachment validates access and
 establishes a baseline without waking the model. Later merge conflicts, CI failures, review comments,
 changes requested, and newly unresolved review threads wake the agent with a focused
 message. Merge or closure wakes once and completes the attachment.
@@ -53,10 +57,16 @@ message. Merge or closure wakes once and completes the attachment.
 Sentinel uses the same GitHub credential resolution as `@parke.dev/pi-github`:
 `GITHUB_TOKEN`, `GH_TOKEN`, its stored credential, then `gh auth token`. Tokens with
 repository access support private and internal repositories. Polling uses one authenticated
-GraphQL request per interval and only runs while the agent is idle. See the
+GraphQL request per interval and only runs while the agent is idle. Comments and
+reviews authored by the authenticated GitHub user do not wake the agent, so the
+agent's own PR activity cannot feedback-loop. See the
 [native PR monitoring design](docs/pr-monitoring.md) for the state and wakeup contract.
 
 ## Watches
+
+Parameters: `name`, `command`, `mode?` (`poll` \| `stream`), `interval_s?`
+(default 60), `done_when?`, `timeout_s?`, `wake_on_change?`, `urgency?`,
+`note?`.
 
 A command passes by default when it exits `0`. `done_when` can instead use one
 predicate:
@@ -112,6 +122,9 @@ it. Re-sleep loops are safe: only the latest pending deadline for each name can
 wake the model.
 
 ## Completion gates
+
+Each criterion accepts an optional `pass_when` predicate (same shape as a
+watch's `done_when`) and an optional per-criterion `urgency`.
 
 A gate passes when every criterion passes and, if `quiet_for_s` is set, remains
 passing for that whole window. Criterion flips are normally queued for the next

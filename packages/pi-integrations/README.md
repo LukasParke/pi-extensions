@@ -18,6 +18,20 @@ pi install npm:@parke.dev/pi-linear
 pi install npm:@parke.dev/pi-notion
 ```
 
+## What's included
+
+| Package                |  Tools |
+| ---------------------- | -----: |
+| `@parke.dev/pi-git`    |      5 |
+| `@parke.dev/pi-github` |      9 |
+| `@parke.dev/pi-slack`  |      7 |
+| `@parke.dev/pi-linear` |      8 |
+| `@parke.dev/pi-notion` |      6 |
+| **Total**              | **35** |
+
+Each package's skill directory is also loaded (`git-tools`, `github`, `slack`,
+`linear`, `notion`).
+
 ## Authentication
 
 These bundled REST integrations use provider tokens. For the simplest browser

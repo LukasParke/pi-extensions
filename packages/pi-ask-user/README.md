@@ -23,6 +23,9 @@ Use it when committing to the wrong fork burns work, for example:
 
 Prefer proceeding on judgement when the stakes are low. One question per call.
 
+Ships an [`ask-user` skill](skills/ask-user/SKILL.md) teaching the model when
+to ask versus proceed on judgement.
+
 ## Parameters
 
 | Field                   | Type              | Notes                                                           |

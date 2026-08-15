@@ -3,8 +3,7 @@
 Optional TUI header/footer dashboard for the [Pi coding agent](https://pi.dev).
 
 **Default is off.** Installing the package does not replace stock UI and starts
-no pollers. Enable the dashboard and (optionally) pick the bundled theme as two
-independent opt-ins.
+no pollers — enabling the dashboard is an explicit opt-in.
 
 Inspired by [Ben Davis](https://github.com/davis7dotsh) /
 [my-pi-setup](https://github.com/davis7dotsh/my-pi-setup) — this is an
@@ -40,21 +39,6 @@ Resolves **defaults ← `~/.pi/dashboard.json` ← environment**.
 | `showPr`         | `PI_DASHBOARD_SHOW_PR` | `true`  | Look up an open PR via `gh` (cached, silent fail). |
 | `pollIntervalMs` | `PI_DASHBOARD_POLL_MS` | `60000` | External Git/PR poll interval; lifecycle events refresh immediately. |
 | `title`          | `PI_DASHBOARD_TITLE`   | —       | Optional header / window title override.           |
-
-## Opt-in 2 — select the theme (optional)
-
-The package ships a passive **GitHub Dark Default** theme. It is discoverable
-through the pi package manifest but is **never auto-selected**.
-
-Pick it in `~/.pi/agent/settings.json`:
-
-```json
-{
-  "theme": "github-dark-default"
-}
-```
-
-Or choose it interactively with `/theme` / `/settings` after install.
 
 ## What the footer shows
 

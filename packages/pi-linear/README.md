@@ -3,15 +3,34 @@
 Linear issues: read, search, comment on and transition tickets, as a Pi extension.
 
 ```sh
-pi install npm:@parke.dev/pi-linear      # once published
+pi install npm:@parke.dev/pi-linear
 ```
+
+Ships a [`linear` skill](skills/linear/SKILL.md) teaching the model when to
+use the issue, states, comment, and transition tools and how auth works.
 
 ---
 
 ## What it does
 
+Eight tools:
+
+| Tool                | Purpose                                                                                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `linear_issues`     | List/search issues. Defaults `mine: true` and not-done. Params: `search?`, `mine?`, `state?`, `team?`, `limit?` (default 25, cap 50). Priority as words. |
+| `linear_issue`      | One issue with description and all comments. Param: `issue` (id or `DEV-412`).                                                                           |
+| `linear_states`     | Workflow states. Param: `team?` (omit for all teams).                                                                                                    |
+| `linear_comment`    | Comment on an issue (confirms first). Params: `issue`, `body`, `yes?`.                                                                                   |
+| `linear_transition` | Move an issue by state name (confirms first). Params: `issue`, `state`, `yes?`.                                                                          |
+| `linear_status`     | Reachability, credential source, capabilities/refuses. No params.                                                                                        |
+| `linear_connect`    | Store an API key (interactive confirm only; **no `yes`**). Params: `key`, `label?`.                                                                      |
+| `linear_disconnect` | Remove the stored key; environment variables are untouched. No params.                                                                                   |
+
 Run `linear_status` first — it reports what is reachable, which credential is in use, and what this package deliberately will
 not do.
+
+`/linear-login` is the masked interactive setup command: it validates the key
+against Linear's `viewer` and stores it under `linear.default`.
 
 ## Credentials
 
@@ -63,6 +82,13 @@ injected instruction away from an attacker's token being used for all your write
 
 Published in `describe().refuses`, and a test asserts each is genuinely absent from the source — so the list cannot become a
 lie. Run `linear_status` to see it.
+
+| Not available | Why                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| **create**    | A created issue notifies a team and enters someone else's backlog; deleting it does not un-notify them. |
+| **delete**    | Destroys an issue and its comment history, often the only record of a decision.                         |
+| **assign**    | Assigning work to a person is a social act, not a data edit.                                            |
+| **estimate**  | An estimate an agent invented is worse than none, because it will be planned against.                   |
 
 ## Using it from your own code
 

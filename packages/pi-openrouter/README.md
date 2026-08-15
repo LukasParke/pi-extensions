@@ -11,6 +11,21 @@ headless, subagents) all read `models.json` directly, so routing decisions
 live in config where every process sees them identically — nothing is
 registered at runtime.
 
+## Install
+
+```bash
+npm i -g @parke.dev/pi-openrouter
+pi-openrouter sync
+
+# or run it transiently:
+bunx @parke.dev/pi-openrouter sync
+npx @parke.dev/pi-openrouter sync
+```
+
+The CLI ships TypeScript with a `#!/usr/bin/env bun` shebang, so
+[Bun](https://bun.sh) must be installed even when invoked via `npm`/`npx`.
+This is a CLI package, not a Pi extension — do not `pi install` it.
+
 ```sh
 pi-openrouter sync              # rewrite models.json if stale
 pi-openrouter sync --check      # exit 1 if stale (CI / preflight)
@@ -60,16 +75,24 @@ bun run benchmark [model] [--trials N] [--surfaces completions,responses,message
 
 Runs a deterministic multi-turn tool-loop scenario through each surface using
 pi-ai's real stream implementations, then writes a report and raw JSONL to
+`docs/`. Reports are local-only — the published npm tarball does not include
 `docs/`. When a surface wins on fidelity (reasoning replay, cache_control
 mapping) or cost, that's a rules change — see `docs/BENCHMARK-*.md` for
 methodology and past results.
 
 ## Configuration
 
-`~/.pi/openrouter.json` (via `@parke.dev/pi-ext-config`): `baseUrl`,
-`referer`, `title` for attribution headers. The API key is never handled by
-this package — generated config references `$OPENROUTER_API_KEY` and pi
-resolves it per request.
+`~/.pi/openrouter.json` (via `@parke.dev/pi-ext-config`):
+
+| Field     | Env                      | Default                                                                            | Meaning                                                                                                    |
+| --------- | ------------------------ | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `baseUrl` | `PI_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1`                                                     | Catalog + generated model base                                                                             |
+| `models`  | —                        | `["openai/gpt-5.2", "anthropic/claude-sonnet-4.6", "moonshotai/kimi-k2-thinking"]` | Present in schema/defaults; **not used by `sync`** — catalog generation always emits the full live catalog |
+| `referer` | —                        | `https://github.com/LukasParke/pi-extensions`                                      | `HTTP-Referer` attribution header                                                                          |
+| `title`   | —                        | `pi-openrouter`                                                                    | `X-Title` / `X-OpenRouter-Title` attribution headers                                                       |
+
+The API key is never handled by this package — generated config references
+`$OPENROUTER_API_KEY` and pi resolves it per request.
 
 ## License
 

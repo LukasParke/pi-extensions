@@ -1,4 +1,4 @@
-# pi-subagent
+# @parke.dev/pi-subagent
 
 Production-grade isolated subagents for [Pi](https://github.com/badlogic/pi-mono).
 
@@ -9,7 +9,7 @@ automatic retry with model fallback, a stall watchdog, session resume and
 context forking, worktree isolation with a diff/apply/discard loop, capability
 profiles, a root/subagent/combined cost ledger, and a TUI inspector.
 
-Subagents are intra-mission workers whose results return to the calling session. Use herdr instead when one agent must own a repo-level mission or PR stack, survive its dispatcher, and land external deliverables; use subagents within that herdr session for parallel legs, research, reviews, and bounded implementation. See the bundled `subagent` skill for the full split.
+Subagents are intra-mission workers whose results return to the calling session. Use herdr instead when one agent must own a repo-level mission or PR stack, survive its dispatcher, and land external deliverables; use subagents within that herdr session for parallel legs, research, reviews, and bounded implementation. See the bundled [`subagent` skill](skills/subagent/SKILL.md) for the full split.
 
 > **Breaking change:** every spawned task must now set `profile` explicitly (`explore`, `review`, or `general`) unless its named agent persona declares one. Existing prompts that omit it fail validation with selection guidance.
 
@@ -20,10 +20,10 @@ Pi packages install from **npm**, **git**, or a **local path**:
 ```bash
 # npm (scoped; surfaces on the pi.dev gallery via the pi-package keyword)
 # Note: unscoped "pi-subagent" is rejected by npm as too similar to "pi-sub-agent".
-pi install npm:@parke.dev/pi-subagent@0.7.0
-
-# latest npm
 pi install npm:@parke.dev/pi-subagent
+
+# pin a specific version
+pi install npm:@parke.dev/pi-subagent@0.10.0
 
 # npm is the supported package install path from the monorepo.
 # For local development, install this workspace directly:
@@ -35,9 +35,10 @@ pi install /absolute/path/to/pi-subagent
 
 Then start Pi normally. The package registers:
 
-- tool: `subagent`
+- tools: `subagent`, `subagent_wait`
 - command: `/subagents` (run inspector overlay)
 - command: `/subagent-cost` (parent / subagent / combined usage on demand)
+- command: `/btw` (side question, model-hidden)
 
 Publishing is automated from package-scoped `pi-subagent-v*` tags — see
 [docs/RELEASING.md](./docs/RELEASING.md).
@@ -220,8 +221,8 @@ Defaults can be overridden in `~/.pi/subagent.json` and per-field via env vars
 | `sessionDir`            | `PI_SUBAGENT_SESSION_DIR`             | `~/.pi/subagent-sessions`             |
 | `worktreeDir`           | `PI_SUBAGENT_WORKTREE_DIR`            | `~/.pi/subagent-worktrees`            |
 | `lockDir`               | `PI_SUBAGENT_LOCK_DIR`                | `~/.pi/subagent-locks`                |
-| `worktreeRetentionDays` | `PI_SUBAGENT_WORKTREE_RETENTION_DAYS` | unused (lifecycle GC)                 |
-| `sessionRetentionDays`  | `PI_SUBAGENT_SESSION_RETENTION_DAYS`  | unused (lifecycle GC)                 |
+| `worktreeRetentionDays` | `PI_SUBAGENT_WORKTREE_RETENTION_DAYS` | 7 (accepted for compat; GC is lifecycle-based, not day-based) |
+| `sessionRetentionDays`  | `PI_SUBAGENT_SESSION_RETENTION_DAYS`  | unset (accepted for compat; GC is lifecycle-based, not day-based) |
 | `lockRetentionDays`     | `PI_SUBAGENT_LOCK_RETENTION_DAYS`     | 7                                     |
 | `taskDefaults`          | —                                     | none                                  |
 | `graceTurns`            | `PI_SUBAGENT_GRACE_TURNS`             | 2                                     |
@@ -231,6 +232,11 @@ Defaults can be overridden in `~/.pi/subagent.json` and per-field via env vars
 | `watchdog`              | `PI_SUBAGENT_WATCHDOG_WAKEUPS_WITHOUT_PROGRESS`, `PI_SUBAGENT_WATCHDOG_REPEATED_ACTION_RUNS` | `{ wakeupsWithoutProgress: 3, repeatedActionRuns: 3 }` |
 | `widget`                | `PI_SUBAGENT_WIDGET`                  | `background` (`off` disables)         |
 | `notifications`         | `PI_SUBAGENT_NOTIFICATIONS`           | `batched` (`off` disables)            |
+| `progressThrottleMs`    | `PI_SUBAGENT_PROGRESS_THROTTLE_MS`    | 100 (min interval for streamed live-text progress; `0` disables) |
+| `maxResultBytes`        | —                                     | 51200 (tool-result cap; file config only) |
+| `maxResultLines`        | —                                     | 2000 (tool-result cap; file config only)  |
+| `maxDetailsTextBytes`   | —                                     | 10240 (file config only)                  |
+| `maxCompletedInMemory`  | —                                     | 20 (file config only)                     |
 | (bin)                   | `PI_SUBAGENT_BIN`                     | auto (`process.execPath` + CLI entry) |
 
 ### Named agent files
@@ -500,6 +506,11 @@ src/
   semaphore.ts     # per-session concurrency limit
   registry.ts      # session-scoped run state + durable resume locks
   persistence.ts   # parent-session event folding
+  structured.ts    # output_schema contract + repair round
+  distill.ts       # transcript → .digest.json reduction
+  dispatch.ts      # optional pi-dispatch integration
+  transcript.ts    # child session transcript handling
+  maintenance.ts   # startup GC, orphan reclaim, worktree sweep
   usage.ts         # root/subagent/combined usage ledger
   output.ts        # exact global output caps
   notifications.ts # batched background-run completion notifications
@@ -533,10 +544,11 @@ replay do not double count runs. See
 
 ## Roadmap
 
-Planned work — agent spawn policies, dry-run validation, engine hardening,
-live transcripts — lives in [docs/ROADMAP.md](./docs/ROADMAP.md) (rationale
+Remaining planned work lives in [docs/ROADMAP.md](./docs/ROADMAP.md) (rationale
 and design sketches) and [docs/PLAN.md](./docs/PLAN.md) (execution contract:
 work breakdown, acceptance criteria, test plans, and release gates per phase).
+Shipped milestones — named agents, spawn policies, dry-run validation, keep-alive,
+backends, structured output — are recorded in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Security
 
@@ -545,12 +557,7 @@ access—review source before installing third-party packages.
 
 ## Status
 
-v0.1 focuses on the correct lifecycle engine:
-
-- process + session ownership
-- budgets, caps, profiles
-- persistence + inspector
-- worktree isolation helpers
-
-Named agent catalogs and automatic chain workflows are intentionally deferred
-until the core is battle-tested.
+Current version: **0.10.0** — see [CHANGELOG.md](./CHANGELOG.md). The lifecycle
+engine described above is shipped, including named agent catalogs, spawn
+policies, dry-run validation, keep-alive `waiting` runs, the doom-loop
+watchdog, codex/claude backends, and structured output.

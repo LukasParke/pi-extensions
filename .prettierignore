@@ -1,4 +1,2 @@
 packages/pi-subagent/**
-packages/pi-memory/dist/**
-packages/pi-memory/models/**
 packages/pi-dashboard/**
