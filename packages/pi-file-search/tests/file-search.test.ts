@@ -53,6 +53,8 @@ describe("pattern classifiers", () => {
 		expect(needsMultiline("foo\\nbar")).toBe(true);
 		expect(needsMultiline("foo.bar")).toBe(false);
 		expect(needsMultiline("a\\\\n")).toBe(false); // escaped backslash, then literal n
+		expect(needsMultiline("a\\\\\\n")).toBe(true); // escaped backslash, then \n escape
+		expect(needsMultiline("a\\\\\\\\\\n")).toBe(true); // two escaped backslashes, then \n escape
 	});
 
 	it("looksLikeGlobPattern only for leading * or ?", () => {
@@ -67,6 +69,8 @@ describe("pattern classifiers", () => {
 		expect(targetsDotfiles("\\.env")).toBe(true);
 		expect(targetsDotfiles(".*")).toBe(false);
 		expect(targetsDotfiles("foo.env")).toBe(false);
+		expect(targetsDotfiles(".*", true)).toBe(true); // glob mode: leading dot is literal
+		expect(targetsDotfiles("*.env", true)).toBe(false);
 	});
 });
 
@@ -135,6 +139,12 @@ describe.skipIf(!hasFd)("fd resilience", () => {
 	it("reports a bad search path that exists but is a file", async () => {
 		fs.writeFileSync(path.join(dir, "f.txt"), "");
 		await expect(fd({ pattern: "x", path: "f.txt" })).rejects.toThrow(/is not a directory/);
+	});
+
+	it("includes hidden entries for dot-prefixed glob patterns", async () => {
+		fs.writeFileSync(path.join(dir, ".hidden-glob"), "");
+		const result = await fd({ pattern: ".*", glob: true });
+		expect(result.content[0]!.text).toContain(".hidden-glob");
 	});
 
 	it("accepts a relative path that is valid under ctx.cwd but not process.cwd()", async () => {

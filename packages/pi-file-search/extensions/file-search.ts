@@ -188,14 +188,18 @@ export function looksLikeGlobPattern(pattern: string): boolean {
 }
 
 /** True when an fd pattern starts with a literal dot, i.e. it can only match hidden entries. */
-export function targetsDotfiles(pattern: string): boolean {
-	// Raw `.env` / `.github` (glob or regex), or a regex-escaped `\.env`.
+export function targetsDotfiles(pattern: string, glob = false): boolean {
+	// In glob mode every leading `.` is literal (`.*`, `.env*`). In regex mode a
+	// raw `.env` / `.github` (dot followed by a word char) or an escaped `\.env`.
+	if (glob) return pattern.startsWith(".");
 	return /^\.{1}\w/.test(pattern) || /^\\\.\w/.test(pattern);
 }
 
 /** True when an rg pattern contains a literal newline or a `\n` escape, both of which need --multiline. */
 export function needsMultiline(pattern: string): boolean {
-	return pattern.includes("\n") || /(^|[^\\])\\n/.test(pattern);
+	// A `\n` escape counts only when the backslash itself is not escaped:
+	// consume backslash pairs, then require one remaining backslash before `n`.
+	return pattern.includes("\n") || /(^|[^\\])(\\\\)*\\n/.test(pattern);
 }
 
 const clamp = (value: number | undefined, min: number, max: number, fallback: number): number =>
@@ -314,7 +318,7 @@ export default function (pi: ExtensionAPI) {
 			if (
 				!params.hidden &&
 				typeof params.pattern === "string" &&
-				targetsDotfiles(params.pattern) &&
+				targetsDotfiles(params.pattern, glob) &&
 				!result.stdout.trim()
 			) {
 				const retried = await run(tool.command, buildArgs(true), { cwd: ctx.cwd, signal });
@@ -328,7 +332,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (!result.stdout.trim()) {
 				const hint =
-					typeof params.pattern === "string" && targetsDotfiles(params.pattern) && params.hidden
+					typeof params.pattern === "string" && targetsDotfiles(params.pattern, glob) && params.hidden
 						? " (pattern targets dotfiles; hidden files were included)"
 						: "";
 				return {
