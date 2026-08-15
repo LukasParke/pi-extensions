@@ -7,12 +7,26 @@ isolated child via
 [`@parke.dev/pi-subagent`](https://www.npmjs.com/package/@parke.dev/pi-subagent)
 (`@parke.dev/pi-subagent/sdk`).
 
-|              | What it does                                                                |
-| ------------ | --------------------------------------------------------------------------- |
-| `workflow`   | start/status/wait/cancel/resume/rerun/list orchestration runs               |
-| `/workflows` | overlay of live runs; `save` / `saved` / `cancel` subcommands               |
-| `/workflow`  | run a saved workflow by name                                                |
-| `/ultracode` | session policy: `on` / `off` / `status` (+ interactive `ultracode` keyword) |
+|              | What it does                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `workflow`   | start/status/wait/cancel/resume/rerun/list orchestration runs                                                             |
+| `/workflows` | overlay of live runs; `save` / `saved` / `cancel` subcommands                                                             |
+| `/workflow`  | run a saved workflow by name                                                                                              |
+| `/ultracode` | session policy: `on` / `off` / `status` / `size <small\|medium\|large\|unrestricted>` (+ interactive `ultracode` keyword) |
+
+`/workflows` subcommands:
+
+- `/workflows` — overlay (TUI) or text list of runs
+- `/workflows save <name> [global|project]` — save the most recent run's
+  script as a named workflow (project scope requires trust)
+- `/workflows saved` — list saved workflows
+- `/workflows cancel <id>` — cancel a run
+
+The `workflow` tool takes `action?` (`start` \| `status` \| `wait` \| `cancel`
+\| `resume` \| `rerun` \| `list`), `script?`, `name?`, `description?`, `args?`,
+`id?`, `async?`, and `timeout_ms?` (for `wait`). `agent()` option enums match
+pi-subagent: profiles `explore` \| `review` \| `general`, and the same thinking
+levels.
 
 Ships with a [`workflows` skill](skills/workflows/SKILL.md). Active and ready
 run counts are also exposed through Pi's extension-status API for custom
@@ -78,10 +92,12 @@ writer branch (orchestrator-managed).
 Launches are **background by default** (`workflow.backgroundByDefault`, overridable
 with `async: false`). The tool returns a run id immediately; completion is
 delivered as a follow-up message. Actions: `status`, `wait`, `cancel`, `resume`,
-`rerun`, `list`.
+`rerun`, `list`. Resume and rerun are marked `preApproved`, so they do not ask
+for a second confirmation.
 
 Each run writes an append-only journal under
-`<agentDir>/workflows/runs/<runId>/`. Resume restarts the script and replays the
+`<agentDir>/workflows/runs/<runId>/` (`definition.json`, `journal.jsonl`,
+`result.json`, `summary.json`). Resume restarts the script and replays the
 **contiguous completed prefix** of `agent()` calls (matched by request id +
 hash of prompt/options). Source, args, and cwd must still match.
 
@@ -134,7 +150,7 @@ Thin policy layer — not a new model:
 
 ## Configuration
 
-Precedence: **defaults ← config file ← environment**.
+Precedence: **defaults ← `~/.pi/workflow.json` ← environment**.
 
 | Field                 | Env                            | Default     | Meaning                                                                     |
 | --------------------- | ------------------------------ | ----------- | --------------------------------------------------------------------------- |

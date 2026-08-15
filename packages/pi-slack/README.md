@@ -3,12 +3,29 @@
 Slack channels, threads and messages, as a Pi extension.
 
 ```sh
-pi install npm:@parke.dev/pi-slack      # once published
+pi install npm:@parke.dev/pi-slack
 ```
+
+Ships a [`slack` skill](skills/slack/SKILL.md) teaching the model when to use
+the channel, thread, search, and post tools and how auth works.
 
 ---
 
 ## What it does
+
+Seven tools:
+
+| Tool               | Role                                                          | Key params                                             |
+| ------------------ | ------------------------------------------------------------- | ------------------------------------------------------ |
+| `slack_status`     | Reachability, credential source, capabilities/refuses         | (none)                                                 |
+| `slack_channels`   | Channels plus their latest message                            | `channels?` (ids/names), `limit?` (default 25, cap 50) |
+| `slack_thread`     | Full thread                                                   | `channel` + `ts`, **or** `ref` as `channel/ts`         |
+| `slack_search`     | `search.messages` (needs a user token with `search:read`)     | `query`, `limit?` (default 20, cap 50)                 |
+| `slack_post`       | Post a message or thread reply; confirms first                | `channel`, `text`, `threadTs?`, `yes?`                 |
+| `slack_connect`    | Store a token (interactive confirm only; **no `yes`**)        | `token`, `label?`                                      |
+| `slack_disconnect` | Delete the stored token only; environment variables untouched | (none)                                                 |
+
+List and search limits are capped at 50 — do not expect unbounded results.
 
 Run `slack_status` first — it reports what is reachable, which credential is in use, and what this package deliberately will
 not do.
@@ -63,6 +80,13 @@ injected instruction away from an attacker's token being used for all your write
 
 Published in `describe().refuses`, and a test asserts each is genuinely absent from the source — so the list cannot become a
 lie. Run `slack_status` to see it.
+
+| Not available       | Why                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **delete_messages** | Destroying a message erases a public record; a mistaken post is corrected with a follow-up, not memory-holed.       |
+| **manage_channels** | Creating, renaming or archiving a channel restructures a workspace other people live in — a governance decision.    |
+| **invite_users**    | Inviting someone into a channel is a social act and can expose private conversation.                                |
+| **admin**           | Workspace admin is far outside the scope of a coding agent, and a token that can do it should not be handed to one. |
 
 ## Using it from your own code
 

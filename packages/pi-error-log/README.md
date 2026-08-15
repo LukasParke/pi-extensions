@@ -4,6 +4,15 @@ Captures every tool error in a pi session into one reviewable place: a single
 append-only JSONL log at `~/.pi/logs/errors.jsonl`, plus an `error_log` tool
 so the agent (or you) can ask "what failed recently?" and get real answers.
 
+## Install
+
+```bash
+pi install npm:@parke.dev/pi-error-log
+```
+
+Ships an [`error-log` skill](skills/error-log/SKILL.md) teaching the model
+when to query the log.
+
 ## What gets captured
 
 The extension hooks `tool_execution_end`; whenever `event.isError` is true it
@@ -62,6 +71,8 @@ error_log({ tool?: string, kind?: "tool" | "extension", since?: string, limit?: 
 - entries come back newest-first, `limit` defaults to 20
 - the text result shows a one-line preview per entry; full entries are in `details.entries`
 - corrupt or partial lines in the log are skipped, never fatal
+- `kind: "extension"` is accepted by the filter for forward compatibility and
+  hand-written lines, but this extension only ever appends `kind: "tool"`
 
 ## Configuration
 
@@ -72,3 +83,7 @@ Precedence: **defaults ← `~/.pi/error-log.json` ← environment**.
 | `enabled`  | `PI_ERROR_LOG_ENABLED`   | `true`                    |
 | `path`     | `PI_ERROR_LOG_PATH`      | `~/.pi/logs/errors.jsonl` |
 | `maxBytes` | `PI_ERROR_LOG_MAX_BYTES` | `10485760` (10MB)         |
+
+## License
+
+MIT

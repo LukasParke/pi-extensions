@@ -25,10 +25,21 @@ pi install npm:@parke.dev/pi-graphiti
   the server again.
 - **Explicit tools** — `memory_recall` (facts / nodes / episodes),
   `memory_remember` (one episode per fact), `memory_status` (health).
+
+  | Tool              | Parameters                                                                                                              |
+  | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
+  | `memory_recall`   | `query` (ignored in `episodes` mode); `mode?` `facts` \| `nodes` \| `episodes` (default `facts`); `limit?` (default 10) |
+  | `memory_remember` | `name`, `body`, `source_description?`                                                                                   |
+  | `memory_status`   | none — JSON health payload                                                                                              |
+
+  Manual `memory_recall` results are marked seen, so they are not re-injected
+  by auto-recall. `memory_remember` also suppresses the pending store reminder.
+
 - **Store policy + reminder** — a short system-prompt block instructs the model
   to store durable outcomes before finishing; if a session settles 10+ turns
   without a single `memory_remember`, a one-shot dispatch reminder
-  (`graphiti:store-reminder`) nudges the agent.
+  (`graphiti:store-reminder`) nudges the agent. It fires at most once per
+  session and is suppressed as soon as something is remembered.
 - **Health signal** — the footer shows `memory unavailable: ...` when the
   server is unreachable; the session-start check is fire-and-forget and never
   delays the session.
@@ -68,7 +79,8 @@ responses and transparently re-initializes when the server session expires.
 - Recall is fully off the turn path: hooks return synchronously, at most one
   search is in flight (a new trigger replaces the pending query, latest wins),
   and failures are silent by design — memory assists, it never gates.
-- Ships a skill teaching when to recall explicitly and what to store.
+- Ships a [`graphiti-memory` skill](skills/graphiti-memory/SKILL.md) teaching
+  when to recall explicitly and what to store.
 
 ## License
 

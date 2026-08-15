@@ -8,6 +8,15 @@ bad value through. This is that, once.
 
 It is a library, not an extension — it registers no tools and no skills.
 
+## Install
+
+```bash
+npm install @parke.dev/pi-ext-config
+```
+
+Do not `pi install` this package — other extensions depend on it and call
+`load()` from their own config modules.
+
 ## Why
 
 An extension that hardcodes a hostname or an API key is unusable by anyone but its

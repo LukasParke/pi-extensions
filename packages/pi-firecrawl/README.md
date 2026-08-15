@@ -14,6 +14,21 @@ Four tools:
 | `firecrawl_map`    | discover the URLs on a site                                       |
 | `firecrawl_crawl`  | crawl linked pages into markdown (async job, polls to completion) |
 
+Ships a [`firecrawl` skill](skills/firecrawl/SKILL.md) teaching the model when
+to map-then-scrape versus crawl, and how to bound jobs with `limit`.
+
+### Parameters
+
+- `firecrawl_scrape` — `url` (required); `formats?` (`markdown` \| `html` \|
+  `rawHtml` \| `links` \| `screenshot` \| `summary`, default `["markdown"]`);
+  `onlyMainContent?`; `waitFor?` (ms to wait for the page to load).
+- `firecrawl_search` — `query`; `limit?` (default 5); `scrapeResults?` (also
+  scrape each result page into markdown).
+- `firecrawl_map` — `url`; `search?` (filter/rank discovered URLs); `limit?`.
+- `firecrawl_crawl` — `url`; `limit?` (default 10); `maxDepth?`;
+  `pollTimeoutSeconds?` (default 120). The job is polled every 3 seconds; on
+  timeout the partial pages gathered so far are returned.
+
 ## Install
 
 ```bash
@@ -38,12 +53,12 @@ Everything is optional. Precedence is **defaults ← `~/.pi/firecrawl.json` ← 
 }
 ```
 
-| Field            | Env var                      | Default                     | Meaning                                                     |
-| ---------------- | ---------------------------- | --------------------------- | ----------------------------------------------------------- |
-| `baseUrl`        | `FIRECRAWL_BASE_URL`         | `https://api.firecrawl.dev` | Firecrawl API origin                                        |
-| `apiKey`         | `FIRECRAWL_API_KEY`          | none                        | sent as `Authorization: Bearer`; required by the hosted API |
-| `timeoutMs`      | `FIRECRAWL_TIMEOUT_MS`       | 120000                      | request timeout for scrape / search / map                   |
-| `crawlTimeoutMs` | `FIRECRAWL_CRAWL_TIMEOUT_MS` | 120000                      | how long to poll a crawl job before giving up               |
+| Field            | Env var                      | Default                     | Meaning                                                                             |
+| ---------------- | ---------------------------- | --------------------------- | ----------------------------------------------------------------------------------- |
+| `baseUrl`        | `FIRECRAWL_BASE_URL`         | `https://api.firecrawl.dev` | Firecrawl API origin                                                                |
+| `apiKey`         | `FIRECRAWL_API_KEY`          | none                        | sent as `Authorization: Bearer`; required by the hosted API                         |
+| `timeoutMs`      | `FIRECRAWL_TIMEOUT_MS`       | 120000                      | reserved — not currently applied to requests                                        |
+| `crawlTimeoutMs` | `FIRECRAWL_CRAWL_TIMEOUT_MS` | 120000                      | reserved — crawl wait is controlled per call by `pollTimeoutSeconds` (default 120s) |
 
 ### Deployment shapes
 
