@@ -48,6 +48,23 @@ Dispatch is fire-and-forget and resilient:
   startup prompt-swallow race. Dispatch waits up to 30 seconds for `working`
   and falls back to a verified prompt only if the agent remains idle. Adopted
   agents are already running, so they always use the verified prompt path.
+- Tasks that cannot be encoded as argv — multi-line prompts, or prompts over
+  2000 characters — are written to `.pi-herdr-brief.md` in the worktree and
+  the agent is started with a short pointer prompt referencing that file
+  (the brief-on-disk pattern). The brief is dispatch metadata: at write time
+  it is appended to the worktree's `.git/info/exclude`, so it can never be
+  committed into a PR and never trips cleanup's dirty check. If herdr still
+  rejects an argv that looked safe (`invalid_agent_argument`), dispatch
+  retries once with a brief file.
+
+Status degrades instead of failing on transient conditions: if `herdr agent
+read` rejects a busy agent (`agent_not_idle`), the tool returns the lifecycle
+state with a `transcript: unavailable (agent busy)` note rather than an
+error; a `wait=true` timeout (`timed out waiting for agent status`, which
+only `agent wait` emits) is not an error either — the tool falls through and
+reports the agent's current status; and if status polling itself times out,
+the tool returns `state: unknown` with the underlying message and skips the
+transcript read.
 
 ## Lifecycle
 
@@ -74,7 +91,11 @@ lists every problem to resolve. `force` bypasses those safety checks for
 deliberately abandoned work. Cleanup asks Herdr to remove the worktree and its
 workspace together. If the workspace or agent is already gone, it resolves the
 base repo with `git rev-parse --path-format=absolute --git-common-dir`, removes the orphaned checkout
-with `git worktree remove`, and prunes stale worktree metadata. The pushed
+with `git worktree remove`, and prunes stale worktree metadata. A checkout that
+is already deleted — or vanishes between the check and the removal — is treated
+as a successful cleanup with a note instead of an error; if its herdr workspace
+is still alive, cleanup removes it (still refusing a working/blocked agent
+without `force`) so no zombie pane is left behind. The pushed
 branch remains on the remote.
 
 ## Slash commands

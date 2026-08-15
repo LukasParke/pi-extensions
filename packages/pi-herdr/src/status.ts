@@ -8,6 +8,8 @@ export interface HerdrTaskStatus {
 	cwd?: string;
 	worktreePath?: string | null;
 	matches?: string[];
+	/** Present when status is a degraded/partial result rather than authoritative. */
+	note?: string;
 }
 
 export async function getHerdrTaskStatus(
@@ -25,6 +27,13 @@ export async function getHerdrTaskStatus(
 		return { status: info.agent.agent_status, cwd: info.agent.cwd };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
+		// Empirically this message only ever comes from `agent wait`, never
+		// from `agent get`, so the wait=true path in extensions/herdr.ts
+		// handles it. Keep the match anyway: if a future herdr moves the
+		// timeout onto `agent get`, status should degrade, not fail.
+		if (message.includes("timed out waiting for agent status")) {
+			return { status: "unknown", note: message };
+		}
 		if (!message.includes("agent_not_found")) throw error;
 		try {
 			const orphan = isAgentName(input.agent)
