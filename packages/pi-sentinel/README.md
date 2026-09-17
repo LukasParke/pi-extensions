@@ -157,6 +157,38 @@ Probe output is capped before being sent to the model, retaining both the head
 and tail. The footer status and editor widget show attached PRs, active watches,
 sleeps, and gate progress.
 
+## Optional cmux sidebar status
+
+To show Sentinel counts in [cmux](https://www.cmux.dev/), start Pi with
+`PI_SENTINEL_CMUX_STATUS=1`. It is off by default. You can also set
+`{"cmuxStatus": true}` in `~/.pi/sentinel.json` (beside the agent directory;
+respects `PI_CODING_AGENT_DIR`). The environment variable overrides the file;
+`PI_SENTINEL_CMUX_STATUS=0` disables it. Settings take effect on the next load.
+
+The amber eye badge shows, for example, `Watching · 1 PR, 2 watches, 1 sleep, gate 0/2`.
+It uses the same counts as the footer, including poll and stream watches, and
+clears when nothing remains active or the session shuts down. It does not change
+cmux's native Running/Idle status, keep the workspace awake, add model calls,
+or add polling. A badge means monitoring is registered, not that a probe is running.
+Commands, output, names, and session IDs are never sent as sidebar text.
+
+Only interactive TUI sessions with explicit UUID `CMUX_WORKSPACE_ID` and
+`CMUX_SURFACE_ID` qualify. `CMUX_PI_HOOKS_DISABLED=1` also disables the badge
+(for example, in delegated children). Every command targets that workspace;
+there is no fallback to the selected workspace. A unique `sentinel-<hash>` key
+isolates each session/surface/load from other badges and late cleanup.
+The CLI is `CMUX_BUNDLED_CLI_PATH`, or `cmux` on PATH when unset.
+
+Updates are asynchronous, serialized, coalesced, and deduplicated. Each command
+has a 1.5-second timeout; errors are silent and retry only on a later status
+update. Shutdown drains the pending write before the final clear. A killed Pi
+process or unavailable cmux can leave a stale badge. Inspect it with
+`cmux list-status --workspace <UUID>` and remove only its exact key with
+`cmux clear-status sentinel-<hash> --workspace <UUID>`.
+
+Do not reload a session just to enable this while its watches matter: reload
+clears Sentinel's in-memory state. Use a fresh session instead.
+
 ## License
 
 MIT
