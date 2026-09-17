@@ -4,6 +4,8 @@ import { dispatchQueue, ensureDelivery } from "@parke.dev/pi-dispatch";
 import type { DispatchPriority } from "@parke.dev/pi-dispatch";
 import { NO_REPO_MESSAGE, parseRepo, resolveRepo, resolveToken } from "@parke.dev/pi-github";
 import { SentinelManager } from "../src/manager.ts";
+import { cmuxTarget, createCmuxStatus } from "../src/cmux.ts";
+import { defaults, sentinelConfig, type SentinelConfig } from "../src/config.ts";
 import type {
 	EventUrgency,
 	GateSnapshot,
@@ -112,8 +114,13 @@ function asPredicate(value?: Record<string, unknown>) {
 	return value as Predicate | undefined;
 }
 
-export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager()) {
+export function registerSentinel(
+	pi: ExtensionAPI,
+	manager = new SentinelManager(),
+	config: SentinelConfig = defaults,
+) {
 	let uiCtx: ExtensionContext | undefined;
+	let cmux: ReturnType<typeof createCmuxStatus> | undefined;
 
 	ensureDelivery(pi);
 
@@ -122,6 +129,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 		const snapshot = manager.snapshot();
 		const activeItems = snapshot.items.filter(isActive);
 		const status = sentinelStatus(activeItems, snapshot.gate);
+		cmux?.update(status);
 		uiCtx.ui.setStatus(UI_KEY, status ? uiCtx.ui.theme.fg("warning", status) : undefined);
 		if (!status) return uiCtx.ui.setWidget(UI_KEY, undefined);
 		uiCtx.ui.setWidget(UI_KEY, [
@@ -147,6 +155,11 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 
 	pi.on("session_start", (_event, ctx) => {
 		uiCtx = ctx;
+		const target =
+			config.cmuxStatus && ctx.mode === "tui"
+				? cmuxTarget(process.env, ctx.sessionManager.getSessionId())
+				: undefined;
+		cmux = target ? createCmuxStatus(target) : undefined;
 		manager.setIdle(ctx.isIdle());
 		manager.startSession();
 		refreshUi();
@@ -155,11 +168,14 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	pi.on("agent_settled", () => {
 		manager.setIdle(true);
 	});
-	pi.on("session_shutdown", () => {
+	pi.on("session_shutdown", async () => {
+		const closing = cmux;
+		cmux = undefined;
 		manager.dispose();
 		uiCtx?.ui.setStatus(UI_KEY, undefined);
 		uiCtx?.ui.setWidget(UI_KEY, undefined);
 		uiCtx = undefined;
+		await closing?.close();
 	});
 
 	pi.registerTool({
@@ -399,4 +415,6 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	});
 }
 
-export default registerSentinel;
+export default async function (pi: ExtensionAPI) {
+	registerSentinel(pi, new SentinelManager(), await sentinelConfig());
+}
