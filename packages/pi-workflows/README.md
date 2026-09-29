@@ -113,6 +113,11 @@ Each run writes an append-only journal under
 **contiguous completed prefix** of `agent()` calls (matched by request id +
 hash of prompt/options). Source, args, and cwd must still match.
 
+Cancellation requests abort children but do not make a run terminal until its
+promise settles. Same-ID resume is blocked during cleanup, and session shutdown
+still drains cancelled-but-unsettled runs. Child/worktree cleanup is awaited
+before terminal accounting; worktree finalization has a bounded safety deadline.
+
 Session custom entries (`workflow-run-v1`) hold lightweight summaries; full
 outputs stay in the artifact directory.
 

@@ -224,6 +224,7 @@ Defaults can be overridden in `~/.pi/subagent.json` and per-field via env vars
 | `defaultTimeoutMs`      | `PI_SUBAGENT_TIMEOUT_MS`              | 1800000 (30 min; implementation missions regularly exceed 15 min) |
 | `maxDepth`              | `PI_SUBAGENT_MAX_DEPTH`               | 2                                     |
 | `killGraceMs`           | `PI_SUBAGENT_KILL_GRACE_MS`           | 3000                                  |
+| `worktreeFinalizeTimeoutMs` | `PI_SUBAGENT_WORKTREE_FINALIZE_TIMEOUT_MS` | 8000 | cleanup deadline; uninspectable work is preserved |
 | `sessionDir`            | `PI_SUBAGENT_SESSION_DIR`             | `~/.pi/subagent-sessions`             |
 | `worktreeDir`           | `PI_SUBAGENT_WORKTREE_DIR`            | `~/.pi/subagent-worktrees`            |
 | `lockDir`               | `PI_SUBAGENT_LOCK_DIR`                | `~/.pi/subagent-locks`                |

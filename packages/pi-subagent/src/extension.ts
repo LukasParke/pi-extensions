@@ -769,7 +769,7 @@ export default function registerSubagent(pi: ExtensionAPI): void {
     runtime.depth = parseDepth();
     runtime.output = new OutputManager(runtime.config);
     runtime.semaphore = new Semaphore(runtime.config.maxActiveProcesses, runtime.config.maxQueuedTasks);
-    runtime.worktrees = new WorktreeManager(undefined, runtime.config.worktreeDir);
+    runtime.worktrees = new WorktreeManager(undefined, runtime.config.worktreeDir, runtime.config.worktreeFinalizeTimeoutMs);
     runtime.locks = new ProcessLockManager({
       rootDir: runtime.config.lockDir,
       maxGlobalActive: runtime.config.maxGlobalActive,

@@ -95,6 +95,7 @@ export class WorktreeManager {
   constructor(
     private readonly execFn: ExecFn = defaultExec,
     private readonly rootDir: string = defaultConfig.worktreeDir,
+    private readonly finalizeTimeoutMs: number = defaultConfig.worktreeFinalizeTimeoutMs,
   ) {}
 
   async isGitRepo(cwd: string, signal?: AbortSignal): Promise<boolean> {
@@ -253,9 +254,10 @@ export class WorktreeManager {
       }
       return { cwd, branch, baseCwd, baseCommit, changed: false, wipPatch, wipUntracked };
     } catch (error) {
-      await this.execFn("git", ["worktree", "remove", "--force", cwd], baseCwd).catch(() => {});
-      await this.execFn("git", ["branch", "-D", branch], baseCwd).catch(() => {});
-      await fs.rm(root, { recursive: true, force: true });
+      const cleanupSignal = AbortSignal.timeout(this.finalizeTimeoutMs);
+      await this.execFn("git", ["worktree", "remove", "--force", cwd], baseCwd, cleanupSignal).catch(() => {});
+      await this.execFn("git", ["branch", "-D", branch], baseCwd, cleanupSignal).catch(() => {});
+      if (!cleanupSignal.aborted) await fs.rm(root, { recursive: true, force: true });
       throw error;
     }
   }
@@ -296,11 +298,30 @@ export class WorktreeManager {
 
   /** Preserve any branch with commits or uncommitted work; delete only truly unchanged worktrees. */
   async finalize(handle: WorktreeHandle, signal?: AbortSignal): Promise<WorktreeHandle> {
+    const deadline = AbortSignal.timeout(this.finalizeTimeoutMs);
+    const cleanupSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+    cleanupSignal.throwIfAborted();
+    let onAbort!: () => void;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      onAbort = () => reject(cleanupSignal.reason);
+      cleanupSignal.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+      return await Promise.race([this.finalizeWorktree(handle, cleanupSignal), aborted]);
+    } finally {
+      cleanupSignal.removeEventListener("abort", onAbort);
+    }
+  }
+
+  private async finalizeWorktree(handle: WorktreeHandle, signal: AbortSignal): Promise<WorktreeHandle> {
     const latest = await this.refreshStatus(handle, signal);
+    signal.throwIfAborted();
     if (latest.changed) return latest;
-    const removed = await this.execFn("git", ["worktree", "remove", "--force", latest.cwd], latest.baseCwd);
+    const removed = await this.execFn("git", ["worktree", "remove", "--force", latest.cwd], latest.baseCwd, signal);
     if (removed.code !== 0) throw new Error(`Unable to remove unchanged worktree: ${removed.stderr.trim()}`);
-    await this.execFn("git", ["branch", "-D", latest.branch], latest.baseCwd).catch(() => {});
+    signal.throwIfAborted();
+    await this.execFn("git", ["branch", "-D", latest.branch], latest.baseCwd, signal).catch(() => {});
+    signal.throwIfAborted();
     await fs.rm(path.dirname(latest.cwd), { recursive: true, force: true });
     return latest;
   }

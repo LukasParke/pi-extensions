@@ -160,8 +160,7 @@ export default async function (pi: ExtensionAPI) {
 		if (!approval.ok) throw new Error(approval.reason);
 
 		const existing = registry.get(runId);
-		if (existing && !isTerminalState(existing.state))
-			throw new Error(`Workflow run ${runId} is still active`);
+		if (existing && !registry.isSettled(existing)) throw new Error(`Workflow run ${runId} is still active`);
 
 		if (options.script.length > 100 && countAgentCallsHint(options.script) >= config.largeRunWarnAgents) {
 			options.ctx.ui.notify(
@@ -378,7 +377,7 @@ export default async function (pi: ExtensionAPI) {
 							type: "text" as const,
 							text: result.alreadyDone
 								? `Run ${result.run.runId} already ${result.run.state}`
-								: `Cancelled ${result.run.runId}`,
+								: `Cancellation requested for ${result.run.runId}`,
 						},
 					],
 					details: registry.toSummary(result.run),

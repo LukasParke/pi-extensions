@@ -55,6 +55,7 @@ const TERMINAL = new Set<WorkflowRunState>(["completed", "failed", "cancelled", 
 
 export class WorkflowRunRegistry {
 	private readonly runs = new Map<string, LiveWorkflowRun>();
+	private readonly settledRuns = new WeakSet<LiveWorkflowRun>();
 	private readonly listeners = new Set<RegistryListener>();
 	private shuttingDown = false;
 
@@ -81,10 +82,14 @@ export class WorkflowRunRegistry {
 
 	register(run: LiveWorkflowRun) {
 		if (this.shuttingDown) throw new Error("Cannot start a workflow while the session is shutting down");
+		const existing = this.runs.get(run.runId);
+		if (existing && !this.isSettled(existing))
+			throw new Error(`Workflow run ${run.runId} is still active or settling`);
 		this.runs.set(run.runId, run);
 		this.emit(run);
 		void run.promise.then(
 			(terminal) => {
+				this.settledRuns.add(run);
 				run.state = terminal.state;
 				run.endedAt = terminal.summary.endedAt ?? Date.now();
 				run.failure = terminal.failure;
@@ -97,12 +102,17 @@ export class WorkflowRunRegistry {
 				this.emit(run);
 			},
 			(error) => {
+				this.settledRuns.add(run);
 				run.state = "failed";
 				run.endedAt = Date.now();
 				run.failure = error instanceof Error ? error.message : String(error);
 				this.emit(run);
 			},
 		);
+	}
+
+	isSettled(run: LiveWorkflowRun) {
+		return this.settledRuns.has(run);
 	}
 
 	update(runId: string, patch: Partial<LiveWorkflowRun>) {
@@ -115,10 +125,8 @@ export class WorkflowRunRegistry {
 	cancel(runId: string) {
 		const run = this.get(runId);
 		if (!run) return { ok: false as const, error: `Unknown workflow run: ${runId}` };
-		if (TERMINAL.has(run.state)) return { ok: true as const, run, alreadyDone: true };
+		if (this.isSettled(run)) return { ok: true as const, run, alreadyDone: true };
 		run.controller.abort(new Error("Workflow cancelled"));
-		run.state = "cancelled";
-		run.endedAt = Date.now();
 		this.emit(run);
 		return { ok: true as const, run, alreadyDone: false };
 	}
@@ -139,17 +147,15 @@ export class WorkflowRunRegistry {
 	}
 
 	undeliveredTerminal(sessionKey: string) {
-		return this.list(sessionKey).filter((run) => TERMINAL.has(run.state) && !run.delivered && !run.claimed);
+		return this.list(sessionKey).filter((run) => this.isSettled(run) && !run.delivered && !run.claimed);
 	}
 
 	async shutdown(graceMs = 8_000) {
 		this.shuttingDown = true;
 		const pending: Promise<unknown>[] = [];
 		for (const run of this.runs.values()) {
-			if (!TERMINAL.has(run.state)) {
+			if (!this.isSettled(run)) {
 				run.controller.abort(new Error("Session shutdown"));
-				run.state = "cancelled";
-				run.endedAt = Date.now();
 				pending.push(run.promise.catch(() => undefined));
 			}
 		}

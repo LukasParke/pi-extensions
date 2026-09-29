@@ -38,6 +38,15 @@ describe("WorkflowRunRegistry", () => {
 		const cancelled = registry.cancel("wf-abc123");
 		expect(cancelled.ok).toBe(true);
 		expect(run.controller.signal.aborted).toBe(true);
+		expect(run.state).toBe("running");
+		expect(() => registry.register(makeRun({ runId: run.runId, promise }))).toThrow(/active|settling/);
+		let shutdownFinished = false;
+		const shutdown = registry.shutdown(1000).then(() => {
+			shutdownFinished = true;
+		});
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(shutdownFinished).toBe(false);
 		resolve({
 			runId: run.runId,
 			state: "cancelled",
@@ -54,6 +63,8 @@ describe("WorkflowRunRegistry", () => {
 			},
 		});
 		await promise;
+		await shutdown;
+		expect(run.state).toBe("cancelled");
 	});
 
 	it("can accept runs again after a session reset", async () => {
