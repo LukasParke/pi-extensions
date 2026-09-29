@@ -8,7 +8,16 @@
  * model's own behavior.
  */
 
-import type { Api, AssistantMessage, Context, Message, Model, Usage } from "@earendil-works/pi-ai";
+import {
+	normalizeContext,
+	type Api,
+	type AssistantMessage,
+	type Context,
+	type Message,
+	type Model,
+	type TranscriptContext,
+	type Usage,
+} from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
 // ---------------------------------------------------------------------------
@@ -137,7 +146,7 @@ export interface TrialResult {
 export interface StreamFn {
 	(
 		model: Model<Api>,
-		context: Context,
+		context: TranscriptContext,
 		options: Record<string, unknown>,
 	): AsyncIterable<{
 		type: string;
@@ -184,7 +193,7 @@ export async function runTrial(options: RunTrialOptions): Promise<TrialResult> {
 		let replayedReasoning = false;
 		let ttftMs: number | undefined;
 		const start = now();
-		const stream = options.stream(options.model, context, {
+		const stream = options.stream(options.model, normalizeContext(context), {
 			apiKey: options.apiKey,
 			headers: options.headers,
 			maxTokens: options.maxTokens ?? 2048,

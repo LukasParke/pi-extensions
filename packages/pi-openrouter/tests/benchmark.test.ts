@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import {
+	getCurrentSystemPrompt,
+	getCurrentTools,
+	type Api,
+	type AssistantMessage,
+	type Model,
+	type TranscriptContext,
+} from "@earendil-works/pi-ai";
 import {
 	createToolHarness,
+	SYSTEM_PROMPT,
+	TOOLS,
 	mean,
 	payloadReplaysReasoning,
 	renderReport,
@@ -111,7 +120,7 @@ function assistantMessage(overrides: Partial<AssistantMessage>): AssistantMessag
 }
 
 /** A scripted stream: one tool-call turn, then a final text turn. */
-function scriptedStream(script: AssistantMessage[], onCall?: (context: Context) => void): StreamFn {
+function scriptedStream(script: AssistantMessage[], onCall?: (context: TranscriptContext) => void): StreamFn {
 	let call = 0;
 	return (_model, context, options) => {
 		onCall?.(context);
@@ -149,7 +158,7 @@ describe("runTrial", () => {
 			}),
 			assistantMessage({ content: [{ type: "text", text: "DONE — add subtracts." }] }),
 		];
-		const contexts: Context[] = [];
+		const contexts: TranscriptContext[] = [];
 		const result = await runTrial({
 			surface: "completions",
 			model,
@@ -176,6 +185,12 @@ describe("runTrial", () => {
 		expect(result.turns[0]!.replayedReasoning).toBe(false);
 		expect(result.turns[1]!.replayedReasoning).toBe(true);
 		// The tool result fed back is the deterministic harness output.
+		expect(contexts.map((context) => context.messages.length)).toEqual([2, 4, 6]);
+		for (const context of contexts) {
+			expect(context.messages[0]?.role).toBe("system");
+			expect(getCurrentSystemPrompt(context.messages)).toBe(SYSTEM_PROMPT);
+			expect(getCurrentTools(context.messages)).toEqual(TOOLS);
+		}
 		const secondContext = contexts[1]!;
 		const toolResult = secondContext.messages.find((m) => m.role === "toolResult");
 		expect(toolResult && "content" in toolResult && toolResult.content[0]).toMatchObject({

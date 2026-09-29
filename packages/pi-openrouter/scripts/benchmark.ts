@@ -32,9 +32,12 @@ import { attributionHeaders, defaultConfig } from "../src/config.ts";
 import { runTrial, summarize, renderReport, type StreamFn, type TrialResult } from "../src/benchmark.ts";
 
 const STREAMS: Record<Surface, StreamFn> = {
-	completions: completionsStream as StreamFn,
-	responses: responsesStream as StreamFn,
-	messages: messagesStream as StreamFn,
+	completions: (model, context, options) =>
+		completionsStream(model as Model<"openai-completions">, context, options),
+	responses: (model, context, options) =>
+		responsesStream(model as Model<"openai-responses">, context, options),
+	messages: (model, context, options) =>
+		messagesStream(model as Model<"anthropic-messages">, context, options),
 };
 
 function parseArgs(argv: string[]) {
