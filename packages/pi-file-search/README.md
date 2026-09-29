@@ -17,6 +17,18 @@ Two tools:
 Ships with a [`file-search` skill](skills/file-search/SKILL.md) that teaches the
 model to prefer these over `bash find` / `bash grep`.
 
+## Native Pi integration
+
+Requires Pi **0.99.1 or newer**. `fd` and `rg` are grouped under `file-search`
+with read-only, closed-world annotations. Native codemode receives `fd.paths`
+or `rg.output`/`rg.lines`, plus truncation, partial-I/O, and full-output-file
+metadata. Ripgrep context and colon-containing filenames remain intact rather
+than being ambiguously re-parsed. Complete structured lines are byte-bounded.
+
+Pi's native `find`/`grep` are suitable for simple lookups; these tools retain
+regex/type/depth filters, smart-case, multiline, per-file limits, partial-I/O
+resilience, and an explicit no-downloader policy.
+
 ## Install
 
 ```bash
@@ -43,7 +55,8 @@ Each tool is resolved once per process, in this order:
 1. **System `PATH`** — for `fd`, candidates are `fd` then `fdfind` (Debian's
    package name); for `rg`, just `rg`. Each is probed with `--version`.
 2. **Agent bin dir** — `~/.pi/agent/bin/fd` or `~/.pi/agent/bin/rg`. The file
-   must exist and respond to `--version`.
+   must exist and respond to `--version`. The directory is resolved with Pi's
+   native `getAgentDir()`, including `PI_CODING_AGENT_DIR` and rebranded defaults.
 
 There is **no automatic download**. If neither location has a working binary,
 the tool fails with a one-line install hint (`brew install …` / `apt install …`,

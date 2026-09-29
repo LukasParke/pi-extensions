@@ -35,6 +35,136 @@ const RESULT_STDERR_MAX = 4 * 1024;
 const RESULT_STDOUT_LINES = 40;
 const RESULT_STDERR_LINES = 20;
 
+const TERMINAL_NAMESPACE = {
+	name: "background-terminals",
+	description: "Session-scoped asynchronous shell terminals managed alongside the blocking bash tool.",
+} as const;
+
+const statusEnum = Type.Union([
+	Type.Literal("running"),
+	Type.Literal("done"),
+	Type.Literal("failed"),
+	Type.Literal("killed"),
+]);
+
+const streamSchema = Type.Object(
+	{
+		text: Type.String({ description: "Tail-bounded retained output, same bound as the text rendering." }),
+		totalBytes: Type.Integer({ minimum: 0, description: "Every byte ever seen on this stream." }),
+		truncatedBytes: Type.Integer({
+			minimum: 0,
+			description: "Bytes dropped from the head of the retained view.",
+		}),
+	},
+	{ additionalProperties: false },
+);
+
+const snapshotSchema = Type.Object(
+	{
+		id: Type.String(),
+		title: Type.String(),
+		command: Type.String(),
+		cwd: Type.String(),
+		pid: Type.Union([Type.Integer(), Type.Null()]),
+		status: statusEnum,
+		exitCode: Type.Union([Type.Integer(), Type.Null()]),
+		signal: Type.Union([Type.String(), Type.Null()]),
+		errorText: Type.Union([Type.String(), Type.Null()]),
+		createdAt: Type.Integer(),
+		settledAt: Type.Union([Type.Integer(), Type.Null()]),
+		stdout: streamSchema,
+		stderr: streamSchema,
+	},
+	{ additionalProperties: false },
+);
+
+const startSchema = Type.Object(
+	{
+		id: Type.String(),
+		title: Type.String(),
+		pid: Type.Union([Type.Integer(), Type.Null()]),
+		cwd: Type.String(),
+		status: Type.Literal("running"),
+		maxRunning: Type.Integer(),
+	},
+	{ additionalProperties: false },
+);
+
+const listEntrySchema = Type.Object(
+	{
+		id: Type.String(),
+		title: Type.String(),
+		command: Type.String(),
+		cwd: Type.String(),
+		pid: Type.Union([Type.Integer(), Type.Null()]),
+		status: statusEnum,
+		exitCode: Type.Union([Type.Integer(), Type.Null()]),
+		signal: Type.Union([Type.String(), Type.Null()]),
+		createdAt: Type.Integer(),
+		settledAt: Type.Union([Type.Integer(), Type.Null()]),
+		stdoutBytes: Type.Integer({ minimum: 0 }),
+		stderrBytes: Type.Integer({ minimum: 0 }),
+	},
+	{ additionalProperties: false },
+);
+
+const listSchema = Type.Object(
+	{
+		count: Type.Integer({ minimum: 0 }),
+		running: Type.Integer({ minimum: 0 }),
+		maxRunning: Type.Integer(),
+		terminals: Type.Array(listEntrySchema),
+	},
+	{ additionalProperties: false },
+);
+
+const killSchema = Type.Object(
+	{
+		results: Type.Array(
+			Type.Object(
+				{
+					id: Type.String(),
+					ok: Type.Boolean(),
+					status: Type.Union([statusEnum, Type.Null()]),
+					error: Type.Union([Type.String(), Type.Null()]),
+				},
+				{ additionalProperties: false },
+			),
+		),
+		killed: Type.Integer({ minimum: 0 }),
+		failed: Type.Integer({ minimum: 0 }),
+	},
+	{ additionalProperties: false },
+);
+
+/** Normalized, handle-free snapshot for structuredContent: never a ChildProcess. */
+function structuredSnapshot(snapshot: TerminalSnapshot) {
+	return {
+		id: snapshot.id,
+		title: snapshot.title,
+		command: snapshot.command,
+		cwd: snapshot.cwd,
+		pid: snapshot.pid ?? null,
+		status: snapshot.status,
+		exitCode: snapshot.exitCode ?? null,
+		signal: snapshot.signal ?? null,
+		errorText: snapshot.errorText ?? null,
+		createdAt: snapshot.createdAt,
+		settledAt: snapshot.settledAt ?? null,
+		stdout: structuredStream(snapshot.stdout, STATUS_STDOUT_MAX, STATUS_STDOUT_LINES),
+		stderr: structuredStream(snapshot.stderr, STATUS_STDERR_MAX, STATUS_STDERR_LINES),
+	};
+}
+
+function structuredStream(view: TerminalSnapshot["stdout"], maxBytes: number, maxLines: number) {
+	const text = tail(view.text, maxBytes, maxLines).text;
+	return {
+		text,
+		totalBytes: view.totalBytes,
+		truncatedBytes: Math.max(0, view.totalBytes - Buffer.byteLength(text)),
+	};
+}
+
 const RESULT_MESSAGE_TYPE = "background-terminal-result";
 const UI_KEY = "background-terminals";
 /**
@@ -122,6 +252,7 @@ export default function (pi: ExtensionAPI) {
 	/** Settled results awaiting delivery, keyed by id so a retry cannot double up. */
 	const pending = new Map<string, TerminalSnapshot>();
 	let uiCtx: ExtensionContext | undefined;
+	let closed = false;
 
 	const refreshUi = () => {
 		if (!uiCtx?.hasUI) return;
@@ -180,6 +311,7 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	manager.onSettle((snapshot, consumed) => {
+		if (closed) return;
 		refreshUi();
 		if (consumed) return; // already shown via bg_status / bg_kill
 		pending.set(snapshot.id, snapshot);
@@ -187,6 +319,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		closed = false;
 		uiCtx = ctx;
 		refreshUi();
 	});
@@ -194,6 +327,9 @@ export default function (pi: ExtensionAPI) {
 	// did not already collect itself, and a followUp can actually be acted on.
 	pi.on("agent_settled", async () => scheduleFlush());
 	pi.on("session_shutdown", async () => {
+		closed = true;
+		if (flushTimer) clearTimeout(flushTimer);
+		flushTimer = undefined;
 		pending.clear();
 		uiCtx?.ui.setStatus(UI_KEY, undefined);
 		uiCtx?.ui.setWidget(UI_KEY, undefined);
@@ -219,6 +355,11 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		outputSchema: startSchema,
+		namespace: TERMINAL_NAMESPACE,
+		// Spawns a real process running an arbitrary shell command: it modifies
+		// the environment and can reach anything that command can reach.
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 		async execute(_id, params: any, _signal, _onUpdate, ctx) {
 			const cwd = path.resolve(ctx.cwd, params.working_dir ?? ".");
 			const snapshot = manager.start({ command: params.command, title: params.title, cwd });
@@ -234,6 +375,14 @@ export default function (pi: ExtensionAPI) {
 					},
 				],
 				details: { id: snapshot.id, title: snapshot.title, pid: snapshot.pid ?? null, cwd },
+				structuredContent: {
+					id: snapshot.id,
+					title: snapshot.title,
+					pid: snapshot.pid ?? null,
+					cwd,
+					status: "running" as const,
+					maxRunning: MAX_RUNNING,
+				},
 			};
 		},
 	});
@@ -249,6 +398,12 @@ export default function (pi: ExtensionAPI) {
 				additionalProperties: false,
 			},
 		),
+		outputSchema: snapshotSchema,
+		namespace: TERMINAL_NAMESPACE,
+		// Reading a settled terminal CONSUMES its result (the automatic completion
+		// message is then suppressed), so this is not universally read-only or
+		// idempotent — the annotations stay off on purpose.
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 		async execute(_id, params: any) {
 			const snapshot = manager.get(params.id);
 			if (!snapshot) {
@@ -265,6 +420,7 @@ export default function (pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text" as const, text: statusText(snapshot) }],
 				details: { id: snapshot.id, status: snapshot.status, exitCode: snapshot.exitCode ?? null },
+				structuredContent: structuredSnapshot(snapshot),
 			};
 		},
 	});
@@ -274,6 +430,9 @@ export default function (pi: ExtensionAPI) {
 		label: "List Terminals",
 		description: "List all background terminals with status, age and output sizes.",
 		parameters: Type.Object({}, { additionalProperties: false }),
+		outputSchema: listSchema,
+		namespace: TERMINAL_NAMESPACE,
+		annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
 		async execute() {
 			const all = manager.list();
 			const running = all.filter((entry) => entry.status === "running").length;
@@ -290,6 +449,25 @@ export default function (pi: ExtensionAPI) {
 					},
 				],
 				details: { count: all.length, running },
+				structuredContent: {
+					count: all.length,
+					running,
+					maxRunning: MAX_RUNNING,
+					terminals: all.map((entry) => ({
+						id: entry.id,
+						title: entry.title,
+						command: entry.command,
+						cwd: entry.cwd,
+						pid: entry.pid ?? null,
+						status: entry.status,
+						exitCode: entry.exitCode ?? null,
+						signal: entry.signal ?? null,
+						createdAt: entry.createdAt,
+						settledAt: entry.settledAt ?? null,
+						stdoutBytes: entry.stdout.totalBytes,
+						stderrBytes: entry.stderr.totalBytes,
+					})),
+				},
 			};
 		},
 	});
@@ -305,8 +483,19 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		outputSchema: killSchema,
+		namespace: TERMINAL_NAMESPACE,
+		// Killing terminates real processes (destructive); repeating a kill on an
+		// already-settled terminal is a no-op (idempotent).
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
 		async execute(_id, params: any) {
 			const lines: string[] = [];
+			const results: Array<{
+				id: string;
+				ok: boolean;
+				status: TerminalSnapshot["status"] | null;
+				error: string | null;
+			}> = [];
 			for (const id of params.ids) {
 				try {
 					const before = manager.get(id);
@@ -314,19 +503,28 @@ export default function (pi: ExtensionAPI) {
 						manager.markConsumed(id);
 						pending.delete(id);
 						lines.push(`${id} was already ${before.status}`);
+						results.push({ id, ok: true, status: before.status, error: null });
 						continue;
 					}
 					const snapshot = await manager.kill(id);
 					pending.delete(id);
 					lines.push(`${id} ${snapshot.status}${snapshot.signal ? ` (signal ${snapshot.signal})` : ""}`);
+					results.push({ id, ok: true, status: snapshot.status, error: null });
 				} catch (error) {
-					lines.push(`${id}: ${error instanceof Error ? error.message : String(error)}`);
+					const message = error instanceof Error ? error.message : String(error);
+					lines.push(`${id}: ${message}`);
+					results.push({ id, ok: false, status: null, error: message });
 				}
 			}
 			refreshUi();
+			const failed = results.filter((entry) => !entry.ok).length;
 			return {
 				content: [{ type: "text" as const, text: lines.join("\n") }],
-				details: { killed: params.ids.length },
+				details: { killed: results.length - failed, failed },
+				// A partial failure must never read as "all killed": the result is an
+				// error and the per-id outcomes stay machine-readable.
+				isError: failed > 0 || undefined,
+				structuredContent: { results, killed: results.length - failed, failed },
 			};
 		},
 	});

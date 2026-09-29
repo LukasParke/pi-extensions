@@ -47,9 +47,29 @@ describe("ultracode", () => {
 		expect(state.oneShot).toBe(true);
 		expect(pi._thinking()).toBe("xhigh");
 		expect(await input({ source: "rpc", text: "ultracode: ignored" })).toEqual({ action: "continue" });
-		await pi._handlers.get("agent_end")![0]!({});
+		for (const handler of pi._handlers.get("agent_end") ?? []) await handler({});
+		expect(state.oneShot).toBe(true);
+		expect(pi._thinking()).toBe("xhigh");
+		await pi._handlers.get("agent_settled")![0]!({});
 		expect(state.oneShot).toBe(false);
 		expect(pi._thinking()).toBe("medium");
+	});
+
+	it("adds a native prompt section without replacing existing instructions", () => {
+		const pi = fakePi();
+		const state = createUltracodeState("medium");
+		registerUltracode(pi, state, defaultConfig);
+		const event = { systemPrompt: "User prompt", systemPromptOptions: { sections: { existing: "Keep me" } } };
+		const handler = pi._handlers.get("before_agent_start")![0]!;
+		expect(handler(event)).toBeUndefined();
+		expect(event.systemPromptOptions.sections).toEqual({ existing: "Keep me" });
+		enableUltracodeSession(pi, state);
+		expect(handler(event)).toBeUndefined();
+		expect(event.systemPrompt).toBe("User prompt");
+		expect(event.systemPromptOptions.sections).toMatchObject({
+			existing: "Keep me",
+			ultracode: ultracodePolicyText(defaultConfig, "medium"),
+		});
 	});
 
 	it("sets and restores xhigh on session toggle", () => {

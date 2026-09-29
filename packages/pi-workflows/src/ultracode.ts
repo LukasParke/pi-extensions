@@ -60,18 +60,10 @@ export function registerUltracode(pi: ExtensionAPI, state: UltracodeState, confi
 
 	pi.on("before_agent_start", (event) => {
 		if (!isUltracodeActive(state)) return;
-		const active = isUltracodeActive(state);
-		// Consume one-shot after this turn's policy injection is prepared.
-		if (state.oneShot && !state.sessionEnabled) {
-			// Keep oneShot true through the turn; clear on agent_end.
-		}
-		if (!active) return;
-		return {
-			systemPrompt: `${event.systemPrompt}\n\n${ultracodePolicyText(config, state.size)}`,
-		};
+		event.systemPromptOptions.sections.ultracode = ultracodePolicyText(config, state.size);
 	});
 
-	pi.on("agent_end", () => {
+	pi.on("agent_settled", () => {
 		if (state.oneShot && !state.sessionEnabled) {
 			state.oneShot = false;
 			restoreThinking(pi, state);

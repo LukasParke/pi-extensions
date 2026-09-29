@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-openrouter",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "OpenRouter model catalog sync for pi: generates models.json entries with per-model API surface routing (completions/responses/messages), benchmark-driven rules, and a surface benchmark harness",
   "type": "module",
   "license": "MIT",

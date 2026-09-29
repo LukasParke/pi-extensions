@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-graphiti",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Graphiti shared memory for the pi coding agent: automatic recall on every prompt, explicit remember/recall tools, direct MCP-over-HTTP connection",
   "type": "module",
   "license": "MIT",
@@ -43,7 +43,7 @@
     ]
   },
   "dependencies": {
-    "@parke.dev/pi-dispatch": "^0.1.0",
+    "@parke.dev/pi-dispatch": "^0.1.1",
     "@parke.dev/pi-ext-config": "^0.1.0"
   },
   "peerDependencies": {

@@ -26,6 +26,27 @@ can get behind a login:
 | `steel_read`     | read the page as text, links, or **forms with selectors** |
 | `steel_look`     | screenshot the current page                               |
 
+## Native codemode
+
+Requires Pi **0.99.1 or newer**. All nine tools are grouped under `steel` and
+return typed business data to native codemode. Scrape data preserves requested
+formats and all requested links; read/navigation data preserves full extracted
+text alongside model-facing truncation flags. Screenshot results retain identical
+image bytes in their `image` field, suitable for `image(result.image)`.
+
+Shared-session tools declare native sequential execution because they use one
+browser. Await multi-step interactions in order. Browser actions are not
+read-only or idempotent; even read/look can create a session. Selector misses
+return native `isError` with data, while intentionally withheld oversized images
+remain informational. PDF outputs resolve against `ctx.cwd` and use Pi's native
+file-mutation queue for writes to the same path.
+
+```js
+const shot = await tools.steel_look({});
+if (shot.image) image(shot.image);
+else return { tooLarge: shot.tooLarge, bytes: shot.bytes };
+```
+
 ## Parameters
 
 - `steel_scrape` — `url`; `format?` (`markdown` \| `readability` \|

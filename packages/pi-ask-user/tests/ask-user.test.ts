@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import askUser from "../extensions/ask-user.ts";
 
 interface AskUserTool {
+	exposure?: string;
+	namespace?: { name: string; description?: string };
+	annotations?: Record<string, boolean>;
 	execute(
 		id: string,
 		params: {
@@ -45,6 +48,16 @@ const blocked = [
 	["herdr:blocked", { active: true, label: params.question }],
 	["herdr:blocked", { active: false }],
 ];
+
+describe("ask_user native contracts", () => {
+	it("is model-only with a namespace and read-only annotations", () => {
+		const h = harness(undefined);
+		// Native user-dialog contract: callable by the model, never from codemode.
+		expect(h.tool.exposure).toBe("model-only");
+		expect(h.tool.namespace?.name).toBe("ask-user");
+		expect(h.tool.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+	});
+});
 
 describe("ask_user dialogs", () => {
 	it("signals around option selection and passes the abort signal", async () => {

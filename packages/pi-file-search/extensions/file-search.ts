@@ -39,7 +39,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "@earendil-works/pi-coding-agent";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	getAgentDir,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const EXEC_TIMEOUT_MS = 60_000;
@@ -64,7 +69,7 @@ const cache = new Map<string, Resolved | null>();
 const CANDIDATES: Record<string, string[]> = { fd: ["fd", "fdfind"], rg: ["rg"] };
 
 function agentBinDir(): string {
-	return path.join(os.homedir(), ".pi", "agent", "bin");
+	return path.join(getAgentDir(), "bin");
 }
 
 function run(
@@ -209,7 +214,7 @@ const clamp = (value: number | undefined, min: number, max: number, fallback: nu
 async function present(
 	stdout: string,
 	label: string,
-): Promise<{ text: string; truncated: boolean; totalLines: number; file?: string }> {
+): Promise<{ text: string; lines: string[]; truncated: boolean; totalLines: number; file?: string }> {
 	const trimmed = stdout.replace(/\n+$/, "");
 	const lines = trimmed ? trimmed.split("\n") : [];
 	const totalLines = lines.length;
@@ -220,11 +225,14 @@ async function present(
 		truncated = true;
 	}
 	let text = shown.join("\n");
+	let boundedLines = shown;
 	if (Buffer.byteLength(text, "utf8") > DEFAULT_MAX_BYTES) {
 		text = Buffer.from(text, "utf8").subarray(0, DEFAULT_MAX_BYTES).toString("utf8");
+		const lastNewline = text.lastIndexOf("\n");
+		boundedLines = lastNewline < 0 ? [] : text.slice(0, lastNewline).split("\n");
 		truncated = true;
 	}
-	if (!truncated) return { text, truncated, totalLines };
+	if (!truncated) return { text, lines: boundedLines, truncated, totalLines };
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), `pi-${label}-`));
 	const file = path.join(dir, "results.txt");
 	await fs.writeFile(file, trimmed, "utf8");
@@ -232,11 +240,56 @@ async function present(
 		text: `${text}\n\n[truncated: showing ${shown.length} of ${totalLines} lines (${formatSize(
 			Buffer.byteLength(text, "utf8"),
 		)} of ${formatSize(Buffer.byteLength(trimmed, "utf8"))}). Full results: ${file}]`,
+		lines: boundedLines,
 		truncated,
 		totalLines,
 		file,
 	};
 }
+
+const SEARCH_NAMESPACE = {
+	name: "file-search",
+	description: "Specialized fd/rg search: gitignore-aware, bounded output, resilient to partial I/O.",
+} as const;
+/** Searches only read the local filesystem — a closed domain, never the open web. */
+const SEARCH_ANNOTATIONS = { readOnlyHint: true, openWorldHint: false } as const;
+
+const fdOutputSchema = Type.Object(
+	{
+		matches: Type.Integer({ minimum: 0, description: "Total matching entries before display truncation." }),
+		paths: Type.Array(Type.String(), { description: "The bounded set of paths shown in the text output." }),
+		truncated: Type.Boolean({ description: "True when the result set exceeded the display cap." }),
+		file: Type.Union([Type.String(), Type.Null()], {
+			description: "Temp file with the full result set when truncated.",
+		}),
+		notes: Type.Array(Type.String(), { description: "Behavior notes, e.g. glob retry or hidden inclusion." }),
+	},
+	{ additionalProperties: false },
+);
+
+const rgOutputSchema = Type.Object(
+	{
+		matches: Type.Integer({
+			minimum: 0,
+			description: "Total output lines (matches plus context) before display truncation.",
+		}),
+		output: Type.String({
+			description: "Bounded ripgrep output, including requested context and truncation notice.",
+		}),
+		lines: Type.Array(Type.String(), {
+			description: "Complete bounded output lines, including context and separators.",
+		}),
+		truncated: Type.Boolean(),
+		file: Type.Union([Type.String(), Type.Null()], {
+			description: "Temp file with the full result set when truncated.",
+		}),
+		partial: Type.Boolean({
+			description: "True when some paths were unreadable and results may be incomplete.",
+		}),
+		notes: Type.Array(Type.String()),
+	},
+	{ additionalProperties: false },
+);
 
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
@@ -273,6 +326,9 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		outputSchema: fdOutputSchema,
+		namespace: SEARCH_NAMESPACE,
+		annotations: SEARCH_ANNOTATIONS,
 		async execute(_id, params: any, signal, _onUpdate, ctx: ExtensionContext) {
 			const tool = await resolveTool("fd");
 			if (!tool) throw new Error(missingMessage("fd"));
@@ -337,7 +393,8 @@ export default function (pi: ExtensionAPI) {
 						: "";
 				return {
 					content: [{ type: "text" as const, text: `No files found${hint}` }],
-					details: { matches: 0 },
+					details: { matches: 0, truncated: false, file: null, notes },
+					structuredContent: { matches: 0, paths: [], truncated: false, file: null, notes },
 				};
 			}
 			const shown = await present(result.stdout, "fd");
@@ -348,7 +405,14 @@ export default function (pi: ExtensionAPI) {
 						text: shown.text + (notes.length ? `\n\n[note: ${notes.join("; ")}]` : ""),
 					},
 				],
-				details: { matches: shown.totalLines, truncated: shown.truncated, file: shown.file ?? null },
+				details: { matches: shown.totalLines, truncated: shown.truncated, file: shown.file ?? null, notes },
+				structuredContent: {
+					matches: shown.totalLines,
+					paths: shown.lines,
+					truncated: shown.truncated,
+					file: shown.file ?? null,
+					notes,
+				},
 			};
 		},
 	});
@@ -392,6 +456,9 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		outputSchema: rgOutputSchema,
+		namespace: SEARCH_NAMESPACE,
+		annotations: SEARCH_ANNOTATIONS,
 		async execute(_id, params: any, signal, _onUpdate, ctx: ExtensionContext) {
 			const tool = await resolveTool("rg");
 			if (!tool) throw new Error(missingMessage("rg"));
@@ -420,7 +487,19 @@ export default function (pi: ExtensionAPI) {
 			const result = await run(tool.command, args, { cwd: ctx.cwd, signal });
 			// ripgrep exits 1 for "no matches", which is not an error.
 			if (result.code === 1 && !result.stdout.trim()) {
-				return { content: [{ type: "text" as const, text: "No matches found" }], details: { matches: 0 } };
+				return {
+					content: [{ type: "text" as const, text: "No matches found" }],
+					details: { matches: 0 },
+					structuredContent: {
+						matches: 0,
+						output: "",
+						lines: [],
+						truncated: false,
+						file: null,
+						partial: false,
+						notes,
+					},
+				};
 			}
 			// Exit 2 still prints real matches to stdout when only some paths were
 			// unreadable (e.g. broken symlinks under node_modules); --no-messages
@@ -431,7 +510,19 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (result.code > 1) notes.push("some paths were unreadable; results may be incomplete");
 			if (!result.stdout.trim()) {
-				return { content: [{ type: "text" as const, text: "No matches found" }], details: { matches: 0 } };
+				return {
+					content: [{ type: "text" as const, text: "No matches found" }],
+					details: { matches: 0 },
+					structuredContent: {
+						matches: 0,
+						output: "",
+						lines: [],
+						truncated: false,
+						file: null,
+						partial: false,
+						notes,
+					},
+				};
 			}
 			const shown = await present(result.stdout, "rg");
 			return {
@@ -446,6 +537,16 @@ export default function (pi: ExtensionAPI) {
 					truncated: shown.truncated,
 					file: shown.file ?? null,
 					partial: result.code > 1,
+					notes,
+				},
+				structuredContent: {
+					matches: shown.totalLines,
+					output: shown.text,
+					lines: shown.lines,
+					truncated: shown.truncated,
+					file: shown.file ?? null,
+					partial: result.code > 1,
+					notes,
 				},
 			};
 		},

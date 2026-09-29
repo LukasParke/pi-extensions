@@ -14,8 +14,10 @@ import type {
 import { validatePredicate } from "../src/index.ts";
 import { createGitHubPrProbe, formatPrSnapshot, prNeedsAction } from "../src/pr.ts";
 import type { Predicate } from "../src/index.ts";
+import { gateSchema, sentinelSchema, statusSchema } from "../src/schemas.ts";
 
 const UI_KEY = "sentinel";
+const namespace = { name: "sentinel", description: "Criteria-gated watches and session wakeups" };
 
 const predicateSchema = Type.Object(
 	{
@@ -165,6 +167,9 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	pi.registerTool({
 		name: "sentinel_watch",
 		label: "Watch Sentinel",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+		outputSchema: sentinelSchema,
 		description:
 			"Watch a shell command until it completes or times out. Poll mode runs it on an interval while idle. Stream mode spawns it once and reacts immediately when it exits. next-turn urgency queues information without triggering a model turn. Re-registering a same-name, same-spec watch succeeds and returns the existing watch.",
 		parameters: Type.Object(
@@ -211,6 +216,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 			return {
 				content: [{ type: "text" as const, text: description }],
 				details: sentinel,
+				structuredContent: JSON.parse(JSON.stringify(sentinel)),
 			};
 		},
 	});
@@ -218,6 +224,9 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	pi.registerTool({
 		name: "sentinel_pr",
 		label: "Attach PR Sentinel",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+		outputSchema: sentinelSchema,
 		description:
 			"Attach a GitHub pull request to this session. Authenticated polling wakes the agent for merge conflicts, broken CI, review feedback, and closure or merge. Supports private and internal repositories through GitHub credentials. Re-attaching the same PR with the same spec succeeds and returns the existing sentinel.",
 		parameters: Type.Object(
@@ -272,6 +281,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 			return {
 				content: [{ type: "text" as const, text: attachedText }],
 				details: sentinel,
+				structuredContent: JSON.parse(JSON.stringify(sentinel)),
 			};
 		},
 	});
@@ -279,6 +289,9 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	pi.registerTool({
 		name: "sentinel_sleep",
 		label: "Sleep Sentinel",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+		outputSchema: sentinelSchema,
 		description:
 			'Schedule or replace a time-based wakeup. Unnamed sleeps share the fixed "sleep" slot; a new unnamed sleep replaces the pending one. Named sleeps replace the same name.',
 		parameters: Type.Object(
@@ -304,6 +317,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 					},
 				],
 				details: sleep,
+				structuredContent: JSON.parse(JSON.stringify(sleep)),
 			};
 		},
 	});
@@ -311,6 +325,9 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	pi.registerTool({
 		name: "sentinel_gate",
 		label: "Set Sentinel Gate",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+		outputSchema: gateSchema,
 		description:
 			"Declare session completion criteria. Criterion flips queue for the next natural turn by default; ALL PASS wakes immediately by default. While open, do not claim completion.",
 		parameters: Type.Object(
@@ -352,6 +369,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 					},
 				],
 				details: gate,
+				structuredContent: JSON.parse(JSON.stringify(gate)),
 			};
 		},
 	});
@@ -359,6 +377,9 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	pi.registerTool({
 		name: "sentinel_status",
 		label: "Sentinel Status",
+		namespace,
+		annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+		outputSchema: statusSchema,
 		description:
 			"List attached PRs, watches, sleeps, and the session gate with state, output snippets, and poll ETAs.",
 		parameters: Type.Object({}, { additionalProperties: false }),
@@ -367,6 +388,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 			return {
 				content: [{ type: "text" as const, text: statusText(snapshot.items, snapshot.gate) }],
 				details: snapshot,
+				structuredContent: JSON.parse(JSON.stringify(snapshot)),
 			};
 		},
 	});
@@ -374,6 +396,9 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 	pi.registerTool({
 		name: "sentinel_cancel",
 		label: "Cancel Sentinel",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+		outputSchema: Type.Object({ cancelled: Type.Array(Type.String()) }),
 		description:
 			'Cancel a named PR/watch/sleep, cancel the session gate with name "gate", or cancel everything. Undelivered queued events from cancelled sentinels are dropped.',
 		parameters: Type.Object(
@@ -394,6 +419,7 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 					},
 				],
 				details: { cancelled },
+				structuredContent: { cancelled },
 			};
 		},
 	});

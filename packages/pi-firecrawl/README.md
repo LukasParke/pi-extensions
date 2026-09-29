@@ -14,8 +14,27 @@ Four tools:
 | `firecrawl_map`    | discover the URLs on a site                                       |
 | `firecrawl_crawl`  | crawl linked pages into markdown (async job, polls to completion) |
 
-Ships a [`firecrawl` skill](skills/firecrawl/SKILL.md) teaching the model when
-to map-then-scrape versus crawl, and how to bound jobs with `limit`.
+Requires Pi **0.99.1 or newer**. Ships a [`firecrawl` skill](skills/firecrawl/SKILL.md)
+teaching the model when to map-then-scrape versus crawl, and how to bound jobs with `limit`.
+
+## Native codemode
+
+Tools are grouped in the `firecrawl` namespace; callable names stay unchanged.
+Native `codemode` receives structured results while normal calls retain text and details:
+
+```js
+const result = await tools.firecrawl_map({ url: "https://example.com", limit: 10 });
+if (result.refused) return result.error;
+return result.links;
+```
+
+Scrape returns `{ page }`, search `{ results }`, map `{ links }`, and crawl
+`{ jobId, status, completed, total, pages, partial }`. Page content is not shortened
+in structured results, even where display text uses snippets. Provider failures
+return `isError: true` with `{ refused: true, error }`. A failed crawl also retains
+its job status and pages; a timeout returns partial data without an error. Empty
+search results are successful. Scrape/search/map are annotated as remote reads;
+crawl starts a potentially paid job and is neither read-only nor idempotent.
 
 ## Parameters
 

@@ -8,23 +8,38 @@ import { LinearClient } from "../src/client.ts";
 import { LINEAR_DESCRIPTION } from "../src/describe.ts";
 import { renderIssues, renderToolCall } from "../src/tui.ts";
 import { type IssueRow, toIssueDetail, toIssueRow } from "../src/viewmodel.ts";
+import {
+	commentSchema,
+	connectSchema,
+	disconnectSchema,
+	issueSchema,
+	issuesSchema,
+	statesSchema,
+	statusSchema,
+	transitionSchema,
+} from "../src/schemas.ts";
 
 const MAX_LIMIT = 50;
 
-interface ToolResult {
-	content: { type: "text"; text: string }[];
-	details: unknown;
+const namespace = { name: "linear", description: "Linear issues, workflow, and credentials" };
+const readAnnotations = {
+	readOnlyHint: true,
+	destructiveHint: false,
+	idempotentHint: true,
+	openWorldHint: true,
+};
+
+function ok(text: string, details: unknown = {}) {
+	return {
+		content: [{ type: "text" as const, text }],
+		details,
+		structuredContent: JSON.parse(JSON.stringify(details)),
+	};
 }
 
-function ok(text: string, details: unknown = {}): ToolResult {
-	return { content: [{ type: "text", text }], details };
-}
-
-function refuse(text: string, details?: unknown): ToolResult {
-	return ok(text, {
-		refused: true,
-		...(typeof details === "object" && details !== null ? details : {}),
-	});
+function refuse(text: string, details?: unknown) {
+	const data = { refused: true, ...(typeof details === "object" && details !== null ? details : {}) };
+	return { ...ok(text, data), structuredContent: { ...data, error: text }, isError: true };
 }
 
 function explain(e: unknown): string {
@@ -92,6 +107,9 @@ export default function linear(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "linear_issues",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: issuesSchema,
 		label: "Linear issues",
 		description:
 			"List or search Linear issues. Defaults to assigned-to-you and not-done — the set you act on. Pass mine:false for " +
@@ -138,6 +156,9 @@ export default function linear(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "linear_issue",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: issueSchema,
 		label: "Linear issue",
 		description:
 			"One issue in full, with its description and every comment. This is the tool for understanding a ticket — it returns " +
@@ -180,6 +201,9 @@ export default function linear(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "linear_states",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: statesSchema,
 		label: "Linear states",
 		description:
 			"The workflow states a team has. Read this before moving an issue: it turns a state name from a guess into a choice.",
@@ -211,6 +235,9 @@ export default function linear(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "linear_comment",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+		outputSchema: commentSchema,
 		label: "Linear comment",
 		description:
 			"Post a comment on an issue. The user is asked to confirm and sees the full text first; nothing is posted if they " +
@@ -257,6 +284,9 @@ export default function linear(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "linear_transition",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+		outputSchema: transitionSchema,
 		label: "Linear transition",
 		description:
 			"Move an issue to a different workflow state, by name. The user confirms. If the name is wrong the error lists the " +
@@ -299,6 +329,9 @@ export default function linear(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "linear_status",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: statusSchema,
 		label: "Linear status",
 		description:
 			"Report whether Linear is reachable, which credential is in use and where it came from, and what this extension " +
@@ -333,6 +366,9 @@ export default function linear(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "linear_connect",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+		outputSchema: connectSchema,
 		label: "Connect Linear",
 		description:
 			"Store a Linear API key for this extension. Get one from Linear → Settings → API. Call linear_status first — " +
@@ -382,6 +418,9 @@ export default function linear(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "linear_disconnect",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+		outputSchema: disconnectSchema,
 		label: "Disconnect Linear",
 		description: "Remove the stored Linear key. Does not touch your environment.",
 		parameters: Type.Object({}),

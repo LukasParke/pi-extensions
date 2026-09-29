@@ -287,6 +287,14 @@ describe("ChildRunner", () => {
     expect(result.errorMessage).toMatch(/prompt rejected/i);
   });
 
+  it("fails fast when the child handles a prompt without starting a run", async () => {
+    process.env.FAKE_PI_MODE = "prompt-handled";
+    const result = await runner.run({ ...defaultSpec, timeoutMs: 5_000 });
+    expect(result.state).toBe("failed");
+    expect(result.errorMessage).toMatch(/handled the prompt without starting/i);
+    expect(result.stopReason).not.toBe("timeout");
+  });
+
   it("uses the spec label on results", async () => {
     process.env.FAKE_PI_MODE = "success";
     const result = await runner.run({ ...defaultSpec, label: "Audit auth" });

@@ -24,7 +24,7 @@ import { executeWorkflow, loadResumeSource, newRunId } from "../src/runner.ts";
 import { safeStringify } from "../src/sandbox.ts";
 import { listSavedWorkflows, resolveSavedWorkflow, saveWorkflow } from "../src/saved.ts";
 // Stable boundary module (re-exports the planned `@parke.dev/pi-subagent/sdk` surface).
-import { emptyUsage } from "../src/subagent-sdk.ts";
+import { emptyUsage, hasBilledUsage, toPiUsage } from "../src/subagent-sdk.ts";
 import {
 	COMPLETION_TYPE,
 	ENTRY_TYPE,
@@ -49,6 +49,14 @@ export default async function (pi: ExtensionAPI) {
 	const ultracode = createUltracodeState(config.defaultSize);
 	let activeSessionKey = "default";
 	let widgetCtx: ExtensionContext | undefined;
+	const usageDelivered = new WeakSet<WorkflowTerminal>();
+	const terminalToolResult = (terminal: WorkflowTerminal) => {
+		const result = formatTerminalToolResult(terminal);
+		const usage = terminal.executionUsage;
+		if (!usage || !hasBilledUsage(usage) || usageDelivered.has(terminal)) return result;
+		usageDelivered.add(terminal);
+		return { ...result, usage: toPiUsage(usage) };
+	};
 
 	const paint = () => {
 		if (!widgetCtx?.ui) return;
@@ -221,6 +229,7 @@ export default async function (pi: ExtensionAPI) {
 				result: exec.result,
 				failure: exec.failure,
 				summary: exec.summary,
+				executionUsage: exec.executionUsage,
 			})),
 			sourceHash: sourceHashOf(options.script),
 			argsHash: argsHashOf(options.args),
@@ -242,7 +251,7 @@ export default async function (pi: ExtensionAPI) {
 			const terminal = await live.promise;
 			registry.claim(runId);
 			if (registry.markDelivered(runId)) appendTerminalEntry(pi, terminal);
-			return formatTerminalToolResult(terminal);
+			return options.toolExecution ? terminalToolResult(terminal) : formatTerminalToolResult(terminal);
 		}
 
 		return {
@@ -264,6 +273,9 @@ export default async function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "workflow",
 		label: "Workflow",
+		exposure: "model-only",
+		namespace: { name: "agents", description: "Multi-agent execution and orchestration" },
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 		description: [
 			"Run a multi-phase, multi-agent orchestration program that you write yourself in JavaScript.",
 			"",
@@ -379,7 +391,7 @@ export default async function (pi: ExtensionAPI) {
 				const terminal = await waitForRun(run, ms, signal);
 				registry.claim(run.runId);
 				if (registry.markDelivered(run.runId)) appendTerminalEntry(pi, terminal);
-				return formatTerminalToolResult(terminal);
+				return terminalToolResult(terminal);
 			}
 
 			if (action === "resume" || action === "rerun") {
@@ -651,6 +663,7 @@ async function deliverCompletion(pi: ExtensionAPI, registry: WorkflowRunRegistry
 
 function formatTerminalToolResult(terminal: WorkflowTerminal) {
 	return {
+		isError: terminal.state === "failed",
 		content: [{ type: "text" as const, text: formatTerminalText(terminal) }],
 		details: {
 			runId: terminal.runId,

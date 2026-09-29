@@ -35,18 +35,36 @@ const STORE_REMINDER =
 
 /** Settled turns before the store reminder is eligible. */
 const STORE_REMINDER_MIN_SETTLED_TURNS = 10;
+const memoryNamespace = { name: "memory", description: "Durable shared Graphiti memory" };
+const factSchema = Type.Object({
+	fact: Type.String(),
+	valid_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+	invalid_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+const recallSchema = Type.Union([
+	Type.Object({ mode: Type.Literal("facts"), results: Type.Array(factSchema) }),
+	Type.Object({
+		mode: Type.Union([Type.Literal("nodes"), Type.Literal("episodes")]),
+		results: Type.Array(
+			Type.Unknown({ description: "Graphiti entity or episode, including server-defined attributes" }),
+		),
+	}),
+]);
 
 export default function (pi: ExtensionAPI) {
 	ensureDelivery(pi);
 
 	let client: GraphitiClient | undefined;
+	let closed = false;
 	let unavailable: string | undefined;
 	let remembered = false;
 	let reminderSent = false;
 	let settledTurns = 0;
 
 	async function getClient(): Promise<GraphitiClient> {
-		if (!client) client = new GraphitiClient(await graphitiConfig());
+		const config = await graphitiConfig();
+		if (closed) throw new Error("The Graphiti session has shut down.");
+		client ??= new GraphitiClient(config);
 		return client;
 	}
 
@@ -54,6 +72,7 @@ export default function (pi: ExtensionAPI) {
 		config: graphitiConfig,
 		searchFacts: async (query, maxFacts) => (await getClient()).searchFacts(query, maxFacts),
 		publish: (facts: FactResult[]) => {
+			if (closed) return;
 			dispatchQueue().publish({
 				id: "graphiti:recall",
 				source: "graphiti",
@@ -80,6 +99,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", (_event, ctx) => {
+		closed = false;
 		unavailable = undefined;
 		remembered = false;
 		reminderSent = false;
@@ -93,13 +113,15 @@ export default function (pi: ExtensionAPI) {
 			} catch (error) {
 				unavailable = error instanceof Error ? error.message : String(error);
 			}
-			if (unavailable && ctx.hasUI) {
+			if (!closed && unavailable && ctx.hasUI) {
 				ctx.ui.setStatus("graphiti", `memory unavailable: ${unavailable.slice(0, 80)}`);
 			}
 		})().catch(() => {});
 	});
 
 	pi.on("session_shutdown", () => {
+		closed = true;
+		pipeline.reset();
 		client?.close();
 		client = undefined;
 	});
@@ -108,7 +130,7 @@ export default function (pi: ExtensionAPI) {
 		// Synchronous: only the system-prompt append. Recall runs in the
 		// background and arrives via dispatch at the next turn boundary.
 		recallFromSession(ctx, event.prompt);
-		return { systemPrompt: `${event.systemPrompt}\n\n${STORE_POLICY}` };
+		event.systemPromptOptions.sections.graphiti_memory = STORE_POLICY;
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
@@ -129,6 +151,9 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "memory_recall",
 		label: "Memory Recall",
+		namespace: memoryNamespace,
+		annotations: { readOnlyHint: true, openWorldHint: true, idempotentHint: true },
+		outputSchema: recallSchema,
 		description:
 			"Search shared Graphiti memory. mode 'facts' (default) does semantic search over stored facts; 'nodes' finds entities (people, hosts, services, projects); 'episodes' lists recent raw episodes chronologically.",
 		parameters: Type.Object({
@@ -139,7 +164,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params, signal) {
 			const c = await getClient();
 			const limit = params.limit ?? 10;
-			const mode = params.mode ?? "facts";
+			const mode = params.mode === "nodes" || params.mode === "episodes" ? params.mode : "facts";
 			let payload: unknown;
 			if (mode === "nodes") payload = await c.searchNodes(params.query, limit, signal);
 			else if (mode === "episodes") payload = await c.recentEpisodes(limit, signal);
@@ -148,9 +173,11 @@ export default function (pi: ExtensionAPI) {
 				pipeline.markSeen(facts);
 				payload = facts;
 			}
+			const text = JSON.stringify(payload, null, 2);
 			return {
-				content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+				content: [{ type: "text", text }],
 				details: {},
+				structuredContent: { mode, results: JSON.parse(text) },
 			};
 		},
 	});
@@ -158,6 +185,9 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "memory_remember",
 		label: "Memory Remember",
+		namespace: memoryNamespace,
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+		outputSchema: Type.Object({ message: Type.String() }),
 		description:
 			"Store one durable fact, decision, constraint, or outcome in shared Graphiti memory. One small episode per fact. Include source context in the body. Never store secret values — store where they live instead.",
 		parameters: Type.Object({
@@ -181,19 +211,31 @@ export default function (pi: ExtensionAPI) {
 			);
 			remembered = true;
 			dispatchQueue().suppress("graphiti:store");
-			return { content: [{ type: "text", text: result }], details: {} };
+			return {
+				content: [{ type: "text", text: result }],
+				details: {},
+				structuredContent: { message: result },
+			};
 		},
 	});
 
 	pi.registerTool({
 		name: "memory_status",
 		label: "Memory Status",
+		namespace: memoryNamespace,
+		annotations: { readOnlyHint: true, openWorldHint: true, idempotentHint: true },
+		outputSchema: Type.Object({ status: Type.String(), message: Type.Optional(Type.String()) }),
 		description: "Health-check the Graphiti memory server. Use when recall or remember calls fail.",
 		parameters: Type.Object({}),
 		async execute(_id, _params, signal) {
 			const c = await getClient();
 			const status = await c.status(signal);
-			return { content: [{ type: "text", text: JSON.stringify(status) }], details: {} };
+			return {
+				content: [{ type: "text", text: JSON.stringify(status) }],
+				details: {},
+				structuredContent: status,
+				isError: status.status !== "ok",
+			};
 		},
 	});
 }

@@ -24,13 +24,13 @@ Pi builds after v0.80.10 persist an optional `usage` field on tool-result messag
 
 The extension participates in both directions:
 
-- **Upward** — the tool result that *delivers* a run (foreground completion, or the first `wait`) carries the run's total provider usage as native `usage`. Attachment is gated on the same delivered-flag transition as output delivery, so it happens exactly once per run UUID. Status, replayed waits, steer, diff/apply/discard, and plan responses never attach usage. Older Pi hosts copy only `content`/`details` from tool results and silently ignore the field — safe on every version this package supports.
+- **Upward** — the tool result that *delivers* a run (foreground completion, or the first `wait`) carries the run's total provider usage as native `usage`. Attachment is gated on the same delivered-flag transition as output delivery, so it happens exactly once per run UUID. Status, replayed waits, steer, diff/apply/discard, and plan responses never attach usage. The parent extension requires Pi 0.99.1 or newer; older child backends remain readable through the protocol compatibility paths.
 - **Downward** — a child's event stream may contain tool-result messages that themselves carry nested usage (for example, a grandchild subagent on a new-Pi child). The parent folds that into the run's cumulative usage, so `max_cost` budgets and both ledgers see true subtree spend. Pre-#6671 children simply never emit the field.
 
 Known undercounts in the **native** total (the extension ledger still counts these from persisted entries):
 
 - A background run dismissed in the overlay (or via status) without a delivering `wait` never produces a tool result, so its spend reaches only the extension ledger.
-- A failed or lost run raises an error instead of returning a tool result; any pre-failure usage likewise reaches only the extension ledger.
+Failed and lost deliveries return native `isError: true` results with their preserved provider usage and failure details. Validation errors still throw before a billable run starts.
 
 Because the native footer counts parent assistant messages plus delivered tool-result usage, and the extension's **combined** counts the same runs by UUID, the two agree whenever every terminal run was delivered.
 

@@ -3,6 +3,11 @@
 Extensions for the [pi coding agent](https://pi.dev), published as individual npm
 packages. Install only what you want.
 
+The native API migration targets **Pi 0.99.1+**. Upgrade Pi and restart before
+loading the new tool-package versions; `/reload` alone does not update the host.
+See [the package-by-package native API audit](docs/native-pi.md) for what changed,
+what intentionally stayed custom, and the supported tool-result contracts.
+
 Every package that registers tools ships the skills the model needs to use them
 correctly — a tool without teaching the model when to reach for it is only half
 done. UI-only and library-only packages (no tools) do not need skills.
@@ -57,8 +62,9 @@ command: `/github-login`, `/slack-login`, `/linear-login`, and `/notion-login`.
 Credentials are validated before being stored in
 `~/.pi/agent/integration-auth.json` with `0600` permissions. Environment
 variables take precedence, and GitHub reuses `gh auth token` when available.
-For browser OAuth, use the providers' official hosted MCP servers through
-`pi-mcp-adapter`: Linear and Notion support ordinary interactive OAuth; Slack
+For browser OAuth, use the providers' official hosted MCP servers through Pi's
+native `mcp.json` configuration and `pi mcp login`: Linear and Notion support
+ordinary interactive OAuth; Slack
 requires a pre-registered Slack app/client identity. Avoid enabling both MCP
 and the corresponding REST package unless duplicate tool surfaces are desired.
 

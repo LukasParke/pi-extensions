@@ -5,8 +5,19 @@ description: Use Firecrawl to read the web — firecrawl_map to enumerate a site
 
 # Firecrawl
 
-Four tools for reading the web. Firecrawl renders JavaScript, so it handles pages a plain
+Requires Pi 0.99.1+. Firecrawl renders JavaScript, so it handles pages a plain
 HTTP fetch cannot.
+
+## Native codemode
+
+Tools are grouped under `firecrawl`; callable names stay unchanged:
+`await tools.firecrawl_map({ url, limit })` returns `{ links }`. Scrape returns
+`{ page }`, search `{ results }`, and crawl `{ jobId, status, completed, total, pages, partial }`.
+These are typed business results, not text to parse; display text and details remain available.
+Check `result.refused` before reading success fields. Refusals carry `error` and
+set `isError: true`; failed crawls retain job data and pages. Empty search results
+and partial crawl timeouts are successes. Scrape/search/map are remote reads;
+crawl starts a potentially paid, non-idempotent job, so retry only deliberately.
 
 | Tool               | Use for                              |
 | ------------------ | ------------------------------------ |

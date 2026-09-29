@@ -1,5 +1,11 @@
 # @parke.dev/pi-subagent
 
+Requires Pi **0.99.1 or newer**. `subagent` and `subagent_wait` use native
+`model-only` exposure; they orchestrate child agents rather than serving as
+codemode-callable tools. Use the SDK from custom orchestration code. Successful
+RPC prompts consumed by an extension fail promptly instead of waiting for a
+nonexistent settled event.
+
 Production-grade isolated subagents for [Pi](https://github.com/badlogic/pi-mono).
 
 Delegate research, parallel exploration, and clean-context review to child Pi
@@ -23,7 +29,7 @@ Pi packages install from **npm**, **git**, or a **local path**:
 pi install npm:@parke.dev/pi-subagent
 
 # pin a specific version
-pi install npm:@parke.dev/pi-subagent@0.10.0
+pi install npm:@parke.dev/pi-subagent@0.11.0
 
 # npm is the supported package install path from the monorepo.
 # For local development, install this workspace directly:
@@ -539,7 +545,9 @@ usage. On Pi builds after v0.80.10, delivered runs also report their total
 usage natively on the tool result
 ([pi#6671](https://github.com/earendil-works/pi/pull/6671)), so Pi's own
 footer, `/session`, and RPC totals include subagent spend — exactly once per
-run; older Pi hosts ignore the field. Nested usage reported by a child's tool
+run. Failed/lost deliveries also return native `isError` results with their
+paid usage and failure details; pre-run validation errors still throw. Nested
+usage reported by a child's tool
 results (e.g. grandchild subagents) folds into the run's totals and budgets.
 The extension footer stays terse (running/ready counts only). Delivery and
 replay do not double count runs. See
@@ -560,7 +568,7 @@ access—review source before installing third-party packages.
 
 ## Status
 
-Current version: **0.10.0** — see [CHANGELOG.md](./CHANGELOG.md). The lifecycle
+Current version: **0.11.0** — see [CHANGELOG.md](./CHANGELOG.md). The lifecycle
 engine described above is shipped, including named agent catalogs, spawn
 policies, dry-run validation, keep-alive `waiting` runs, the doom-loop
 watchdog, codex/claude backends, and structured output.

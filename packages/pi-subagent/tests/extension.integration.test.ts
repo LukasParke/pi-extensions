@@ -54,7 +54,13 @@ function harness(): Harness {
   };
   const sentMessages: any[] = [];
   const pi = {
-    on: (name: string, fn: Function) => handlers.set(name, fn),
+    on: (name: string, fn: Function) => {
+      const previous = handlers.get(name);
+      handlers.set(name, previous ? async (...args: unknown[]) => {
+        await previous(...args);
+        return fn(...args);
+      } : fn);
+    },
     // Two tools register (`subagent` + `subagent_wait`); keep the main one as
     // `tool` and expose the wait front-end separately.
     registerTool: (definition: any) => {
@@ -280,12 +286,29 @@ describe("extension end-to-end wiring", () => {
     await h.handlers.get("session_shutdown")!();
   });
 
-  it("throws failures so Pi marks tool results as errors", async () => {
+  it("returns native errors for failed runs while validation failures still throw", async () => {
     const h = harness();
     await h.handlers.get("session_start")!({}, h.ctx);
     await expect(execute(h, { action: "status", id: "missing" })).rejects.toThrow("not found");
     process.env.FAKE_PI_MODE = "error";
-    await expect(execute(h, { task: "fail", profile: "explore" })).rejects.toThrow();
+    const failed = await execute(h, { task: "fail", profile: "explore" });
+    expect(failed.isError).toBe(true);
+    expect(failed.details.results[0].state).toBe("failed");
+    await h.handlers.get("session_shutdown")!();
+  });
+
+  it.each([false, true])("keeps paid usage on failed %s-background deliveries exactly once", async (background) => {
+    const h = harness();
+    await h.handlers.get("session_start")!({}, h.ctx);
+    process.env.FAKE_PI_MODE = "provider-error";
+    const initial = await execute(h, { task: "paid failure", profile: "explore", async: background, max_retries: 1 });
+    const id = background ? runId(initial.content[0].text) : undefined;
+    const failed = id ? await execute(h, { action: "wait", id }) : initial;
+    expect(failed.isError).toBe(true);
+    expect(failed.details.results[0].attempts).toBe(2);
+    expect(failed.usage?.cost.total).toBeCloseTo(0.002, 10);
+    expect(failed.usage?.totalTokens).toBe(30);
+    if (id) expect((await execute(h, { action: "wait", id })).usage).toBeUndefined();
     await h.handlers.get("session_shutdown")!();
   });
 

@@ -44,6 +44,27 @@ github prs vitest-dev/vitest
 #9958  fix(deps): update all non-major …    (renovate[bot]; no reviews, failing)
 ```
 
+## Native Pi contracts
+
+Requires Pi **0.99.1 or newer**. All nine tools belong to the `github` namespace and declare
+read/write, destructive, idempotent and open-world hints. Comments are additive; reviews can
+change approval state. Connecting replaces a stored credential; disconnecting removes it locally.
+
+Each tool has a typed output schema. Native `codemode` receives the business data directly,
+not a text string or a `details` wrapper:
+
+```js
+const checks = await tools.github_checks({ repo: "owner/repo", ref: "main" });
+if (checks.refused) return { error: checks.error };
+return checks.rows.filter((row) => row.status === "failing");
+```
+
+Structured results retain rows, patches, review state, rate metadata and credential status as
+appropriate. `github_prs` search returns issue-shaped rows; its default list returns PR rows with
+checks and review rollups. Refusals carry `{ refused: true, error: "..." }` and set `isError: true`;
+status refusals also retain `connected: false` and the credential source when known. Existing
+text `content`, renderer `details`, confirmations and approval guards are unchanged.
+
 ## Credentials
 
 GitHub also offers an official remote MCP server with OAuth, but this extension

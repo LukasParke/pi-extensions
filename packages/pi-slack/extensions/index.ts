@@ -6,6 +6,16 @@ import { NO_TOKEN_MESSAGE, resolveToken, SLACK_AUTH_REF } from "../src/auth.ts";
 import { withBlockedSignal } from "./blocked.ts";
 import { SlackClient } from "../src/client.ts";
 import { SLACK_DESCRIPTION } from "../src/describe.ts";
+import {
+	channelsSchema,
+	connectSchema,
+	disconnectSchema,
+	namespace,
+	postSchema,
+	searchSchema,
+	statusSchema,
+	threadSchema,
+} from "../src/contracts.ts";
 import { renderChannels, renderMessages, renderSearch, renderToolCall } from "../src/tui.ts";
 import {
 	type ChannelRow,
@@ -18,20 +28,23 @@ import {
 
 const MAX_LIMIT = 50;
 
-interface ToolResult {
-	content: { type: "text"; text: string }[];
-	details: unknown;
+function ok(text: string, details: unknown = {}) {
+	return {
+		content: [{ type: "text" as const, text }],
+		details,
+		structuredContent: JSON.parse(JSON.stringify(details)),
+	};
 }
 
-function ok(text: string, details: unknown = {}): ToolResult {
-	return { content: [{ type: "text", text }], details };
-}
-
-function refuse(text: string, details?: unknown): ToolResult {
-	return ok(text, {
-		refused: true,
-		...(typeof details === "object" && details !== null ? details : {}),
-	});
+function refuse(text: string, details?: unknown) {
+	return {
+		...ok(text, {
+			refused: true,
+			error: text,
+			...(typeof details === "object" && details !== null ? details : {}),
+		}),
+		isError: true,
+	};
 }
 
 function explain(e: unknown): string {
@@ -118,6 +131,9 @@ export default function slack(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "slack_channels",
+		namespace,
+		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+		outputSchema: channelsSchema,
 		label: "Slack channels",
 		description:
 			"List channels with their latest message. Prefer passing `channels` (ids or names) for the ones that matter — " +
@@ -160,6 +176,9 @@ export default function slack(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "slack_thread",
+		namespace,
+		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+		outputSchema: threadSchema,
 		label: "Slack thread",
 		description:
 			"Read a whole thread in one call: every reply, authors resolved to names, and a permalink when available. This is " +
@@ -231,6 +250,9 @@ export default function slack(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "slack_search",
+		namespace,
+		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+		outputSchema: searchSchema,
 		label: "Slack search",
 		description:
 			"Search messages (`search.messages`). Requires a user token with `search:read` — a bot token is rejected by Slack. " +
@@ -284,6 +306,9 @@ export default function slack(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "slack_post",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+		outputSchema: postSchema,
 		label: "Slack post",
 		description:
 			"Post a message to a channel, or reply in a thread when `threadTs` is set. The user is asked to confirm and sees " +
@@ -345,6 +370,9 @@ export default function slack(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "slack_status",
+		namespace,
+		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+		outputSchema: statusSchema,
 		label: "Slack status",
 		description:
 			"Report whether Slack is reachable, which credential is in use and where it came from, and what this extension " +
@@ -379,6 +407,9 @@ export default function slack(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "slack_connect",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+		outputSchema: connectSchema,
 		label: "Connect Slack",
 		description:
 			"Store a Slack bot token for this extension. Get one from Slack → Your Apps → OAuth & Permissions. Call " +
@@ -414,11 +445,15 @@ export default function slack(pi: ExtensionAPI): void {
 			}
 
 			const store = new PiAuthStore();
-			await store.setCredential(SLACK_AUTH_REF, {
-				type: "api_key",
-				key: token,
-				...(p.label !== undefined ? { label: p.label } : {}),
-			});
+			try {
+				await store.setCredential(SLACK_AUTH_REF, {
+					type: "api_key",
+					key: token,
+					...(p.label !== undefined ? { label: p.label } : {}),
+				});
+			} catch (error) {
+				return refuse(`Could not store the Slack credential. ${explain(error)}`);
+			}
 			return ok(
 				`Connected as ${who}. The token is stored in ${store.describe()}.\n` +
 					"A bare `pi` session and Pi extensions read this same file, so you only connect once.",
@@ -429,18 +464,25 @@ export default function slack(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "slack_disconnect",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+		outputSchema: disconnectSchema,
 		label: "Disconnect Slack",
 		description: "Remove the stored Slack token. Does not touch your environment.",
 		parameters: Type.Object({}),
 		async execute() {
 			const store = new PiAuthStore();
-			const had = (await store.get(SLACK_AUTH_REF)) !== null;
-			await store.delete(SLACK_AUTH_REF);
-			return ok(
-				(had ? "Removed the stored Slack token." : "There was no stored token to remove.") +
-					"\nNote: $SLACK_BOT_TOKEN / $SLACK_TOKEN are not affected — if either is set, this extension will still find a credential.",
-				{ disconnected: true, hadStoredKey: had },
-			);
+			try {
+				const had = (await store.get(SLACK_AUTH_REF)) !== null;
+				await store.delete(SLACK_AUTH_REF);
+				return ok(
+					(had ? "Removed the stored Slack token." : "There was no stored token to remove.") +
+						"\nNote: $SLACK_BOT_TOKEN / $SLACK_TOKEN are not affected — if either is set, this extension will still find a credential.",
+					{ disconnected: true, hadStoredKey: had },
+				);
+			} catch (error) {
+				return refuse(`Could not remove the Slack credential. ${explain(error)}`);
+			}
 		},
 	});
 }

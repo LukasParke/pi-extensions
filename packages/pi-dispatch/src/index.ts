@@ -163,6 +163,8 @@ export function ensureDelivery(pi: ExtensionAPI): void {
 		current.flushTimer = undefined;
 		current.items.clear();
 		current.ctx = undefined;
+		current.pi = undefined;
+		current.wired = false;
 	});
 }
 

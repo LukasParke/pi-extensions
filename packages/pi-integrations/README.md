@@ -1,6 +1,13 @@
 # @parke.dev/pi-integrations
 
 One install for the Git, GitHub, Slack, Linear, and Notion Pi integrations.
+Requires Pi **0.99.1 or newer**.
+
+All 35 tools have native namespaces, effect annotations, and business output
+schemas. Direct calls retain their text/renderers; native codemode receives
+structured data. Refusals return native errors with `{ refused: true, error }`,
+so scripts can inspect the failure rather than parse prose. Authentication,
+confirmation, masking, and approval guards still apply to nested calls.
 
 ```sh
 pi install npm:@parke.dev/pi-integrations
@@ -36,7 +43,10 @@ Each package's skill directory is also loaded (`git-tools`, `github`, `slack`,
 
 These bundled REST integrations use provider tokens. For the simplest browser
 OAuth experience, prefer each provider's official hosted MCP server through
-`pi-mcp-adapter` for Linear and Notion; GitHub already reuses `gh auth login`.
+Pi's native MCP support (`mcp.json` and `pi mcp login`) for Linear and Notion;
+GitHub already reuses `gh auth login`. An installed `pi-mcp-adapter` replaces
+the built-in MCP manager, so remove that adapter only when intentionally migrating
+your existing configuration. This bundle does not change user MCP settings.
 Do not load both the REST extension and its MCP server unless you intentionally
 want duplicate tool surfaces. Slack's hosted MCP OAuth requires a registered
 Slack app/client identity, so the token-backed REST package remains the generic

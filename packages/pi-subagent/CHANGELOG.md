@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0
+
+- Requires parent Pi 0.99.1+ and declares native model-only exposure with effect
+  annotations for `subagent`/`subagent_wait`.
+- Handles successful RPC prompts with `disposition: handled` immediately instead
+  of waiting for a run/settled event that never starts. Started, queued, and legacy
+  responses retain their existing behavior.
+- Failed/lost deliveries return native `isError` results with paid usage and
+  failure details; repeated delivery never double-counts spend. Pre-run
+  validation errors continue to throw.
+- Integration harnesses now preserve multiple lifecycle subscribers, matching
+  the real host, and policy tests isolate inherited nesting depth.
+
 ## 0.10.0
 
 ### Keep-alive lifecycle

@@ -86,6 +86,8 @@ export interface WorkflowExecutionResult {
 	failure?: string;
 	summary: WorkflowSummary;
 	usage: UsageStats;
+	/** Newly executed child requests only; replayed journal usage is excluded. */
+	executionUsage: UsageStats;
 }
 
 export async function executeWorkflow(options: RunWorkflowOptions): Promise<WorkflowExecutionResult> {
@@ -150,6 +152,7 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 	let completedAgents = 0;
 	let failedAgents = 0;
 	let usage = emptyUsage();
+	let executionUsage = emptyUsage();
 	// Seed progress counters from the contiguous prefix we may replay.
 	for (const entry of cursor.cached.values()) {
 		completedAgents++;
@@ -315,6 +318,7 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 		completedAgents++;
 		if (!agentResult.ok) failedAgents++;
 		usage = addUsage(usage, agentResult.usage);
+		executionUsage = addUsage(executionUsage, agentResult.usage);
 		report();
 		return toSandboxResult(journalResult);
 	};
@@ -376,7 +380,7 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 	}).catch(() => {});
 	report(state);
 
-	return { runId: options.runId, state, result, failure, summary, usage };
+	return { runId: options.runId, state, result, failure, summary, usage, executionUsage };
 }
 
 export function newRunId() {

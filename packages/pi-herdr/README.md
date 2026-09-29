@@ -7,6 +7,19 @@ git worktrees, from inside the [Pi coding agent](https://pi.dev).
 pi install npm:@parke.dev/pi-herdr
 ```
 
+## Native Pi integration
+
+Requires Pi **0.99.1 or newer**. Herdr context uses a native prompt section,
+and omitted-name generation streams through the configured provider runtime,
+including resolved credentials, virtual-model routing, cancellation, and
+native tool-result usage accounting. Paid naming usage is retained even if
+subsequent dispatch fails.
+
+Tools are grouped under `herdr`. Native codemode receives dispatch identifiers,
+status plus recent `output`, or cleanup results. Unsafe cleanup refusals set
+`isError` while preserving `problems`; an already-gone task remains informational.
+All managed-context and worktree safety guards still apply.
+
 ## Runtime context
 
 The extension treats Pi as Herdr-managed only when `HERDR_ENV=1` and Herdr

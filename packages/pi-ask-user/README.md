@@ -1,5 +1,9 @@
 # @parke.dev/pi-ask-user
 
+Requires Pi **0.99.1 or newer**. `ask_user` uses native `model-only` exposure:
+it remains directly available to the model, but cannot be called from codemode
+scripts or another tool. TUI and RPC dialogs are still supported.
+
 One tool for the [pi coding agent](https://pi.dev): `ask_user`. Lets the model
 ask you a single multiple-choice question when the right course of action is
 genuinely ambiguous and guessing would waste a whole turn.

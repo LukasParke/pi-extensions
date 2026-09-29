@@ -46,6 +46,7 @@ export interface WorkflowTerminal {
 	result?: unknown;
 	failure?: string;
 	summary: WorkflowSummary;
+	executionUsage?: UsageStats;
 }
 
 export type RegistryListener = (run: LiveWorkflowRun) => void;

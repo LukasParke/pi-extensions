@@ -63,7 +63,8 @@ describe.skipIf(!canSandbox)("executeWorkflow", () => {
 
 		expect(exec.state).toBe("completed");
 		expect(exec.usage.input).toBe(20);
-		expect(exec.usage.cost).toBeCloseTo(0.02);
+		expect(exec.usage.cost).toBeCloseTo(0.02, 10);
+		expect(exec.executionUsage).toEqual(exec.usage);
 		expect(runAgent).toHaveBeenCalledTimes(2);
 
 		const journal = await readJournal(exec.summary.artifactPath);
@@ -139,6 +140,8 @@ describe.skipIf(!canSandbox)("executeWorkflow", () => {
 		expect(second.result).toEqual(["live:one:1", "live:two:2"]);
 		expect(second.summary.agentCount).toBe(2);
 		expect(second.summary.completedAgents).toBe(2);
+		expect(second.usage.cost).toBeCloseTo(0.002, 10);
+		expect(second.executionUsage).toEqual(emptyUsage());
 	});
 
 	it("passes maxCost through unclamped when agentMaxCost is unset", async () => {

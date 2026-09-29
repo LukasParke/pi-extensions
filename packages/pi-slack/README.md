@@ -6,8 +6,24 @@ Slack channels, threads and messages, as a Pi extension.
 pi install npm:@parke.dev/pi-slack
 ```
 
-Ships a [`slack` skill](skills/slack/SKILL.md) teaching the model when to use
-the channel, thread, search, and post tools and how auth works.
+Requires Pi **0.99.1 or newer**. Ships a [`slack` skill](skills/slack/SKILL.md)
+teaching the model when to use the channel, thread, search, and post tools and how auth works.
+
+## Native codemode
+
+Tools are grouped in the `slack` namespace; their callable names stay unchanged.
+Native `codemode` receives typed business data instead of parsing the display text:
+
+```js
+const result = await tools.slack_search({ query: "in:#eng deploy", limit: 5 });
+if (result.refused) return result.error;
+return result.rows.map((row) => ({ author: row.author, text: row.text, url: row.permalink }));
+```
+
+All seven tools declare output schemas and effect annotations. Text and UI details
+remain available. Refusals and provider failures return `isError: true` with
+`{ refused: true, error }`; an empty search is a successful `rows: []` result.
+Posting still confirms first, and credential storage still requires interactive confirmation.
 
 ---
 

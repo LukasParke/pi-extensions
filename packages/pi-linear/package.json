@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-linear",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Linear issue search, comments and workflow transitions for the Pi coding agent",
   "type": "module",
   "license": "MIT",

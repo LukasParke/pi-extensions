@@ -76,6 +76,19 @@ describe("readErrors", () => {
 		expect(entries[0]!.error.message).toBe("good");
 	});
 
+	it("skips parseable records that do not satisfy the structured error contract", async () => {
+		const file = await tempFile();
+		await fs.writeFile(
+			file,
+			[
+				JSON.stringify({ ts: "2026-01-01", error: "invalid" }),
+				JSON.stringify({ ...entry(), kind: "invalid" }),
+				JSON.stringify(entry({ parentToolCallId: "parent" })),
+			].join("\n"),
+		);
+		expect(await readErrors(file)).toEqual([expect.objectContaining({ parentToolCallId: "parent" })]);
+	});
+
 	it("returns [] for a missing file", async () => {
 		expect(await readErrors(path.join(await tempFile(), "missing.jsonl"))).toEqual([]);
 	});
