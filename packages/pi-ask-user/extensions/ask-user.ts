@@ -57,14 +57,11 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
-		// Native user-dialog contract: the model calls this directly, and it is
-		// never useful from codemode scripts (they cannot answer a human dialog).
 		exposure: "model-only",
 		namespace: {
 			name: "ask-user",
 			description: "Interactive user dialog for genuinely ambiguous decisions.",
 		},
-		// Asking a question changes nothing outside the dialog itself.
 		annotations: { readOnlyHint: true, openWorldHint: false },
 		async execute(_id, params: any, signal, _onUpdate, ctx) {
 			const options: Array<{ label: string; description?: string }> = params.options;

@@ -81,6 +81,7 @@ let store: PiAuthStore;
 let ctx: ExtensionContext;
 let empty: boolean;
 let status: number;
+let nextPage: boolean;
 let calls: { method: string; path: string; body: unknown; authorization: string | null }[];
 
 beforeEach(async () => {
@@ -92,6 +93,7 @@ beforeEach(async () => {
 	await store.set(GITHUB_AUTH_REF, "fake-stored-github-token");
 	empty = false;
 	status = 200;
+	nextPage = false;
 	calls = [];
 	vi.stubGlobal(
 		"fetch",
@@ -126,6 +128,7 @@ beforeEach(async () => {
 					"content-type": "application/json",
 					"x-ratelimit-remaining": "4000",
 					"x-ratelimit-limit": "5000",
+					...(nextPage ? { link: '<https://api.github.com/repos/o/r/issues?page=2>; rel="next"' } : {}),
 				},
 			});
 		}),
@@ -213,6 +216,13 @@ describe("native GitHub contracts", () => {
 			expect(result.structuredContent.error).toEqual(expect.stringContaining("Bad credentials"));
 		},
 	);
+
+	it("preserves capped issue-list truncation in native structured output", async () => {
+		nextPage = true;
+		const result = await execute("github_issues", { repo: "o/r", limit: 1 });
+		expect(result.content[0]?.text).toContain("more available");
+		expect(result.structuredContent.truncated).toBe(true);
+	});
 
 	it.each(["github_prs", "github_issues", "github_checks"])("validates %s empty rows", async (name) => {
 		empty = true;

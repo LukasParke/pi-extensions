@@ -61,6 +61,7 @@ const resultsSchema = Type.Record(
 );
 const outputSchema = Type.Object({
 	message: Type.String(),
+	isError: Type.Boolean(),
 	state: Type.Optional(
 		Type.Object({
 			goal: Type.Optional(Type.String()),
@@ -243,7 +244,7 @@ export default function (pi: ExtensionAPI) {
 			const text = (t: string, details: Record<string, unknown> = {}, isError = false) => ({
 				content: [{ type: "text" as const, text: t }],
 				details,
-				structuredContent: JSON.parse(JSON.stringify({ message: t, ...details })),
+				structuredContent: JSON.parse(JSON.stringify({ message: t, ...details, isError })),
 				isError,
 			});
 			if (!engine) return text("Gauntlet is not initialized yet.", {}, true);

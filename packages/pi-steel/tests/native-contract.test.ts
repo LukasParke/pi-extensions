@@ -42,6 +42,7 @@ let cdpFailure: string | undefined;
 let pageUrl: string;
 let pageText: string;
 let missingRoot: boolean;
+let withoutBody: boolean;
 let locationFailure: boolean;
 let createSession: object;
 let dom: ReturnType<typeof makeDom>;
@@ -85,7 +86,9 @@ function makeDom() {
 		field,
 		button,
 		document: {
-			body,
+			get body() {
+				return withoutBody ? null : body;
+			},
 			title: "Example",
 			readyState: "complete",
 			querySelector: (selector: string) => {
@@ -181,6 +184,7 @@ beforeEach(async () => {
 	pageUrl = url;
 	pageText = "Hello page";
 	missingRoot = false;
+	withoutBody = false;
 	locationFailure = false;
 	createSession = { id: "session-123", sessionViewerUrl: "https://viewer.invalid/session-123" };
 	config.maxInlineImageBytes = 100;
@@ -401,6 +405,13 @@ describe("native Steel contracts", () => {
 			);
 		},
 	);
+
+	it("keeps body extraction failures after navigation visible to native scripts", async () => {
+		withoutBody = true;
+		const { result, output } = await execute("steel_navigate", { url });
+		expect(result.isError).toBe(true);
+		expect(output.error).toBe("selector matched nothing");
+	});
 
 	it("reports empty lifecycle, starts once, reports live state, and releases once", async () => {
 		expect((await execute("steel_session", { action: "status" })).output).toMatchObject({

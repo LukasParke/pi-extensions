@@ -12,7 +12,7 @@ While the loop is active a widget shows the goal, the iteration count, and a
 
 ## Native Pi integration
 
-Requires Pi **0.99.1 or newer**. Native codemode receives `{ message, state?,
+Requires Pi **0.99.1 or newer**. Native codemode receives `{ message, isError, state?,
 passed?, results? }`; unavailable or invalid operations set native `isError`.
 The tool is grouped under `gauntlet` and conservatively annotated because checks
 can execute arbitrary shell commands. Verification still happens after final

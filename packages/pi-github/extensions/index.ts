@@ -334,6 +334,7 @@ export default function github(pi: ExtensionAPI): void {
 					segment: "issues",
 					rows: res.data,
 					rate: res.rate,
+					truncated: res.truncated === true,
 				});
 			} catch (e) {
 				return refuse(explain(e));

@@ -5,6 +5,9 @@ description: Delegate work to isolated child agents with the subagent tool — m
 
 # Subagent
 
+`subagent` and `subagent_wait` are model-only: call them directly, not from
+native codemode. Custom orchestration uses the subagent SDK instead.
+
 Delegate research, parallel exploration, and clean-context implementation to child
 agents. Prefer `subagent` over long in-thread digressions when the work benefits
 from isolation, parallelism, or a fresh context.

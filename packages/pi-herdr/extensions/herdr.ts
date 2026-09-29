@@ -271,15 +271,7 @@ export default function (pi: ExtensionAPI) {
 		});
 		const result = await dispatchHerdrTask(
 			{ repoPath, task, name },
-			{
-				generateName: generateName
-					? async (task) => {
-							const generated = await generateName(task);
-							effectiveSignal?.throwIfAborted();
-							return generated;
-						}
-					: undefined,
-			},
+			{ generateName, signal: effectiveSignal },
 		);
 		return { result, usage };
 	}

@@ -136,18 +136,24 @@ describe("native Herdr tool contracts without a real Herdr connection", () => {
 					},
 				},
 			});
-			mocks.dispatch.mockImplementationOnce(async (input, options) => {
-				await options.generateName(input.task);
-				sideEffect();
-				throw new Error("Dispatch failed after naming");
-			});
+			const actual = await vi.importActual<typeof import("../src/dispatch.ts")>("../src/dispatch.ts");
+			mocks.dispatch.mockImplementationOnce((input, options) =>
+				actual.dispatchHerdrTask(input, {
+					...options,
+					herdr: async () => {
+						sideEffect();
+						throw new Error("Dispatch failed after naming");
+					},
+				}),
+			);
 			const result = await h.execute("herdr_task", { task: "fixture" });
 			expect(result.isError).toBe(true);
 			expect(result.usage).toEqual(usage);
 			expect(result.structuredContent).toEqual({
 				error: cancel ? "Cancelled naming" : "Dispatch failed after naming",
 			});
-			expect(sideEffect).toHaveBeenCalledTimes(cancel ? 0 : 1);
+			if (cancel) expect(sideEffect).not.toHaveBeenCalled();
+			else expect(sideEffect).toHaveBeenCalled();
 		},
 	);
 

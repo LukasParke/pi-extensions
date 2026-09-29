@@ -24,6 +24,7 @@ export type ExcludePath = (worktreePath: string, basename: string) => Promise<vo
 
 export interface DispatchOptions {
 	herdr?: HerdrRunner;
+	signal?: AbortSignal;
 	sleep?: (ms: number) => Promise<void>;
 	/** How long to keep retrying transient agent-start failures, ms. */
 	startDeadlineMs?: number;
@@ -287,10 +288,13 @@ export async function dispatchHerdrTask(
 	input: { repoPath: string; task: string; name?: string },
 	options: DispatchOptions = {},
 ): Promise<HerdrTaskResult> {
+	options.signal?.throwIfAborted();
 	const name = await resolveHerdrTaskName(input, input.name === undefined ? options.generateName : undefined);
+	options.signal?.throwIfAborted();
 	const branch = `agent/${name}`;
 
 	const worktree = await ensureWorktree(input.repoPath, branch, name, options);
+	options.signal?.throwIfAborted();
 	let briefPath: string | undefined;
 	let task = input.task;
 	if (needsBriefFile(task)) {

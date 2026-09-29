@@ -100,6 +100,48 @@ describe("native workflow accounting", () => {
 		}
 	});
 
+	it("delivers delayed cancellation usage from the real executor exactly once", async () => {
+		const actual = await vi.importActual<typeof import("../src/runner.ts")>("../src/runner.ts");
+		let began!: () => void;
+		const childStarted = new Promise<void>((resolve) => {
+			began = resolve;
+		});
+		mocks.execute.mockImplementationOnce((options) =>
+			actual.executeWorkflow({
+				...options,
+				runAgent: async (_spec, signal) => {
+					began();
+					await new Promise<void>((resolve) => {
+						signal.addEventListener(
+							"abort",
+							() => {
+								setTimeout(resolve, 200);
+							},
+							{ once: true },
+						);
+					});
+					return { ok: false, output: "Paid cleanup", usage: { ...emptyUsage(), input: 2, cost: 0.25 } };
+				},
+			}),
+		);
+		const h = await harness();
+		try {
+			const started = await h.execute({
+				script: 'return await agent("long", { isolation: "worktree" });',
+				async: true,
+			});
+			const id = (started.details as { runId: string }).runId;
+			await childStarted;
+			await h.execute({ action: "cancel", id });
+			const first = await h.execute({ action: "wait", id });
+			expect(first.usage?.cost.total).toBeCloseTo(0.25, 10);
+			expect(first.details).toMatchObject({ state: "cancelled" });
+			expect((await h.execute({ action: "wait", id })).usage).toBeUndefined();
+		} finally {
+			await h.shutdown();
+		}
+	});
+
 	it("keeps usage and failure details on native error results", async () => {
 		const original = mocks.execute.getMockImplementation()!;
 		mocks.execute.mockImplementationOnce(async (options) => {

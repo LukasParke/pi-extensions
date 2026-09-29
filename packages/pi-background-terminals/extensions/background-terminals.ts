@@ -357,8 +357,6 @@ export default function (pi: ExtensionAPI) {
 		),
 		outputSchema: startSchema,
 		namespace: TERMINAL_NAMESPACE,
-		// Spawns a real process running an arbitrary shell command: it modifies
-		// the environment and can reach anything that command can reach.
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 		async execute(_id, params: any, _signal, _onUpdate, ctx) {
 			const cwd = path.resolve(ctx.cwd, params.working_dir ?? ".");
@@ -485,8 +483,6 @@ export default function (pi: ExtensionAPI) {
 		),
 		outputSchema: killSchema,
 		namespace: TERMINAL_NAMESPACE,
-		// Killing terminates real processes (destructive); repeating a kill on an
-		// already-settled terminal is a no-op (idempotent).
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
 		async execute(_id, params: any) {
 			const lines: string[] = [];
@@ -521,8 +517,6 @@ export default function (pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text" as const, text: lines.join("\n") }],
 				details: { killed: results.length - failed, failed },
-				// A partial failure must never read as "all killed": the result is an
-				// error and the per-id outcomes stay machine-readable.
 				isError: failed > 0 || undefined,
 				structuredContent: { results, killed: results.length - failed, failed },
 			};

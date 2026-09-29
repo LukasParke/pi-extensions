@@ -200,7 +200,7 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 			};
 		});
 
-	const onAgent = async (
+	const executeAgent = async (
 		prompt: string,
 		rawOptions: AgentRequestOptions,
 		agentSignal: AbortSignal,
@@ -322,6 +322,16 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 		report();
 		return toSandboxResult(journalResult);
 	};
+	const pendingAgents = new Set<Promise<SandboxAgentResult>>();
+	const onAgent = (prompt: string, rawOptions: AgentRequestOptions, signal: AbortSignal) => {
+		const pending = executeAgent(prompt, rawOptions, signal);
+		pendingAgents.add(pending);
+		const remove = () => {
+			pendingAgents.delete(pending);
+		};
+		void pending.then(remove, remove);
+		return pending;
+	};
 
 	let result: unknown;
 	let failure: string | undefined;
@@ -352,6 +362,7 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 		else state = "failed";
 	}
 
+	await Promise.allSettled([...pendingAgents]);
 	const laneFinal = await lane.finalize().catch(() => lane.snapshot);
 	if (result !== undefined) await writeResult(artifactPath, result).catch(() => {});
 

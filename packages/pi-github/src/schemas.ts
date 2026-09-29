@@ -119,7 +119,13 @@ export const prSchema = Type.Union([
 	refusal,
 ]);
 export const issuesSchema = Type.Union([
-	Type.Object({ repo: Type.String(), segment: Type.Literal("issues"), rows: Type.Array(issue), rate }),
+	Type.Object({
+		repo: Type.String(),
+		segment: Type.Literal("issues"),
+		rows: Type.Array(issue),
+		rate,
+		truncated: Type.Boolean(),
+	}),
 	refusal,
 ]);
 export const checksSchema = Type.Union([

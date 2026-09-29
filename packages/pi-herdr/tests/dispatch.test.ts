@@ -377,6 +377,30 @@ describe("promptWithVerify", () => {
 });
 
 describe("dispatchHerdrTask", () => {
+	it("never calls Herdr after naming cancellation, including resolver fallback", async () => {
+		const controller = new AbortController();
+		const fake = fakeHerdr({
+			"worktree create": () => createdWorktree,
+			"pane get": () => ({ pane: {} }),
+			"agent start": () => ({ agent: { name: "fixture" } }),
+			"agent wait": () => ({}),
+		});
+		await expect(
+			dispatchHerdrTask(
+				{ repoPath: "/repo", task: "Cancel naming fixture" },
+				{
+					herdr: fake.run,
+					signal: controller.signal,
+					generateName: async () => {
+						controller.abort(new Error("Naming cancelled"));
+						throw new Error("Naming cancelled");
+					},
+				},
+			),
+		).rejects.toThrow("Naming cancelled");
+		expect(fake.calls).toEqual([]);
+	});
+
 	it("writes a brief file and starts with a pointer for multi-line tasks", async () => {
 		const written: { path: string; contents: string }[] = [];
 		const { run, calls } = fakeHerdr({

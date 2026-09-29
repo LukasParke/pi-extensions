@@ -74,11 +74,18 @@ describe("native gauntlet results", () => {
 		const h = harness();
 		const unavailable = await h.execute({ action: "status" });
 		expect(unavailable.isError).toBe(true);
+		expect(unavailable.structuredContent).toMatchObject({ isError: true });
 		expect(Value.Check(h.tool.outputSchema!, unavailable.structuredContent)).toBe(true);
 		await h.start();
-		for (const params of [{ action: "add_check" }, { action: "start" }, { action: "remove_check" }]) {
+		for (const params of [
+			{ action: "add_check" },
+			{ action: "start" },
+			{ action: "start", goal: "fixture" },
+			{ action: "remove_check" },
+		]) {
 			const result = await h.execute(params);
 			expect(result.isError).toBe(true);
+			expect(result.structuredContent).toMatchObject({ isError: true });
 			expect(Value.Check(h.tool.outputSchema!, result.structuredContent)).toBe(true);
 		}
 	});

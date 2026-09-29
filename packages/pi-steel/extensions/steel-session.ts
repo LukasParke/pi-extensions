@@ -444,6 +444,7 @@ export default function (pi: ExtensionAPI) {
 			sessionId: Type.String(),
 			title: Type.Optional(Type.String()),
 			text: Type.Optional(Type.String({ description: "Visible text, limited to 40,000 characters." })),
+			error: Type.Optional(Type.String()),
 			truncated: Type.Boolean(),
 		}),
 		async execute(_id, params: any, signal) {
@@ -458,6 +459,7 @@ export default function (pi: ExtensionAPI) {
 			const data = await cdp.evaluate<any>(READ_SCRIPT("text", undefined));
 			const cap = await capped(renderRead(data), "page text");
 			return {
+				isError: Boolean(data?.error),
 				content: [{ type: "text" as const, text: cap.text }],
 				details: { url: data?.url ?? params.url, title: data?.title, sessionId: session.id },
 				structuredContent: {
@@ -465,6 +467,7 @@ export default function (pi: ExtensionAPI) {
 					sessionId: session.id,
 					...(typeof data?.title === "string" ? { title: data.title } : {}),
 					...(typeof data?.text === "string" ? { text: data.text } : {}),
+					...(data?.error ? { error: String(data.error) } : {}),
 					truncated: cap.truncated,
 				},
 			};

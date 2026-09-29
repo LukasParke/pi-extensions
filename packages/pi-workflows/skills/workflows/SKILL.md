@@ -5,6 +5,9 @@ description: Write JavaScript orchestration programs for the `workflow` tool —
 
 # Workflows
 
+`workflow` is model-only: call it directly, not from native codemode. Its own
+sandbox orchestrates child agents; native codemode orchestrates this session's tools.
+
 `workflow` runs a multi-phase orchestration program **you write in JavaScript**.
 Each `agent()` call executes through `@parke.dev/pi-subagent/sdk`.
 
