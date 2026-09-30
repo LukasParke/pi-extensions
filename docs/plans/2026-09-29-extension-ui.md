@@ -84,6 +84,27 @@ changes, inspector focus/scroll/cancel/close, notification suppression/cleanup,
 and explicit/no-budget policy at the real runner seam. Use fixtures/mocks; no
 owner credentials/services or live model mutations.
 
-Documentation and package versions/dependent ranges follow the final diff. Parent
-owns signed commits, focused PRs, independent review, CI fixes, merge, canonical
-fast-forward/install/verification and worktree cleanup.
+## Implementation evidence
+
+Implementation and release preparation are tracked in
+[PR #45](https://github.com/LukasParke/pi-extensions/pull/45).
+`docs/extension-ui.md` documents the presentation contract, migration and all 25
+package decisions. Nineteen package versions/dependent ranges are prepared;
+no packages were published and the globally installed Pi was not upgraded.
+
+Verification: `npm run check` passes 1,469 tests (9 skipped), typecheck and
+formatting. `npm run pack:check` passes; native loading registers 20 entrypoints
+and 72 tools without errors. Fixtures exercise registered renderers, narrow
+viewports, expansion, native palette changes, inspectors, native dialogs and
+widget/status shutdown cleanup. Real ChildRunner fixtures prove omitted budgets
+complete 510 turns and explicit turn/spend limits retain their stop reasons.
+
+Independent review and focused re-review cleared the budget seam, streaming
+height, selection stability, detail preservation and lifecycle changes. Red-green
+regressions fixed cropped diagnostics/URLs/merge blockers, crawl timeout state,
+output-pointer shadowing, tiny selected viewports and stale memory_status calls
+repainting replacement sessions. Manual interactive-terminal use is not claimed.
+
+The dispatching session retains PR/CI/review, merge, canonical fast-forward and
+worktree cleanup ownership; final merge/cleanup state is recorded in its durable
+continuation plan.
