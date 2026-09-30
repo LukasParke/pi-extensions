@@ -11,6 +11,8 @@
  * flush immediately, carrying any held successes with them.
  */
 
+import type { RunState } from './types.js';
+
 export interface CompletionBatcherOptions {
   /** Quiet window after the most recent completion before flushing. */
   debounceMs?: number;
@@ -73,7 +75,7 @@ export class CompletionBatcher {
 export interface CompletionDetailsRun {
   id: string;
   label: string;
-  state: string;
+  state: RunState;
   preview: string;
   turns: number;
   tokens: number;

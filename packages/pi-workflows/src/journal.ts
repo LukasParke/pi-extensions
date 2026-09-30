@@ -71,7 +71,8 @@ export interface WorkflowDefinitionFile {
 	configSnapshot: {
 		maxAgentRequests: number;
 		maxConcurrency: number;
-		agentMaxTurns: number;
+		/** Legacy v1 journals only; no longer emitted or enforced. */
+		agentMaxTurns?: number;
 		agentMaxCost?: number;
 		agentTimeoutMs: number;
 		workflowTimeoutMs: number;

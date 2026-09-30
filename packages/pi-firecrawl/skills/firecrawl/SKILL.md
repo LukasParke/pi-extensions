@@ -26,6 +26,10 @@ crawl starts a potentially paid, non-idempotent job, so retry only deliberately.
 | `firecrawl_scrape` | one page's readable content          |
 | `firecrawl_search` | web search (title, URL, description) |
 
+Terminal rows are display-only: expand for page bodies. A warning crawl row
+means waiting or partial timeout, not completion; check `partial` and `status`
+in typed results before treating a site inventory as complete.
+
 ## Where Firecrawl is strongest
 
 **Anything site-wide.** `map` and `crawl` operate across a whole domain, which single-page

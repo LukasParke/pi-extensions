@@ -6,7 +6,13 @@ Slack channels, threads and messages, as a Pi extension.
 pi install npm:@parke.dev/pi-slack
 ```
 
-Requires Pi **0.99.1 or newer**. Ships a [`slack` skill](skills/slack/SKILL.md)
+Requires Pi **0.99.1 or newer**.
+
+Native tool rows follow Pi's theme and terminal width, with five preview rows and
+an overflow notice. Expand for full returned message bodies, thread replies,
+permalinks, and channel metadata. Expanded output is bounded to 200 terminal lines.
+Refusals, errors, and truncated responses are explicit; token arguments are never
+rendered. Model content, structured results, and confirmation gates are unchanged. Ships a [`slack` skill](skills/slack/SKILL.md)
 teaching the model when to use the channel, thread, search, and post tools and how auth works.
 
 ## Native codemode

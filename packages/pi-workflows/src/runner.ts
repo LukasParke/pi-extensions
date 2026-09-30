@@ -133,8 +133,6 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 			configSnapshot: {
 				maxAgentRequests: config.maxAgentRequests,
 				maxConcurrency: config.maxConcurrency,
-				agentMaxTurns: config.agentMaxTurns,
-				agentMaxCost: config.agentMaxCost,
 				agentTimeoutMs: config.agentTimeoutMs,
 				workflowTimeoutMs: config.workflowTimeoutMs,
 			},
@@ -425,13 +423,8 @@ function normalizeAgentOptions(
 	const profile = VALID_PROFILES.has(String(raw.profile)) ? String(raw.profile) : config.defaultProfile;
 	const thinking = THINKING.has(String(raw.thinking)) ? String(raw.thinking) : config.defaultThinking;
 	const isolation = raw.isolation === "worktree" ? ("worktree" as const) : ("workflow" as const);
-	const maxTurns = clampInt(raw.maxTurns, 1, config.agentMaxTurns, config.agentMaxTurns);
-	// Cost budgets are opt-in: without a configured ceiling there is no default
-	// and no clamp, only ≥ 0 validation. With one, it is both default and clamp.
-	const maxCost =
-		config.agentMaxCost === undefined
-			? clampNum(raw.maxCost, 0, Number.POSITIVE_INFINITY, undefined)
-			: clampNum(raw.maxCost, 0, config.agentMaxCost, config.agentMaxCost);
+	const maxTurns = optionalBudget(raw.maxTurns, "maxTurns", true);
+	const maxCost = optionalBudget(raw.maxCost, "maxCost");
 	const timeoutMs = clampInt(raw.timeoutMs, 1_000, config.agentTimeoutMs, config.agentTimeoutMs);
 	const fallbackModels = Array.isArray(raw.fallbackModels)
 		? raw.fallbackModels.filter((m): m is string => typeof m === "string" && m.trim().length > 0)
@@ -457,10 +450,16 @@ function clampInt(value: unknown, min: number, max: number, fallback: number) {
 	return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
-function clampNum(value: unknown, min: number, max: number, fallback: number | undefined) {
-	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-	if (!Number.isFinite(n)) return fallback;
-	return Math.min(max, Math.max(min, n));
+function optionalBudget(value: unknown, name: string, turns = false) {
+	if (value === undefined) return undefined;
+	if (
+		typeof value !== "number" ||
+		!Number.isFinite(value) ||
+		(turns ? !Number.isInteger(value) || value <= 0 : value < 0)
+	) {
+		throw new Error(`${name} must be a ${turns ? "positive integer" : "nonnegative finite number"}`);
+	}
+	return value;
 }
 
 function toSandboxResult(result: AgentRunResult): SandboxAgentResult {

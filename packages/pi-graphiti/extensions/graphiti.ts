@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { stripVTControlCharacters } from "node:util";
 import { dispatchQueue, ensureDelivery } from "@parke.dev/pi-dispatch";
 import { Type } from "typebox";
 import { GraphitiClient, type FactResult } from "../src/client.ts";
@@ -57,6 +58,22 @@ export default function (pi: ExtensionAPI) {
 	let client: GraphitiClient | undefined;
 	let closed = false;
 	let unavailable: string | undefined;
+	let uiCtx: ExtensionContext | undefined;
+	let generation = 0;
+	function health(message?: string) {
+		if (closed) return;
+		unavailable = message;
+		if (uiCtx?.hasUI)
+			uiCtx.ui.setStatus(
+				"graphiti",
+				message
+					? uiCtx.ui.theme.fg(
+							"warning",
+							`Memory unavailable: ${stripVTControlCharacters(message).replace(/[\x00-\x1f\x7f-\x9f]/g, " ")} · memory_status`,
+						)
+					: undefined,
+			);
+	}
 	let remembered = false;
 	let reminderSent = false;
 	let settledTurns = 0;
@@ -100,7 +117,9 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", (_event, ctx) => {
 		closed = false;
-		unavailable = undefined;
+		uiCtx = ctx;
+		const gen = ++generation;
+		health();
 		remembered = false;
 		reminderSent = false;
 		settledTurns = 0;
@@ -109,18 +128,19 @@ export default function (pi: ExtensionAPI) {
 		void (async () => {
 			try {
 				const status = await (await getClient()).status();
-				if (status.status !== "ok") unavailable = status.message ?? "server not ok";
+				if (gen === generation)
+					health(status.status === "ok" ? undefined : (status.message ?? "server not ok"));
 			} catch (error) {
-				unavailable = error instanceof Error ? error.message : String(error);
-			}
-			if (!closed && unavailable && ctx.hasUI) {
-				ctx.ui.setStatus("graphiti", `memory unavailable: ${unavailable.slice(0, 80)}`);
+				if (gen === generation) health(error instanceof Error ? error.message : String(error));
 			}
 		})().catch(() => {});
 	});
 
 	pi.on("session_shutdown", () => {
 		closed = true;
+		generation++;
+		uiCtx?.ui.setStatus("graphiti", undefined);
+		uiCtx = undefined;
 		pipeline.reset();
 		client?.close();
 		client = undefined;
@@ -229,7 +249,16 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({}),
 		async execute(_id, _params, signal) {
 			const c = await getClient();
-			const status = await c.status(signal);
+			const gen = ++generation;
+			let status;
+			try {
+				status = await c.status(signal);
+				if (gen === generation)
+					health(status.status === "ok" ? undefined : (status.message ?? "server not ok"));
+			} catch (error) {
+				if (gen === generation) health(error instanceof Error ? error.message : String(error));
+				throw error;
+			}
 			return {
 				content: [{ type: "text", text: JSON.stringify(status) }],
 				details: {},

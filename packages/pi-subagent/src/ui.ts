@@ -5,11 +5,14 @@ import type { RunSnapshot } from "./types.js";
 import {
   commonModelId,
   computeTps,
-  formatDuration,
+  displayText,
+  glance,
   formatState,
   formatPath,
   isActiveState,
   oneLine,
+  runLabel,
+  stateTone,
   SPINNERS,
   statLine,
   stateGlyph,
@@ -69,7 +72,7 @@ export class FooterStatusModel {
     const ready = this.adapter.getReadyCount();
     if (!this.running && !ready) return "";
     const parts = [
-      this.running ? theme.fg("warning", `⚙ ${this.running} running`) : "",
+      this.running ? theme.fg("accent", `${this.running} active`) : "",
       ready ? theme.fg("success", `${ready} ready`) : "",
       theme.fg("dim", "/subagents"),
     ].filter(Boolean);
@@ -88,7 +91,7 @@ export class FooterStatusModel {
 }
 
 function wrapLines(text: string, width: number): string[] {
-  const wrapped = wrapTextWithAnsi(text, Math.max(10, width));
+  const wrapped = wrapTextWithAnsi(displayText(text), Math.max(1, width));
   return Array.isArray(wrapped) ? wrapped : String(wrapped).split("\n");
 }
 
@@ -122,15 +125,12 @@ function runStats(run: RunSnapshot, now: number): string {
   );
 }
 
-function runTitle(run: RunSnapshot): string {
-  const preview = run.taskPreviews[0] ?? run.summary ?? "";
-  const label = preview.includes(": ") ? preview.slice(preview.indexOf(": ") + 2) : preview;
-  return oneLine(label || "(no task preview)", 100);
-}
-
 export class SubagentsOverlay implements Component {
   wantsKeyRelease = false;
   private selected = 0;
+  private selectedId?: string;
+  private listScroll = 0;
+  private transcript = false;
   private detailId?: string;
   private scroll = 0;
   private frame = 0;
@@ -163,7 +163,17 @@ export class SubagentsOverlay implements Component {
   }
 
   private runs(): RunSnapshot[] {
-    return [...this.adapter.getActiveRuns(), ...this.adapter.getCompletedRuns()];
+    const all = [...this.adapter.getActiveRuns(), ...this.adapter.getCompletedRuns()];
+    const group = (run: RunSnapshot) => isActiveState(run.state) ? 0 : !run.delivered && !run.resumeBlocked ? 1 : 2;
+    const runs = [...new Map(all.map((run) => [run.id, run])).values()].sort((a, b) => group(a) - group(b));
+    const index = runs.findIndex((run) => run.id === this.selectedId);
+    this.selected = index >= 0 ? index : Math.min(this.selected, Math.max(0, runs.length - 1));
+    this.selectedId = runs[this.selected]?.id;
+    return runs;
+  }
+
+  private pageSize(): number {
+    return Math.max(1, Math.floor(this.tui.terminal.rows * 0.8) - 4);
   }
 
   private syncAnimation(): void {
@@ -265,8 +275,8 @@ export class SubagentsOverlay implements Component {
     if (!run) return;
     if (data === "c" && isActiveState(run.state)) this.adapter.cancelRun(run.id);
     if (data === "s" && isActiveState(run.state)) void this.adapter.steerRun?.(run.id);
-    if (data === "d") this.adapter.dismissRun(run.id);
-    if (data === "r") void this.adapter.resumeRun(run.id);
+    if (data === "d" && !isActiveState(run.state)) this.adapter.dismissRun(run.id);
+    if (data === "r" && !isActiveState(run.state) && !run.resumeBlocked) void this.adapter.resumeRun(run.id);
     if (data === "o") this.adapter.showOutput(run.id);
     const hasWorktree = run.results.some((result) => result.worktree?.changed);
     if (data === "a" && !isActiveState(run.state) && hasWorktree) void this.adapter.applyWorktree?.(run.id);
@@ -274,6 +284,7 @@ export class SubagentsOverlay implements Component {
   }
 
   handleInput(data: string): void {
+    if (this.disposed) return;
     const runs = this.runs();
     if (this.detailId) {
       const detailRun = this.adapter.getRunById(this.detailId);
@@ -281,14 +292,15 @@ export class SubagentsOverlay implements Component {
         this.exitLiveTranscript();
         this.detailId = undefined;
         this.scroll = 0;
-      } else if (data === "t" && detailRun && isActiveState(detailRun.state)) {
-        this.liveTranscript = !this.liveTranscript;
-        this.transcriptFollow = true;
+      } else if (data === "t" && detailRun) {
+        this.transcript = !this.transcript;
         this.scroll = 0;
-        if (!this.liveTranscript) {
-          this.exitLiveTranscript();
-        } else {
+        if (this.transcript && isActiveState(detailRun.state)) {
+          this.liveTranscript = true;
+          this.transcriptFollow = true;
           this.syncTranscriptPoll();
+        } else {
+          this.exitLiveTranscript();
         }
       } else if (matchesKey(data, "down") || data === "j") {
         this.scroll++;
@@ -296,9 +308,9 @@ export class SubagentsOverlay implements Component {
         this.scroll = Math.max(0, this.scroll - 1);
         if (this.liveTranscript) this.transcriptFollow = false;
       } else if (matchesKey(data, "pageDown")) {
-        this.scroll += 10;
+        this.scroll += this.pageSize();
       } else if (matchesKey(data, "pageUp")) {
-        this.scroll = Math.max(0, this.scroll - 10);
+        this.scroll = Math.max(0, this.scroll - this.pageSize());
         if (this.liveTranscript) this.transcriptFollow = false;
       } else {
         // Steering (and other actions) remain available from the live transcript pane.
@@ -311,13 +323,19 @@ export class SubagentsOverlay implements Component {
       this.selected = Math.min(Math.max(0, runs.length - 1), this.selected + 1);
     } else if (matchesKey(data, "up") || data === "k") {
       this.selected = Math.max(0, this.selected - 1);
+    } else if (matchesKey(data, "pageDown")) {
+      this.selected = Math.min(Math.max(0, runs.length - 1), this.selected + Math.max(1, Math.floor(this.pageSize() / 2)));
+    } else if (matchesKey(data, "pageUp")) {
+      this.selected = Math.max(0, this.selected - Math.max(1, Math.floor(this.pageSize() / 2)));
     } else if (matchesKey(data, "enter") && runs[this.selected]) {
       this.exitLiveTranscript();
       this.detailId = runs[this.selected]!.id;
+      this.transcript = false;
       this.scroll = 0;
     } else {
       this.handleAction(data, runs[this.selected] ?? null);
     }
+    this.selectedId = runs[this.selected]?.id;
     this.syncAnimation();
     this.syncTranscriptPoll();
     this.invalidate();
@@ -332,49 +350,57 @@ export class SubagentsOverlay implements Component {
     const active = this.adapter.getActiveRuns().length;
     const ready = this.adapter.getReadyCount();
     const counters = [
-      active ? theme.fg("warning", `${active} running`) : "",
+      active ? theme.fg("accent", `${active} active`) : "",
       ready ? theme.fg("success", `${ready} ready`) : "",
     ].filter(Boolean).join(theme.fg("dim", " · "));
     const title = theme.bold(theme.fg("accent", " Subagents"));
     const lines = [truncateToWidth(counters ? `${title}  ${counters}` : title, width)];
-    const usage = this.adapter.getUsageSummary?.();
-    if (usage) lines.push(truncateToWidth(theme.fg("muted", ` ${usage}`), width));
     lines.push(theme.fg("dim", "─".repeat(Math.max(0, width))));
     return lines;
+  }
+
+  private help(run: RunSnapshot | null, detail: boolean, width: number): string {
+    const navigation = detail ? 'esc back · ↑↓ scroll' : width < 80 ? 'esc close · enter details' : 'esc close · ↑↓ select · enter details';
+    let action = '';
+    if (run) {
+      if (isActiveState(run.state)) action = 'c cancel · s steer';
+      else if (run.results.some((result) => result.worktree?.changed)) action = 'a apply · x discard';
+      else action = `${run.resumeBlocked ? '' : 'r resume · '}o output · d dismiss`;
+      if (detail) action = `t ${this.transcript ? 'summary' : 'transcript'} · ${action}`;
+    }
+    return truncateToWidth(this.theme.fg('muted', ` ${navigation}${action ? ` · ${action}` : ''}`), width);
   }
 
   private listLines(width: number): string[] {
     const theme = this.theme;
     const runs = this.runs();
+    if (!runs.length) return [theme.fg('muted', ' No subagent runs in this branch.'), this.help(null, false, width)];
     const lines: string[] = [];
-    if (!runs.length) {
-      lines.push(theme.fg("muted", " No subagent runs in this branch."));
-      lines.push("");
-      lines.push(theme.fg("dim", " esc close"));
-      return lines;
-    }
-    this.selected = Math.min(this.selected, runs.length - 1);
+    let group = '';
+    let selectedRow = 0;
     const now = Date.now();
     runs.forEach((run, index) => {
-      const isSelected = index === this.selected;
-      const cursor = isSelected ? theme.fg("accent", "▶") : " ";
-      const glyph = stateGlyph(run.state, theme, this.frame);
-      const id = theme.fg("dim", run.id.slice(0, 8));
-      const state = isActiveState(run.state)
-        ? theme.fg("warning", formatState(run.state))
-        : ["failed", "lost"].includes(run.state)
-          ? theme.fg("error", formatState(run.state))
-          : theme.fg(run.delivered ? "muted" : "success", run.delivered ? formatState(run.state) : `${formatState(run.state)} · ready`);
-      const mode = run.mode === "parallel" ? theme.fg("accent", `${run.results.length} tasks`) : "";
-      const meta = [state, mode, theme.fg("dim", runStats(run, now))].filter(Boolean).join(theme.fg("dim", " · "));
-      lines.push(truncateToWidth(`${cursor} ${glyph} ${id}  ${meta}`, width));
-      const title = runTitle(run);
-      const titleText = isSelected ? theme.fg("text", title) : theme.fg("muted", title);
-      lines.push(truncateToWidth(`     ${titleText}`, width));
+      const nextGroup = isActiveState(run.state) ? 'Active' : !run.delivered && !run.resumeBlocked ? 'Ready' : 'History';
+      if (nextGroup !== group) {
+        group = nextGroup;
+        lines.push(theme.fg(group === 'Active' ? 'accent' : group === 'Ready' ? 'success' : 'muted', ` ${group}`));
+      }
+      if (index === this.selected) selectedRow = lines.length;
+      const cursor = index === this.selected ? theme.fg('accent', '›') : ' ';
+      const title = theme.fg(index === this.selected ? 'text' : 'muted', oneLine(runLabel(run), Math.max(8, Math.floor(width * 0.45))));
+      const state = theme.fg(stateTone(run.state), formatState(run.state));
+      const meta = glance({ model: commonModelId(run.results.map((result) => result.model)), durationMs: (run.endedAt ?? now) - run.startedAt });
+      lines.push(`${cursor} ${stateGlyph(run.state, theme, this.frame)} ${title} · ${state} ${theme.fg('muted', meta)}`);
+      const preview = run.results.find((result) => result.errorMessage)?.errorMessage || run.summary || run.results[0]?.finalOutput || 'Waiting for activity…';
+      lines.push(theme.fg('muted', `    ${oneLine(preview, width)}`));
     });
-    lines.push("");
-    lines.push(truncateToWidth(theme.fg("dim", " ↑↓ select · enter details · c cancel · s steer · o output · r resume · a apply · x discard · d dismiss · esc close"), width));
-    return lines;
+    const size = this.pageSize();
+    if (selectedRow < this.listScroll) this.listScroll = selectedRow;
+    if (selectedRow + 1 >= this.listScroll + size) this.listScroll = selectedRow + 2 - size;
+    this.listScroll = Math.max(0, Math.min(this.listScroll, Math.max(0, lines.length - size)));
+    const visible = lines.slice(this.listScroll, this.listScroll + size);
+    const position = lines.length > size ? ` · ${this.selected + 1}/${runs.length}` : '';
+    return [...visible, truncateToWidth(this.help(runs[this.selected] ?? null, false, width) + theme.fg('muted', position), width)];
   }
 
   private detailLines(width: number): string[] {
@@ -385,8 +411,8 @@ export class SubagentsOverlay implements Component {
     const body: string[] = [];
 
     const glyph = stateGlyph(run.state, theme, this.frame);
-    body.push(`${glyph} ${theme.fg("dim", run.id)}`);
-    body.push(theme.fg("dim", `${run.mode} · ${formatState(run.state)} · ${runStats(run, now)} · ${run.delivered ? "delivered" : "ready"}`));
+    body.push(`${glyph} ${theme.bold(runLabel(run))} ${theme.fg(stateTone(run.state), formatState(run.state))}`);
+    body.push(theme.fg('muted', `${runStats(run, now)} · ${oneLine(run.id.slice(0, 8))}${isActiveState(run.state) ? '' : run.delivered ? ' · delivered' : ' · ready'}`));
 
     if (this.liveTranscript && isActiveState(run.state)) {
       body.push("");
@@ -405,7 +431,7 @@ export class SubagentsOverlay implements Component {
         }
       }
     } else {
-      if (run.summary) {
+      if (!this.transcript && run.summary) {
         body.push("");
         for (const line of wrapLines(run.summary, width - 2)) body.push(theme.fg("text", line));
       }
@@ -413,13 +439,13 @@ export class SubagentsOverlay implements Component {
       run.results.forEach((result, index) => {
         body.push("");
         const rGlyph = stateGlyph(result.state, theme, this.frame);
-        const label = theme.bold(theme.fg("toolTitle", result.label || `task-${index + 1}`));
+        const label = theme.bold(theme.fg("toolTitle", oneLine(result.label || `task-${index + 1}`)));
         const caps = [
-          result.model,
+          result.model ? oneLine(result.model) : '',
           result.profile ? `${result.profile}/${result.canWrite ? "RW" : "RO"}` : "",
           result.thinking ? `thinking:${result.thinking}` : "",
         ].filter(Boolean).join(" · ");
-        body.push(truncateToWidth(`${rGlyph} ${label} ${theme.fg("dim", caps)}`, width));
+        body.push(truncateToWidth(`${rGlyph} ${label} ${theme.fg("dim", oneLine(caps, width))}`, width));
         const usage = result.usage;
         const stats = statLine(
           {
@@ -439,15 +465,15 @@ export class SubagentsOverlay implements Component {
         );
         body.push(theme.fg("dim", `  ${stats}`));
         const pointers = [
-          result.outputFile ? `→ ${formatPath(result.outputFile)}` : "",
-          result.sessionId ? `session ${result.sessionId.slice(0, 8)}` : "",
-          result.worktree ? `⎇ ${result.worktree.branch}` : "",
+          result.outputFile ? `output ${oneLine(formatPath(result.outputFile))}` : "",
+          result.sessionId ? `session ${oneLine(result.sessionId.slice(0, 8))}` : "",
+          result.worktree ? `branch ${oneLine(result.worktree.branch)}` : "",
         ].filter(Boolean);
         if (pointers.length) body.push(truncateToWidth(theme.fg("dim", `  ${pointers.join(" · ")}`), width));
         if (result.errorMessage) {
           for (const line of wrapLines(result.errorMessage, width - 2)) body.push(`  ${theme.fg("error", line)}`);
         }
-        const text = result.transcript || result.finalOutput;
+        const text = this.transcript ? result.transcript || '(no saved transcript)' : result.finalOutput;
         if (text) {
           for (const line of wrapLines(text, width - 2)) body.push(`  ${theme.fg("toolOutput", line)}`);
         } else if (!result.errorMessage) {
@@ -456,7 +482,7 @@ export class SubagentsOverlay implements Component {
       });
     }
 
-    const pageSize = 24;
+    const pageSize = this.pageSize();
     const maxScroll = Math.max(0, body.length - pageSize);
     if (this.liveTranscript && this.transcriptFollow) {
       this.scroll = maxScroll;
@@ -467,25 +493,18 @@ export class SubagentsOverlay implements Component {
     }
     const visible = body.slice(this.scroll, this.scroll + pageSize);
     const lines = visible.map((line) => truncateToWidth(line, width));
-    if (body.length > pageSize) {
-      lines.push(theme.fg("dim", ` ${this.scroll + visible.length}/${body.length} lines`));
-    }
-    lines.push("");
-    const liveHelp = isActiveState(run.state)
-      ? (this.liveTranscript
-        ? " ↑↓ scroll · t hide transcript · esc back · c cancel · s steer · o output"
-        : " ↑↓ scroll · t transcript · esc back · c cancel · s steer · r resume · o output · a apply · x discard · d dismiss")
-      : " ↑↓ scroll · esc back · c cancel · s steer · r resume · o output · a apply · x discard · d dismiss";
-    lines.push(truncateToWidth(theme.fg("dim", liveHelp), width));
+    const position = body.length > pageSize ? ` · ${this.scroll + visible.length}/${body.length}` : '';
+    lines.push(truncateToWidth(this.help(run, true, width) + theme.fg('muted', position), width));
     return lines;
   }
 
   render(width: number): string[] {
+    if (this.disposed) return [];
     this.syncAnimation();
     this.syncTranscriptPoll();
     const lines = this.header(width);
     lines.push(...(this.detailId ? this.detailLines(width) : this.listLines(width)));
-    return lines.map((line) => truncateToWidth(line, width));
+    return lines.map((line) => truncateToWidth(line, width)).slice(0, Math.max(1, Math.floor(this.tui.terminal.rows * 0.8)));
   }
 
   invalidate(): void {

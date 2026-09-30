@@ -238,6 +238,16 @@ if (isMain) {
       timer.unref?.();
       return; // SIGTERM (watchdog pause) or stdin close ends the process
     }
+    if (mode === "many-turns") {
+      emit(header);
+      for (let turn = 1; turn <= 510; turn++) {
+        emit(turnMessage(`step ${turn}`));
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      emit(agentEnd);
+      emit(agentSettled);
+      return;
+    }
     if (mode === "three-turns") {
       // Three billed turns in one settle, for soft budget-warning thresholds.
       emit(header);

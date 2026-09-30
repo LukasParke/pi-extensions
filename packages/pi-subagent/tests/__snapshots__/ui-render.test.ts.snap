@@ -1,0 +1,342 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`native-width presentation contract > snapshots collapsed/expanded/partial/failure/parallel at 12 columns 1`] = `
+{
+  "cancelled": [
+    "− Audit c[0m...[0m",
+    "  cancell[0m...[0m",
+  ],
+  "done": [
+    "✓ Audit d[0m...[0m",
+    "  Findings",
+  ],
+  "expanded": [
+    "✓ Audit d[0m...[0m",
+    "  $0.010 [0m...[0m",
+    "  Findings",
+    "  Next steps",
+  ],
+  "failed": [
+    "✗ Audit f[0m...[0m",
+    "  failed [0m...[0m",
+  ],
+  "parallel": [
+    "⠋ Subagen[0m...[0m",
+    "  ✓ Audit[0m...[0m",
+    "    Findings",
+    "  ⠋ Audit[0m...[0m",
+    "    Next [0m...[0m",
+    "  ✗ Audit[0m...[0m",
+    "    faile[0m...[0m",
+  ],
+  "partial": [
+    "◐ Audit p[0m...[0m",
+    "  Findings",
+  ],
+  "starting": [
+    "⠋ Audit l[0m...[0m",
+    "  Waiting[0m...[0m",
+  ],
+  "timeout": [
+    "◷ Audit t[0m...[0m",
+    "  timed o[0m...[0m",
+  ],
+  "waiting": [
+    "◔ Audit w[0m...[0m",
+    "  Next steps",
+  ],
+  "wrapped": [
+    "◐ Audit w[0m...[0m",
+    "  wrapped[0m...[0m",
+  ],
+}
+`;
+
+exports[`native-width presentation contract > snapshots collapsed/expanded/partial/failure/parallel at 60 columns 1`] = `
+{
+  "cancelled": [
+    "− Audit cancelled cancelled 12s · model",
+    "  cancelled — Findings",
+  ],
+  "done": [
+    "✓ Audit done done 12s · model",
+    "  Findings",
+  ],
+  "expanded": [
+    "✓ Audit done done 12s · model",
+    "  $0.010 · 8 tps · ↻8 · 1.1k tok · 12s",
+    "  Findings",
+    "  Next steps",
+  ],
+  "failed": [
+    "✗ Audit failed failed 12s · model",
+    "  failed — Provider unavailable",
+  ],
+  "parallel": [
+    "⠋ Subagents 2/3 done 12s · model",
+    "  ✓ Audit one done",
+    "    Findings",
+    "  ⠋ Audit two running",
+    "    Next steps",
+    "  ✗ Audit three failed",
+    "    failed — Provider unavailable",
+  ],
+  "partial": [
+    "◐ Audit partial partial 12s · model",
+    "  Findings",
+  ],
+  "starting": [
+    "⠋ Audit live running 12s · model",
+    "  Waiting for activity…",
+  ],
+  "timeout": [
+    "◷ Audit timeout timeout 12s · model",
+    "  timed out — Findings",
+  ],
+  "waiting": [
+    "◔ Audit waiting waiting 12s · model",
+    "  Next steps",
+  ],
+  "wrapped": [
+    "◐ Audit wrapped partial 12s · model",
+    "  wrapped up (max turns) — Findings",
+  ],
+}
+`;
+
+exports[`native-width presentation contract > snapshots collapsed/expanded/partial/failure/parallel at 80 columns 1`] = `
+{
+  "cancelled": [
+    "− Audit cancelled cancelled 12s · model",
+    "  cancelled — Findings",
+  ],
+  "done": [
+    "✓ Audit done done 12s · model",
+    "  Findings",
+  ],
+  "expanded": [
+    "✓ Audit done done 12s · model",
+    "  $0.010 · 8 tps · ↻8 · 1.1k tok · 12s",
+    "  Findings",
+    "  Next steps",
+  ],
+  "failed": [
+    "✗ Audit failed failed 12s · model",
+    "  failed — Provider unavailable",
+  ],
+  "parallel": [
+    "⠋ Subagents 2/3 done 12s · model",
+    "  ✓ Audit one done",
+    "    Findings",
+    "  ⠋ Audit two running",
+    "    Next steps",
+    "  ✗ Audit three failed",
+    "    failed — Provider unavailable",
+  ],
+  "partial": [
+    "◐ Audit partial partial 12s · model",
+    "  Findings",
+  ],
+  "starting": [
+    "⠋ Audit live running 12s · model",
+    "  Waiting for activity…",
+  ],
+  "timeout": [
+    "◷ Audit timeout timeout 12s · model",
+    "  timed out — Findings",
+  ],
+  "waiting": [
+    "◔ Audit waiting waiting 12s · model",
+    "  Next steps",
+  ],
+  "wrapped": [
+    "◐ Audit wrapped partial 12s · model",
+    "  wrapped up (max turns) — Findings",
+  ],
+}
+`;
+
+exports[`native-width presentation contract > snapshots collapsed/expanded/partial/failure/parallel at 120 columns 1`] = `
+{
+  "cancelled": [
+    "− Audit cancelled cancelled 12s · model",
+    "  cancelled — Findings",
+  ],
+  "done": [
+    "✓ Audit done done 12s · model",
+    "  Findings",
+  ],
+  "expanded": [
+    "✓ Audit done done 12s · model",
+    "  $0.010 · 8 tps · ↻8 · 1.1k tok · 12s",
+    "  Findings",
+    "  Next steps",
+  ],
+  "failed": [
+    "✗ Audit failed failed 12s · model",
+    "  failed — Provider unavailable",
+  ],
+  "parallel": [
+    "⠋ Subagents 2/3 done 12s · model",
+    "  ✓ Audit one done",
+    "    Findings",
+    "  ⠋ Audit two running",
+    "    Next steps",
+    "  ✗ Audit three failed",
+    "    failed — Provider unavailable",
+  ],
+  "partial": [
+    "◐ Audit partial partial 12s · model",
+    "  Findings",
+  ],
+  "starting": [
+    "⠋ Audit live running 12s · model",
+    "  Waiting for activity…",
+  ],
+  "timeout": [
+    "◷ Audit timeout timeout 12s · model",
+    "  timed out — Findings",
+  ],
+  "waiting": [
+    "◔ Audit waiting waiting 12s · model",
+    "  Next steps",
+  ],
+  "wrapped": [
+    "◐ Audit wrapped partial 12s · model",
+    "  wrapped up (max turns) — Findings",
+  ],
+}
+`;
+
+exports[`native-width presentation contract > snapshots inspector groups and summary at 12 columns 1`] = `
+{
+  "detail": [
+    " Subagent[0m...[0m",
+    "────────────",
+    "✓ Audit r[0m...[0m",
+    "$0.010 · [0m...[0m",
+    "",
+    "Summary",
+    "first",
+    "",
+    "✓ Audit r[0m...[0m",
+    "  $0.010 [0m...[0m",
+    "  Findings",
+    "  Next steps",
+    " esc back[0m...[0m",
+  ],
+  "list": [
+    " Subagent[0m...[0m",
+    "────────────",
+    " Active",
+    "› ⠋ Audit[0m...[0m",
+    "    Summa[0m...[0m",
+    " Ready",
+    "  ✓ Audit[0m...[0m",
+    "    Summa[0m...[0m",
+    " History",
+    "  ✗ Audit[0m...[0m",
+    "    Provi[0m...[0m",
+    " esc clos[0m...[0m",
+  ],
+}
+`;
+
+exports[`native-width presentation contract > snapshots inspector groups and summary at 60 columns 1`] = `
+{
+  "detail": [
+    " Subagents  1 active · 1 ready",
+    "────────────────────────────────────────────────────────────",
+    "✓ Audit ready done",
+    "$0.010 · model · 8 tps · ↻8 · 1.1k tok · 12s · ready · ready",
+    "",
+    "Summary first",
+    "",
+    "✓ Audit ready provider/model",
+    "  $0.010 · 8 tps · ↻8 · 1.1k tok",
+    "  Findings",
+    "  Next steps",
+    " esc back · ↑↓ scroll · t transcript · r resume · o outpu[0m...[0m",
+  ],
+  "list": [
+    " Subagents  1 active · 1 ready",
+    "────────────────────────────────────────────────────────────",
+    " Active",
+    "› ⠋ Audit live · running 12s · model",
+    "    Summary first",
+    " Ready",
+    "  ✓ Audit ready · done 12s · model",
+    "    Summary first",
+    " History",
+    "  ✗ Audit old · failed 12s · model",
+    "    Provider unavailable",
+    " esc close · enter details · c cancel · s steer",
+  ],
+}
+`;
+
+exports[`native-width presentation contract > snapshots inspector groups and summary at 80 columns 1`] = `
+{
+  "detail": [
+    " Subagents  1 active · 1 ready",
+    "────────────────────────────────────────────────────────────────────────────────",
+    "✓ Audit ready done",
+    "$0.010 · model · 8 tps · ↻8 · 1.1k tok · 12s · ready · ready",
+    "",
+    "Summary first",
+    "",
+    "✓ Audit ready provider/model",
+    "  $0.010 · 8 tps · ↻8 · 1.1k tok",
+    "  Findings",
+    "  Next steps",
+    " esc back · ↑↓ scroll · t transcript · r resume · o output · d dismiss",
+  ],
+  "list": [
+    " Subagents  1 active · 1 ready",
+    "────────────────────────────────────────────────────────────────────────────────",
+    " Active",
+    "› ⠋ Audit live · running 12s · model",
+    "    Summary first",
+    " Ready",
+    "  ✓ Audit ready · done 12s · model",
+    "    Summary first",
+    " History",
+    "  ✗ Audit old · failed 12s · model",
+    "    Provider unavailable",
+    " esc close · ↑↓ select · enter details · c cancel · s steer",
+  ],
+}
+`;
+
+exports[`native-width presentation contract > snapshots inspector groups and summary at 120 columns 1`] = `
+{
+  "detail": [
+    " Subagents  1 active · 1 ready",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "✓ Audit ready done",
+    "$0.010 · model · 8 tps · ↻8 · 1.1k tok · 12s · ready · ready",
+    "",
+    "Summary first",
+    "",
+    "✓ Audit ready provider/model",
+    "  $0.010 · 8 tps · ↻8 · 1.1k tok",
+    "  Findings",
+    "  Next steps",
+    " esc back · ↑↓ scroll · t transcript · r resume · o output · d dismiss",
+  ],
+  "list": [
+    " Subagents  1 active · 1 ready",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    " Active",
+    "› ⠋ Audit live · running 12s · model",
+    "    Summary first",
+    " Ready",
+    "  ✓ Audit ready · done 12s · model",
+    "    Summary first",
+    " History",
+    "  ✗ Audit old · failed 12s · model",
+    "    Provider unavailable",
+    " esc close · ↑↓ select · enter details · c cancel · s steer",
+  ],
+}
+`;

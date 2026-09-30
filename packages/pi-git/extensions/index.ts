@@ -5,7 +5,7 @@ import { checklist } from "../src/checklist.ts";
 import { summarizeDiff } from "../src/diff.ts";
 import { isRepository, LocalGitExec, repositoryRoot } from "../src/exec.ts";
 import { branches, commitsBetween, diff, isSafeRevisionSpec, status, worktrees } from "../src/repo.ts";
-import { renderBranches, renderChecklist, renderDiff, renderStatus, renderToolCall } from "../src/tui.ts";
+import { renderToolCall, renderToolResult } from "../src/tui.ts";
 import { branchesSchema, checklistSchema, diffSchema, logSchema, statusSchema } from "../src/schemas.ts";
 
 const MAX_LIMIT = 200;
@@ -50,7 +50,14 @@ async function repoDir(
 }
 
 export default function git(pi: ExtensionAPI): void {
-	pi.registerTool({
+	const registerTool: ExtensionAPI["registerTool"] = (tool) =>
+		pi.registerTool({
+			...tool,
+			renderCall: (args, theme, context) => renderToolCall(tool.name, args, theme, context),
+			renderResult: (result, options, theme, context) =>
+				renderToolResult(tool.name, result, options, theme, context),
+		});
+	registerTool({
 		name: "git_status",
 		namespace,
 		annotations: readAnnotations,
@@ -93,14 +100,9 @@ export default function git(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("git_status", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { status?: Parameters<typeof renderStatus>[0] } }).details;
-			return renderStatus(d?.status ?? { branch: null, ahead: 0, behind: 0, files: [], conflicted: false });
-		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "git_diff",
 		namespace,
 		annotations: readAnnotations,
@@ -165,14 +167,9 @@ export default function git(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("git_diff", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { diff?: { files?: Parameters<typeof renderDiff>[0] } } }).details;
-			return renderDiff(d?.diff?.files ?? []);
-		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "git_branches",
 		namespace,
 		annotations: readAnnotations,
@@ -215,14 +212,9 @@ export default function git(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("git_branches", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { branches?: Parameters<typeof renderBranches>[0] } }).details;
-			return renderBranches(d?.branches ?? []);
-		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "git_checklist",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -264,21 +256,9 @@ export default function git(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("git_checklist", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (
-				result as {
-					details?: {
-						ready?: boolean;
-						checks?: { name: string; state: string; detail: string | null }[];
-					};
-				}
-			).details;
-			return renderChecklist({ ready: d?.ready ?? false, checks: d?.checks ?? [] });
-		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "git_log",
 		namespace,
 		annotations: readAnnotations,
@@ -335,7 +315,6 @@ export default function git(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("git_log", (args ?? {}) as Record<string, unknown>),
 	});
 }
 

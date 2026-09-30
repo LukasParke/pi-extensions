@@ -204,7 +204,7 @@ describe.skipIf(!canSandbox)("executeWorkflow", () => {
 		},
 	);
 
-	it("passes maxCost through unclamped when agentMaxCost is unset", async () => {
+	it("passes omitted budgets through to the runner without defaults", async () => {
 		const agentDir = await tempDir();
 		const specs: { maxCost?: number }[] = [];
 		const runAgent = vi.fn(async (spec: { maxCost?: number }) => {
@@ -240,10 +240,11 @@ describe.skipIf(!canSandbox)("executeWorkflow", () => {
 
 		expect(exec.state).toBe("completed");
 		expect(specs[0]?.maxCost).toBeUndefined();
+		expect(specs[0]).toHaveProperty("maxTurns", undefined);
 		expect(specs[1]?.maxCost).toBe(5);
 	});
 
-	it("defaults and clamps maxCost when agentMaxCost is set", async () => {
+	it("ignores retired ceilings and honors explicit budgets above 20 turns", async () => {
 		const agentDir = await tempDir();
 		const specs: { maxCost?: number }[] = [];
 		const runAgent = vi.fn(async (spec: { maxCost?: number }) => {
@@ -253,15 +254,19 @@ describe.skipIf(!canSandbox)("executeWorkflow", () => {
 
 		const exec = await executeWorkflow({
 			runId: newRunId(),
-			label: "cost-set-test",
+			label: "retired-ceilings-test",
 			source: `
         await agent("one", { label: "a" });
-        await agent("two", { label: "b", maxCost: 5 });
+        await agent("two", { label: "b", maxTurns: 1000, maxCost: 5 });
+        await agent("three", { label: "c", maxTurns: 1, maxCost: 0 });
         return true;
       `,
 			cwd: process.cwd(),
 			agentDir,
-			config: { ...defaultConfig, approval: "never", agentMaxCost: 0.5 },
+			config: Object.assign(
+				{ ...defaultConfig, approval: "never" as const },
+				{ agentMaxTurns: 20, agentMaxCost: 0.5 },
+			),
 			signal: new AbortController().signal,
 			ctx: { cwd: process.cwd(), model: undefined },
 			runAgent,
@@ -278,7 +283,9 @@ describe.skipIf(!canSandbox)("executeWorkflow", () => {
 		});
 
 		expect(exec.state).toBe("completed");
-		expect(specs[0]?.maxCost).toBe(0.5);
-		expect(specs[1]?.maxCost).toBe(0.5);
+		expect(specs[0]?.maxCost).toBeUndefined();
+		expect(specs[0]).toHaveProperty("maxTurns", undefined);
+		expect(specs[1]).toMatchObject({ maxCost: 5, maxTurns: 1000 });
+		expect(specs[2]).toMatchObject({ maxCost: 0, maxTurns: 1 });
 	});
 });

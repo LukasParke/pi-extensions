@@ -50,6 +50,25 @@ describe("SubagentParamsSchema", () => {
     expect(Value.Check(SubagentParamsSchema, { tasks: [{ task: "review", agent: "reviewer" }] })).toBe(true);
   });
 
+  it('keeps omitted budgets undefined and passes explicit budgets above 500 unchanged', () => {
+    const params = { task: 'implement', profile: 'general' as const };
+    const defaults = validateSubagentRequest(params, parent);
+    expect(defaults.ok).toBe(true);
+    if (defaults.ok) {
+      expect(defaults.tasks[0]?.maxTurns).toBeUndefined();
+      expect(defaults.tasks[0]?.maxCost).toBeUndefined();
+    }
+    for (const request of [{ ...params, max_turns: 1000, max_cost: 25 }, { tasks: [{ ...params, max_turns: 1000, max_cost: 25 }] }]) {
+      expect(Value.Check(SubagentParamsSchema, request)).toBe(true);
+      const explicit = validateSubagentRequest(request, parent);
+      expect(explicit.ok).toBe(true);
+      if (explicit.ok) {
+        expect(explicit.tasks[0]?.maxTurns).toBe(1000);
+        expect(explicit.tasks[0]?.maxCost).toBe(25);
+      }
+    }
+  });
+
   it("accepts management actions", () => {
     expect(Value.Check(SubagentParamsSchema, { action: "wait", id: "abc" })).toBe(true);
     expect(Value.Check(SubagentParamsSchema, { action: "cancel" })).toBe(true);

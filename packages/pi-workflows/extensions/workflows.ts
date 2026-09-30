@@ -20,7 +20,7 @@ import {
 	type WorkflowTerminal,
 	WorkflowRunRegistry,
 } from "../src/registry.ts";
-import { executeWorkflow, loadResumeSource, newRunId } from "../src/runner.ts";
+import { executeWorkflow, loadResumeSource, newRunId, type WorkflowProgress } from "../src/runner.ts";
 import { safeStringify } from "../src/sandbox.ts";
 import { listSavedWorkflows, resolveSavedWorkflow, saveWorkflow } from "../src/saved.ts";
 // Stable boundary module (re-exports the planned `@parke.dev/pi-subagent/sdk` surface).
@@ -30,7 +30,12 @@ import {
 	ENTRY_TYPE,
 	formatRunLine,
 	openWorkflowsOverlay,
-	refreshWorkflowUi,
+	compactText,
+	cleanLabel,
+	workflowResultLines,
+	workflowWidget,
+	workflowStatus,
+	workflowTone,
 	WIDGET_KEY,
 } from "../src/ui.ts";
 import { createUltracodeState, registerUltracode } from "../src/ultracode.ts";
@@ -60,13 +65,14 @@ export default async function (pi: ExtensionAPI) {
 
 	const paint = () => {
 		if (!widgetCtx?.ui) return;
-		refreshWorkflowUi(
-			(key, content) => widgetCtx!.ui.setWidget(key, content),
-			(key, content) =>
-				widgetCtx!.ui.setStatus(key, content ? widgetCtx!.ui.theme.fg("warning", content) : undefined),
-			registry,
-			activeSessionKey,
+		const runs = registry.list(activeSessionKey);
+		const status = workflowStatus(runs);
+		const active = runs.some((run) => !isTerminalState(run.state));
+		widgetCtx.ui.setStatus(
+			WIDGET_KEY,
+			status ? widgetCtx.ui.theme.fg(active ? "accent" : "success", status) : undefined,
 		);
+		widgetCtx.ui.setWidget(WIDGET_KEY, status ? (_tui, theme) => workflowWidget(runs, theme) : undefined);
 	};
 	registry.subscribe((run) => {
 		paint();
@@ -86,13 +92,12 @@ export default async function (pi: ExtensionAPI) {
 			counts?: string;
 			cost?: string;
 		};
-		const line =
-			theme.fg("accent", "workflow") +
-			` ${data.runId ?? "?"} ${data.label ?? ""} [${data.state ?? "?"}] ${data.phase ?? ""} ${data.counts ?? ""} ${data.cost ?? ""}`.trim();
-		return {
-			render: () => [line],
-			invalidate() {},
-		};
+		return compactText(() => [
+			theme.fg(
+				workflowTone(data.state ?? "running"),
+				`${cleanLabel(data.label ?? "Workflow")} · ${data.state ?? "running"}`,
+			) + theme.fg("muted", ` · ${cleanLabel(data.phase ?? data.counts ?? "")}`),
+		]);
 	});
 
 	pi.on("session_start", (_event, ctx) => {
@@ -128,6 +133,7 @@ export default async function (pi: ExtensionAPI) {
 		preApproved?: boolean;
 		runId?: string;
 		toolExecution?: boolean;
+		onProgress?: (progress: WorkflowProgress) => void;
 	}) => {
 		const runId = options.runId ?? newRunId();
 		const label = str(options.description, options.name ?? "workflow");
@@ -144,8 +150,6 @@ export default async function (pi: ExtensionAPI) {
 				scriptPreview: options.script,
 				maxAgentRequests: config.maxAgentRequests,
 				maxConcurrency: config.maxConcurrency,
-				agentMaxCost: config.agentMaxCost,
-				agentMaxTurns: config.agentMaxTurns,
 				workflowTimeoutMs: config.workflowTimeoutMs,
 				writersPossible: /profile\s*:\s*["']general["']|isolation\s*:\s*["']worktree["']/.test(
 					options.script,
@@ -194,6 +198,7 @@ export default async function (pi: ExtensionAPI) {
 			resumeFrom: options.resumeFrom,
 			workflowName: options.name,
 			onProgress: (progress) => {
+				options.onProgress?.(progress);
 				registry.update(runId, {
 					phase: progress.phase,
 					agentCount: progress.agentCount,
@@ -298,7 +303,7 @@ export default async function (pi: ExtensionAPI) {
 			"isolation: 'workflow' (default shared lane) | 'worktree' (independent writer).",
 			"profile 'explore'/'review' are read-only; 'general' writes on the shared workflow worktree (serialized).",
 			"",
-			`Limits: ${config.maxAgentRequests} agent calls, concurrency ${config.maxConcurrency}, ${config.agentMaxTurns} turns per agent${config.agentMaxCost === undefined ? ", no cost ceiling (set agentMaxCost to add one)" : `, $${config.agentMaxCost} per agent`}.`,
+			`Limits: ${config.maxAgentRequests} agent calls, concurrency ${config.maxConcurrency}. Unbounded turns/spend by default; optional per-call maxTurns/maxCost budgets are honored.`,
 			"Background by default: start returns a run id; completion is delivered as a follow-up.",
 		].join("\n"),
 		parameters: Type.Object(
@@ -335,6 +340,18 @@ export default async function (pi: ExtensionAPI) {
 			{ additionalProperties: false },
 		),
 		prepareArguments: prepareWorkflowArguments,
+		renderCall(args, theme) {
+			return compactText(() => [
+				theme.fg("toolTitle", theme.bold("Workflow")) +
+					theme.fg(
+						"muted",
+						` · ${cleanLabel(args.action ?? "start")} · ${cleanLabel(args.description ?? args.name ?? args.id ?? "inline script")}`,
+					),
+			]);
+		},
+		renderResult(result, options, theme, context) {
+			return compactText(() => workflowResultLines(result, { ...options, isError: context.isError }, theme));
+		},
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const action = str(params.action, "start").toLowerCase();
 
@@ -468,6 +485,16 @@ export default async function (pi: ExtensionAPI) {
 				background,
 				preApproved,
 				toolExecution: true,
+				onProgress: (progress) =>
+					onUpdate?.({
+						content: [
+							{
+								type: "text",
+								text: `${progress.label} · ${progress.phase ?? progress.state} · ${progress.completedAgents}/${progress.agentCount} agents`,
+							},
+						],
+						details: progress,
+					}),
 			});
 		},
 	});

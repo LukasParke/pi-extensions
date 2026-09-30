@@ -71,11 +71,14 @@ describe('format helpers', () => {
       }],
     };
     const lines = format.renderRunLines(run, { theme, width: 80 });
-    expect(lines[0]).toContain('↻8');
-    expect(lines[0]).toContain('tok');
+    expect(lines[0]).toContain('task-1');
+    expect(lines[0]).toContain('done');
+    expect(lines.join('\n')).not.toMatch(/tok|\$|↻/);
     expect(lines[0]).toContain('45s');
     expect(lines.some((l) => l.includes('Found 5 middleware call sites'))).toBe(true);
-    expect(lines.some((l) => l.includes('/tmp/out.md'))).toBe(true);
+    const expanded = format.renderRunLines(run, { theme, width: 80, expanded: true });
+    expect(expanded.some((l) => l.includes('/tmp/out.md'))).toBe(true);
+    expect(expanded.join('\n')).toContain('↻8');
     expect(lines.every((l) => visibleWidth(l) <= 80)).toBe(true);
   });
 
@@ -89,7 +92,8 @@ describe('format helpers', () => {
     const lines = format.renderRunLines(run, { theme, width: 80, isPartial: true, spinnerFrame: 2 });
     expect(lines.length).toBe(2);
     expect(lines[0]).toContain(format.SPINNERS[2]);
-    expect(lines[1]).toContain('⎿');
+    expect(lines[0]).toContain('task-1');
+    expect(lines[1]).not.toContain('⎿');
     expect(lines[1]).toContain('reading src/auth/middleware.ts');
   });
 
@@ -108,8 +112,8 @@ describe('format helpers', () => {
     // completed + failed are both terminal → 2/3 done
     expect(lines[0]).toContain('2/3 done');
     expect(lines.some((l) => l.includes('t1'))).toBe(true);
-    expect(lines.some((l) => l.includes('t2') && l.includes('running tests'))).toBe(true);
-    expect(lines.some((l) => l.includes('t3') && l.includes('boom'))).toBe(true);
+    expect(lines[lines.findIndex((l) => l.includes('t2')) + 1]).toContain('running tests');
+    expect(lines[lines.findIndex((l) => l.includes('t3')) + 1]).toContain('boom');
   });
 
   it('freezes duration at endedAt for finished runs', () => {

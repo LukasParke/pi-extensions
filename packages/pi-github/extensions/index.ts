@@ -8,7 +8,7 @@ import { withBlockedSignal } from "./blocked.ts";
 import { GitHubClient } from "../src/client.ts";
 import { GITHUB_DESCRIPTION } from "../src/describe.ts";
 import { NO_REPO_MESSAGE, type RepoRef, resolveRepo } from "../src/repo.ts";
-import { renderCheckRows, renderIssueRows, renderPullRows, renderToolCall } from "../src/tui.ts";
+import { renderToolCall, renderToolResult } from "../src/tui.ts";
 import {
 	type CheckRow,
 	checksRollup,
@@ -181,6 +181,13 @@ function renderPull(repo: RepoRef, p: PullDetail): string {
 /* ------------------------------- the extension ------------------------------- */
 
 export default function github(pi: ExtensionAPI): void {
+	const registerTool: ExtensionAPI["registerTool"] = (tool) =>
+		pi.registerTool({
+			...tool,
+			renderCall: (args, theme, context) => renderToolCall(tool.name, args, theme, context),
+			renderResult: (result, options, theme, context) =>
+				renderToolResult(tool.name, result, options, theme, context),
+		});
 	registerCredentialCommand(pi, {
 		id: "github-login",
 		label: "GitHub",
@@ -198,7 +205,7 @@ export default function github(pi: ExtensionAPI): void {
 			}),
 		);
 
-	pi.registerTool({
+	registerTool({
 		name: "github_prs",
 		namespace,
 		annotations: readAnnotations,
@@ -251,14 +258,9 @@ export default function github(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("github_prs", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { rows?: PullRow[] } }).details;
-			return renderPullRows(d?.rows ?? []);
-		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "github_pr",
 		namespace,
 		annotations: readAnnotations,
@@ -290,7 +292,7 @@ export default function github(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "github_issues",
 		namespace,
 		annotations: readAnnotations,
@@ -340,14 +342,9 @@ export default function github(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("github_issues", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { rows?: IssueRow[] } }).details;
-			return renderIssueRows(d?.rows ?? []);
-		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "github_checks",
 		namespace,
 		annotations: readAnnotations,
@@ -378,16 +375,11 @@ export default function github(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("github_checks", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { rows?: CheckRow[] } }).details;
-			return renderCheckRows(d?.rows ?? []);
-		},
 	});
 
 	/* ------------------------------- writes ------------------------------- */
 
-	pi.registerTool({
+	registerTool({
 		name: "github_comment",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -441,7 +433,7 @@ export default function github(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "github_review",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -516,7 +508,7 @@ export default function github(pi: ExtensionAPI): void {
 
 	/* ------------------------------ credential ------------------------------ */
 
-	pi.registerTool({
+	registerTool({
 		name: "github_status",
 		namespace,
 		annotations: readAnnotations,
@@ -561,7 +553,7 @@ export default function github(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "github_connect",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
@@ -618,7 +610,7 @@ export default function github(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "github_disconnect",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },

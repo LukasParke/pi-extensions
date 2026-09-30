@@ -22,8 +22,6 @@ const request = {
 	scriptPreview: "return 1",
 	maxAgentRequests: 32,
 	maxConcurrency: 4,
-	agentMaxCost: 0.5,
-	agentMaxTurns: 20,
 	workflowTimeoutMs: 60_000,
 	writersPossible: false,
 };

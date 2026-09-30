@@ -10,8 +10,8 @@ import { defaultConfig, loadConfig, readConfigFile, type SubagentConfig } from "
 import {
   commonModelId,
   composeRunFailureMessage,
-  computeTps,
-  formatDuration,
+  displayText,
+  glance,
   formatStatusPreview,
   formatTokens,
   isActiveState,
@@ -21,6 +21,7 @@ import {
   SPINNERS,
   statLine,
   stateGlyph,
+  stateTone,
   type InlineRunView,
 } from "./format.js";
 import { createGetPiCommand, getLaunchResolution } from "./launch.js";
@@ -228,7 +229,6 @@ function refreshWidget(runtime: SessionRuntime): void {
     }
     return;
   }
-  const theme = runtime.ctx.ui.theme;
   const live = runtime.registry.getLiveRuns(runtime.key).filter((run) => runtime.asyncRuns.has(run.id));
   if (!live.length) {
     runtime.ctx.ui.setWidget("subagent", undefined);
@@ -243,43 +243,20 @@ function refreshWidget(runtime: SessionRuntime): void {
     runtime.widgetTimer = setInterval(() => refreshWidget(runtime), 250);
     runtime.widgetTimer.unref?.();
   }
-  const now = Date.now();
-  const frame = Math.floor(now / 120) % SPINNERS.length;
-  const lines: string[] = [theme.fg("accent", "●") + " " + theme.bold("Subagents")];
-  const shown = live.slice(0, 4);
-  shown.forEach((run, index) => {
-    const last = index === shown.length - 1 && live.length <= 4;
-    const joint = last ? "└─" : "├─";
-    // Per-task model is omitted when every task in the run shares one model.
-    const sharedModel = commonModelId(run.results.map((result) => result.model));
-    for (const result of run.results.slice(0, 2)) {
-      const active = isActiveState(result.state);
-      const glyph = active ? theme.fg("accent", SPINNERS[frame]!) : stateGlyph(result.state, theme);
-      const stats = statLine(
-        {
-          cost: result.usage.cost,
-          turns: result.usage.turns,
-          model: sharedModel ? undefined : result.model,
-          tps: computeTps({
-            output: result.usage.output,
-            samples: result.usageSamples,
-            startedAt: run.startedAt,
-            endedAt: run.endedAt,
-            now,
-            live: active,
-          }),
-          tokens: result.usage.input + result.usage.output,
-          durationMs: now - run.startedAt,
-        },
-        { live: active },
-      );
-      const activity = result.liveText?.split("\n").reverse().find((line) => line.trim());
-      lines.push(`${theme.fg("dim", joint)} ${glyph} ${theme.fg("text", result.label)} ${theme.fg("dim", `· ${stats}`)}`);
-      if (activity) lines.push(`${theme.fg("dim", last ? "    " : "│   ")}${theme.fg("dim", "⎿ ")}${theme.fg("muted", oneLine(activity, 80))}`);
+  runtime.ctx.ui.setWidget('subagent', (_tui, theme) => lineComponentForMessage((width) => {
+    const now = Date.now();
+    const tasks = live.flatMap((run) => run.results.map((result) => ({ run, result })));
+    const shown = tasks.slice(0, 3);
+    const lines = [theme.fg('accent', theme.bold(`Subagents · ${live.length} active`))];
+    for (const { run, result } of shown) {
+      lines.push(...renderRunLines({
+        mode: 'single', state: result.state, startedAt: run.startedAt,
+        results: [{ ...result, finalOutput: result.liveText }],
+      }, { theme, width, now, spinnerFrame: liveSpinnerFrame() }));
     }
-  });
-  if (live.length > 4) lines.push(theme.fg("dim", `└─ +${live.length - 4} more · /subagents`));
-  runtime.ctx.ui.setWidget("subagent", lines);
+    if (tasks.length > shown.length) lines.push(theme.fg('muted', `… +${tasks.length - shown.length} tasks · /subagents`));
+    return lines.map((line) => truncateToWidth(line, width));
+  }));
 }
 
 function utf8Preview(value: unknown, maxBytes: number): string {
@@ -360,23 +337,6 @@ class LineBlock implements Component {
  */
 function liveSpinnerFrame(): number {
   return Math.floor(Date.now() / 100) % SPINNERS.length;
-}
-
-// keyHint lives in the coding-agent runtime; load it lazily on first render so
-// headless children never pay for Pi's provider/network stack at startup.
-let keyHintFn: ((id: string, description: string) => string) | null | undefined;
-function expandHint(): string {
-  if (keyHintFn === undefined) {
-    keyHintFn = null;
-    void import("@earendil-works/pi-coding-agent")
-      .then((m: any) => { keyHintFn = typeof m.keyHint === "function" ? m.keyHint : null; })
-      .catch(() => { keyHintFn = null; });
-  }
-  try {
-    return keyHintFn ? keyHintFn("app.tools.expand", "to expand") : "ctrl+o to expand";
-  } catch {
-    return "ctrl+o to expand";
-  }
 }
 
 function fail(message: string): never {
@@ -515,7 +475,7 @@ function guidelines(catalog?: Map<string, AgentDefinition>): string[] {
     "Give every task a short description label (3-5 words) so runs are scannable in UIs and result indexes.",
     "Every spawned task must choose a profile unless its named agent persona supplies one: explore for fast read-only recon/research, review for careful read-only code review, general for implementation that writes files/runs commands. Pick for the task's strengths; do not habitually mirror the parent.",
     "Parallel writers need isolation:'worktree' (each gets an isolated checkout; changed work lands on a branch). After a worktree run finishes, use action:'diff' to inspect, then 'apply' to bring changes into the main checkout or 'discard' to drop them.",
-    "Set budgets: at max_turns/max_cost the child is steered to wrap up and given grace turns for a final answer (grace_turns tunes this); results end as 'partial' with wrappedUp:true when the child concluded. timeout_ms includes queue time; timeout results report the phase.",
+    "Turn/spend budgets are optional, with no automatic ceiling. When explicitly set, at max_turns/max_cost the child is steered to wrap up and given grace turns for a final answer (grace_turns tunes this); results end as 'partial' with wrappedUp:true when the child concluded. timeout_ms includes queue time; timeout results report the phase.",
     "Transient failures (provider errors, stalls, queue timeouts) retry automatically; pass fallback_models:['…'] to escalate models across attempts. Task-quality failures never retry.",
     "context:'fork' starts a single child from a branched copy of this conversation — use it when the task depends on discussion context instead of re-explaining. Single-task only.",
     "Use async:true only when you have independent work meanwhile; then use action:'wait' with the run id (interruptible, does not cancel). action:'steer' injects mid-run guidance into a running child instead of cancel + retry.",
@@ -576,7 +536,6 @@ async function runSynthesis(
         model: options.model,
         thinking: "low",
         timeoutMs: Math.min(runtime.config.defaultTimeoutMs, 5 * 60_000),
-        maxTurns: 8,
       },
       {
         semaphore: runtime.semaphore,
@@ -616,7 +575,7 @@ function buildCompletionDetails(runtime: SessionRuntime, runIds: string[]): Comp
     }
     const first = snapshot.results[0];
     const preview = oneLine(
-      (first?.finalOutput ?? first?.errorMessage ?? snapshot.summary ?? "").split("\n").find((line) => line.trim()) ?? "",
+      (first?.errorMessage || first?.finalOutput || snapshot.summary || "").split("\n").find((line) => line.trim()) ?? "",
       100,
     );
     runs.push({
@@ -893,7 +852,7 @@ export default function registerSubagent(pi: ExtensionAPI): void {
     return lineComponentForMessage((width) => {
       const lines: string[] = [];
       for (const run of details.runs) {
-        const glyph = stateGlyph(run.state as any, theme);
+        const glyph = stateGlyph(run.state, theme);
         const stats = statLine(
           {
             cost: run.cost,
@@ -905,13 +864,14 @@ export default function registerSubagent(pi: ExtensionAPI): void {
           },
           { live: false },
         );
-        lines.push(truncateToWidth(`${glyph} ${theme.bold(theme.fg("toolTitle", run.label))} ${theme.fg("dim", `[${run.id.slice(0, 8)}] ${stats}`)}`, width));
-        if (run.preview) lines.push(truncateToWidth(`  ${theme.fg("dim", "⎿")} ${theme.fg("toolOutput", run.preview)}`, width));
-        if ((expanded || details.runs.length === 1) && run.pointers.length) {
-          lines.push(truncateToWidth(theme.fg("dim", `  ${run.pointers.join(" · ")}`), width));
+        lines.push(truncateToWidth(`${glyph} ${theme.bold(theme.fg('toolTitle', oneLine(run.label)))} ${theme.fg(stateTone(run.state), glance({ state: run.state }))} ${theme.fg('muted', glance({ model: run.model, durationMs: run.durationMs }))}`, width));
+        if (run.preview) lines.push(truncateToWidth(`  ${theme.fg(stateTone(run.state) === 'error' ? 'error' : 'toolOutput', oneLine(run.preview))}`, width));
+        if (expanded) {
+          lines.push(truncateToWidth(theme.fg('muted', `  ${stats} · ${oneLine(run.id.slice(0, 8))}`), width));
+          if (run.pointers.length) lines.push(truncateToWidth(theme.fg('muted', `  ${oneLine(run.pointers.join(' · '), width)}`), width));
         }
       }
-      lines.push(theme.fg("dim", truncateToWidth(`wait { id } collects full output`, width)));
+      if (expanded) lines.push(theme.fg('muted', truncateToWidth('wait { id } collects full output', width)));
       return lines;
     });
   });
@@ -1383,7 +1343,14 @@ export default function registerSubagent(pi: ExtensionAPI): void {
       const detailsValue = result.details as ReturnType<typeof compactDetails> | undefined;
       if (!detailsValue?.results.length) {
         const text = result.content.find((item) => item.type === "text")?.text ?? "(no output)";
-        block.set((width) => String(text).split("\n").map((line) => truncateToWidth(theme.fg("toolOutput", line), width)));
+        block.set((width) => {
+          const tone = context.isError ? 'error' : 'toolOutput';
+          const lines = displayText(String(text)).split('\n');
+          if (!options.expanded) return [truncateToWidth(theme.fg(tone, oneLine(lines.find((line) => line.trim()) ?? '(no output)', width)), width)];
+          const shown = lines.slice(0, 40).map((line) => truncateToWidth(theme.fg(tone, line), width));
+          if (lines.length > 40) shown.push(truncateToWidth(theme.fg('muted', `… +${lines.length - 40} lines`), width));
+          return shown;
+        });
         return block;
       }
       const run: InlineRunView = {
@@ -1420,11 +1387,6 @@ export default function registerSubagent(pi: ExtensionAPI): void {
           isPartial: active,
           spinnerFrame: liveSpinnerFrame(),
         });
-        if (!options.expanded && !active && run.results.some((task) => task.finalOutput || task.errorMessage)) {
-          // keyHint output is already themed; only add color to the raw fallback.
-          const hint = expandHint();
-          lines.push(truncateToWidth(hint.includes("\u001b[") ? hint : theme.fg("dim", hint), width));
-        }
         return lines;
       });
       return block;

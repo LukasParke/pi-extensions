@@ -124,6 +124,18 @@ export default function (pi: ExtensionAPI) {
 		startPolling(ctx);
 	});
 
+	pi.registerCommand("dashboard", {
+		description: "Inspect local extension statuses: /dashboard status",
+		handler: async (_args, ctx) => {
+			if (!handles || !ctx.hasUI) return ctx.ui.notify("Dashboard is disabled or unavailable.", "info");
+			const statuses = [...handles.statuses()].filter(([, text]) => text.trim());
+			if (!statuses.length) return ctx.ui.notify("No extension statuses.", "info");
+			const name = await ctx.ui.select("Extension status", statuses.map(([name]) => name));
+			const text = statuses.find(([key]) => key === name)?.[1];
+			if (text) ctx.ui.notify(text, "info");
+		},
+	});
+
 	pi.on("session_shutdown", () => {
 		teardown();
 	});

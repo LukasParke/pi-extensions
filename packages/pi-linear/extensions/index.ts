@@ -6,7 +6,7 @@ import { LINEAR_AUTH_REF, NO_KEY_MESSAGE, resolveKey } from "../src/auth.ts";
 import { withBlockedSignal } from "./blocked.ts";
 import { LinearClient } from "../src/client.ts";
 import { LINEAR_DESCRIPTION } from "../src/describe.ts";
-import { renderIssues, renderToolCall } from "../src/tui.ts";
+import { renderToolCall, renderToolResult } from "../src/tui.ts";
 import { type IssueRow, toIssueDetail, toIssueRow } from "../src/viewmodel.ts";
 import {
 	commentSchema,
@@ -95,6 +95,13 @@ function renderRows(rows: IssueRow[]): string {
 }
 
 export default function linear(pi: ExtensionAPI): void {
+	const registerTool: ExtensionAPI["registerTool"] = (tool) =>
+		pi.registerTool({
+			...tool,
+			renderCall: (args, theme, context) => renderToolCall(tool.name, args, theme, context),
+			renderResult: (result, options, theme, context) =>
+				renderToolResult(tool.name, result, options, theme, context),
+		});
 	registerCredentialCommand(pi, {
 		id: "linear-login",
 		label: "Linear",
@@ -105,7 +112,7 @@ export default function linear(pi: ExtensionAPI): void {
 		validate: async (key) => (await new LinearClient({ key }).viewer()).data.name,
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "linear_issues",
 		namespace,
 		annotations: readAnnotations,
@@ -147,14 +154,9 @@ export default function linear(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("linear_issues", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { rows?: IssueRow[] } }).details;
-			return renderIssues(d?.rows ?? []);
-		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "linear_issue",
 		namespace,
 		annotations: readAnnotations,
@@ -196,10 +198,9 @@ export default function linear(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("linear_issue", (args ?? {}) as Record<string, unknown>),
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "linear_states",
 		namespace,
 		annotations: readAnnotations,
@@ -228,12 +229,11 @@ export default function linear(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("linear_states", (args ?? {}) as Record<string, unknown>),
 	});
 
 	/* -------------------------------- writes -------------------------------- */
 
-	pi.registerTool({
+	registerTool({
 		name: "linear_comment",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -282,7 +282,7 @@ export default function linear(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "linear_transition",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
@@ -327,7 +327,7 @@ export default function linear(pi: ExtensionAPI): void {
 
 	/* ------------------------------ credential ------------------------------ */
 
-	pi.registerTool({
+	registerTool({
 		name: "linear_status",
 		namespace,
 		annotations: readAnnotations,
@@ -364,7 +364,7 @@ export default function linear(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "linear_connect",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
@@ -416,7 +416,7 @@ export default function linear(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "linear_disconnect",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },

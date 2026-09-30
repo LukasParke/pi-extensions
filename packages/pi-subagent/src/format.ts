@@ -1,7 +1,8 @@
 import type { UsageStats, UsageSample, RunSnapshot, RunState, RunMode, TimeoutPhase } from './types.js';
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import * as os from 'node:os';
-import { truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import { stripVTControlCharacters } from 'node:util';
 
 /**
  * Formatting helpers for pi-subagent UI.
@@ -17,10 +18,13 @@ export function isActiveState(state: string | undefined): boolean {
   return state !== undefined && ACTIVE_STATES.has(state);
 }
 
-/** Collapse whitespace/newlines into a single display line. */
+/** Child output must not control the terminal or impersonate themed UI. */
+export function displayText(text: string): string {
+  return stripVTControlCharacters(text).replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, '');
+}
+
 export function oneLine(text: string, max = 120): string {
-  const collapsed = text.replace(/\s+/g, ' ').trim();
-  return collapsed.length > max ? `${collapsed.slice(0, Math.max(0, max - 1))}…` : collapsed;
+  return stripVTControlCharacters(truncateToWidth(displayText(text).replace(/\s+/g, ' ').trim(), Math.max(0, max), '…'));
 }
 
 export interface FailureMessageSource {
@@ -165,7 +169,7 @@ export function statLine(parts: StatLineParts, opts: StatLineOptions = {}): stri
   const costThreshold = opts.live ? 0 : 0.00005;
   if (parts.cost !== undefined && parts.cost > costThreshold) segs.push({ text: formatCost(parts.cost), drop: Infinity });
   const model = shortModelId(parts.model);
-  if (model) segs.push({ text: model, drop: Infinity });
+  if (model) segs.push({ text: oneLine(model), drop: Infinity });
   if (parts.tps !== undefined) segs.push({ text: formatTps(parts.tps, opts.live ?? false), drop: 2 });
   if (parts.turns) segs.push({ text: `↻${parts.turns}`, drop: Infinity });
   if (parts.tokens) segs.push({ text: `${formatTokens(parts.tokens)} tok`, drop: 1 });
@@ -174,7 +178,7 @@ export function statLine(parts: StatLineParts, opts: StatLineOptions = {}): stri
   if (opts.width !== undefined) {
     const kept = segs.slice();
     for (const rank of [0, 1, 2]) {
-      while (render(kept).length > opts.width) {
+      while (visibleWidth(render(kept)) > opts.width) {
         const idx = kept.map((s) => s.drop).lastIndexOf(rank);
         if (idx < 0) break;
         kept.splice(idx, 1);
@@ -224,9 +228,9 @@ export function formatState(state: RunState, exitCode?: number | null): string {
 /** Single-cell themed state glyph. Running states animate via spinnerFrame. */
 export function stateGlyph(state: RunState | undefined, theme: Theme, spinnerFrame = 0): string {
   switch (state) {
-    case 'queued': return theme.fg('dim', '◌');
+    case 'queued': return theme.fg('accent', '◌');
     case 'running': return theme.fg('accent', SPINNERS[spinnerFrame % SPINNERS.length]!);
-    case 'waiting': return theme.fg('accent', '◔');
+    case 'waiting': return theme.fg('warning', '◔');
     case 'completed': return theme.fg('success', '✓');
     case 'partial': return theme.fg('warning', '◐');
     case 'cancelled': return theme.fg('muted', '−');
@@ -236,6 +240,25 @@ export function stateGlyph(state: RunState | undefined, theme: Theme, spinnerFra
     case 'paused': return theme.fg('warning', '⏸');
     default: return theme.fg('dim', '·');
   }
+}
+
+export function stateTone(state: RunState | undefined): Parameters<Theme['fg']>[0] {
+  if (state === 'completed') return 'success';
+  if (['waiting', 'partial', 'timeout', 'paused'].includes(state ?? '')) return 'warning';
+  if (state === 'failed' || state === 'lost') return 'error';
+  return isActiveState(state) ? 'accent' : 'muted';
+}
+
+/** Glance surfaces omit cost and token accounting; the native footer owns totals. */
+export function glance(parts: { state?: RunState; model?: string; durationMs?: number }): string {
+  return [parts.state ? formatState(parts.state) : '',
+    parts.durationMs !== undefined ? formatDuration(parts.durationMs) : '',
+    shortModelId(parts.model) ? oneLine(shortModelId(parts.model)!) : '',
+  ].filter(Boolean).join(' · ');
+}
+
+export function runLabel(run: Pick<RunSnapshot, 'results' | 'taskPreviews' | 'summary'>): string {
+  return oneLine(run.results[0]?.label || run.taskPreviews[0] || run.summary || 'Subagent');
 }
 
 /** Status line preview (metadata only, not full summary). Duration freezes at endedAt. */
@@ -380,19 +403,19 @@ export function renderCallLine(args: any, theme: Theme, width: number): string {
   if (args?.action) {
     preview = `${args.action}${args.id ? ` ${String(args.id).slice(0, 8)}` : ''}`;
   } else if (Array.isArray(args?.tasks)) {
-    const first = args.tasks[0]?.task;
+    const first = args.tasks[0]?.description ?? args.tasks[0]?.task;
     preview = `${args.tasks.length} parallel tasks${first ? ` — ${oneLine(String(first), 60)}` : ''}`;
   } else if (args?.resume) {
     preview = `resume ${String(args.resume).slice(0, 8)}${args.task ? ` — ${oneLine(String(args.task))}` : ''}`;
   } else if (args?.task) {
-    preview = oneLine(String(args.task));
+    preview = oneLine(String(args.description ?? args.task));
   }
   const tag = args?.async ? ` ${theme.fg('accent', '· background')}` : '';
-  return truncateToWidth(`${title} ${theme.fg('muted', preview)}${tag}`, width);
+  return truncateToWidth(`${title} ${theme.fg('muted', oneLine(preview, width))}${tag}`, width);
 }
 
 function wrapLines(text: string, width: number): string[] {
-  const wrapped = wrapTextWithAnsi(text, Math.max(10, width));
+  const wrapped = wrapTextWithAnsi(displayText(text), Math.max(1, width));
   return Array.isArray(wrapped) ? wrapped : String(wrapped).split('\n');
 }
 
@@ -404,9 +427,11 @@ function terminalTaskLine(theme: Theme, task: InlineTaskView): { text: string; c
     case 'lost':
       return { text: `${formatState(task.state)} — ${oneLine(task.errorMessage ?? task.stopReason ?? 'unknown error')}`, color: 'error' };
     case 'cancelled':
-      return { text: 'cancelled', color: 'muted' };
+      return { text: `cancelled${task.finalOutput ? ` — ${oneLine(pickLine(task.finalOutput, 'first') ?? '')}` : ''}`, color: 'muted' };
     case 'timeout':
-      return { text: `timed out${task.timeoutPhase ? ` (${task.timeoutPhase})` : ''}`, color: 'warning' };
+      return { text: `timed out${task.timeoutPhase ? ` (${task.timeoutPhase})` : ''}${task.finalOutput ? ` — ${oneLine(pickLine(task.finalOutput, 'first') ?? '')}` : ''}`, color: 'warning' };
+    case 'paused':
+      return { text: oneLine(task.errorMessage ?? 'Waiting for guidance'), color: 'warning' };
     case 'partial': {
       if (task.wrappedUp) {
         const first = pickLine(task.finalOutput, 'first');
@@ -416,7 +441,7 @@ function terminalTaskLine(theme: Theme, task: InlineTaskView): { text: string; c
         return { text: `stalled — ${oneLine(task.errorMessage ?? 'no activity', 80)}`, color: 'warning' };
       }
       const first = pickLine(task.finalOutput, 'first');
-      return first ? { text: oneLine(first), color: 'toolOutput' } : undefined;
+      return first ? { text: oneLine(first), color: 'warning' } : undefined;
     }
     default: {
       const first = pickLine(task.finalOutput, 'first');
@@ -427,32 +452,24 @@ function terminalTaskLine(theme: Theme, task: InlineTaskView): { text: string; c
 
 function pointerText(task: InlineTaskView, expanded: boolean): string | undefined {
   const parts: string[] = [];
-  if (task.outputFile) parts.push(`→ ${formatPath(task.outputFile)}`);
-  if (task.worktree) parts.push(`⎇ ${task.worktree.branch}`);
-  if (expanded && task.sessionId) parts.push(`session ${task.sessionId.slice(0, 8)}`);
+  if (task.outputFile) parts.push(`output ${oneLine(formatPath(task.outputFile))}`);
+  if (task.worktree) parts.push(`branch ${oneLine(task.worktree.branch)}`);
+  if (expanded && task.sessionId) parts.push(`session ${oneLine(task.sessionId.slice(0, 8))}`);
   return parts.length ? parts.join(' · ') : undefined;
 }
 
 function expandedOutputLines(theme: Theme, task: InlineTaskView, width: number, cap: number): string[] {
   if (!task.finalOutput) return [];
-  const lines: string[] = [''];
+  const lines: string[] = [];
   const wrapped = wrapLines(task.finalOutput, width - 2);
   for (const line of wrapped.slice(0, cap)) lines.push(`  ${theme.fg('toolOutput', line)}`);
   if (wrapped.length > cap) {
-    lines.push(theme.fg('dim', `  … +${wrapped.length - cap} lines (full output in ${task.outputFile ? formatPath(task.outputFile) : 'the child session'})`));
+    lines.push(theme.fg('dim', `  … +${wrapped.length - cap} lines (full output in ${task.outputFile ? oneLine(formatPath(task.outputFile)) : 'the child session'})`));
   }
   return lines;
 }
 
-/**
- * Compact run block. Fixed shape while streaming:
- *   ⠹ ↻3 · 12.4k tok · 8s
- *     ⎿ reading src/auth/middleware.ts…
- * Terminal:
- *   ↻8 · 33.8k tok · $0.012 · 12s
- *     ⎿ Found 5 middleware call sites…
- * Parallel collapsed: one line per task.
- */
+/** Label/state glance + activity preview stay two rows while a single run streams. */
 export function renderRunLines(run: InlineRunView, opts: InlineRenderOptions): string[] {
   const { theme, width } = opts;
   const now = opts.now ?? Date.now();
@@ -460,73 +477,33 @@ export function renderRunLines(run: InlineRunView, opts: InlineRenderOptions): s
   const running = opts.isPartial ?? isActiveState(run.state);
   const durationMs = run.startedAt ? (run.endedAt ?? now) - run.startedAt : undefined;
   const sharedModel = commonModelId(run.results.map((r) => r.model));
-  const aggStats = statsText(run.results, { durationMs, live: running, now, startedAt: run.startedAt, endedAt: run.endedAt, model: sharedModel });
-  const spin = theme.fg('accent', SPINNERS[frame % SPINNERS.length]!);
+  const parallel = run.mode === 'parallel' && run.results.length > 1;
   const lines: string[] = [];
-
-  if (run.mode === 'parallel' && run.results.length > 1) {
-    const total = run.results.length;
+  if (parallel) {
     const done = run.results.filter((r) => r.state && !isActiveState(r.state)).length;
-    lines.push(running
-      ? `${spin} ${theme.fg('dim', `${done}/${total} done${aggStats ? ` · ${aggStats}` : ''}`)}`
-      : theme.fg('dim', `${total} tasks${aggStats ? ` · ${aggStats}` : ''}`));
-
-    const shown = opts.expanded ? run.results : run.results.slice(0, 6);
-    for (const task of shown) {
-      const glyph = stateGlyph(task.state, theme, frame);
-      const active = isActiveState(task.state);
-      // Mini-rows omit the model when every task shares it (header shows it once).
-      const mini = statsText([task], { live: active, now, startedAt: run.startedAt, endedAt: run.endedAt, model: sharedModel ? undefined : task.model });
-      // The state glyph already communicates the outcome; parallel rows show
-      // just the message/preview without repeating the state word.
-      const tail = active
-        ? pickLine(task.finalOutput, 'last')
-        : ['failed', 'lost'].includes(task.state ?? '')
-          ? (task.errorMessage ?? task.stopReason ?? formatState(task.state!))
-          : task.state === 'timeout'
-            ? `timed out${task.timeoutPhase ? ` (${task.timeoutPhase})` : ''}`
-            : task.state === 'cancelled'
-              ? undefined
-              : pickLine(task.finalOutput, 'first');
-      const tailColor: ThemeColor = !active && ['failed', 'lost'].includes(task.state ?? '') ? 'error' : 'muted';
-      let line = `  ${glyph} ${theme.fg('text', task.label ?? 'task')}`;
-      if (mini) line += theme.fg('dim', ` · ${mini}`);
-      const notes = taskAnnotations(task, now);
-      if (notes.length) line += ` ${theme.fg('warning', `[${notes.join(' · ')}]`)}`;
-      if (task.wrappedUp && !active) line += ` ${theme.fg('warning', '◐ wrapped up')}`;
-      if (tail) line += ` ${theme.fg(tailColor, `— ${oneLine(tail, 80)}`)}`;
-      lines.push(line);
-      if (opts.expanded) {
-        const pointers = pointerText(task, true);
-        if (pointers) lines.push(theme.fg('dim', `    ${pointers}`));
-        lines.push(...expandedOutputLines(theme, task, width, 12).map((l) => l ? `  ${l}` : l));
-      }
+    lines.push(`${stateGlyph(run.state, theme, frame)} ${theme.bold('Subagents')} ${theme.fg(stateTone(run.state), `${done}/${run.results.length} done`)} ${theme.fg('muted', glance({ model: sharedModel, durationMs }))}`);
+  }
+  const shown = parallel && !opts.expanded ? run.results.slice(0, 6) : run.results;
+  for (const source of shown.length ? shown : [{}]) {
+    const task = { ...source, state: source.state ?? run.state };
+    const active = isActiveState(task.state) || (running && task.state === undefined);
+    const state = task.state ?? (active ? 'running' : undefined);
+    const notes = taskAnnotations(task, now);
+    const prefix = parallel ? '  ' : '';
+    lines.push(`${prefix}${stateGlyph(state, theme, frame)} ${theme.fg('text', oneLine(task.label ?? 'Subagent', Math.max(8, Math.floor(width * 0.45))))} ${theme.fg(stateTone(state), glance({ state }))} ${theme.fg('muted', glance({ model: parallel && sharedModel ? undefined : task.model, durationMs: parallel ? undefined : durationMs }))}${notes.length ? theme.fg('warning', ` · ${notes.join(' · ')}`) : ''}`.trimEnd());
+    const summary = active ? undefined : terminalTaskLine(theme, task);
+    const preview = active ? pickLine(task.finalOutput, 'last') ?? 'Waiting for activity…' : summary?.text ?? 'No output';
+    if (!opts.expanded || active || !task.finalOutput || task.errorMessage || task.wrappedUp || task.stopReason === 'stalled') {
+      lines.push(`${prefix}  ${theme.fg(active ? 'muted' : summary?.color ?? stateTone(state), oneLine(preview, width))}`);
     }
-    if (!opts.expanded && total > shown.length) {
-      lines.push(theme.fg('dim', `  … +${total - shown.length} more`));
-    }
-  } else {
-    const task = run.results[0] ?? {};
-    if (running) {
-      const notes = taskAnnotations(task, now);
-      const noteText = notes.length ? ` ${theme.fg('warning', `[${notes.join(' · ')}]`)}` : '';
-      lines.push(`${spin} ${theme.fg('dim', aggStats || 'starting…')}${noteText}`);
-      const activity = pickLine(task.finalOutput, 'last');
-      if (activity) lines.push(`  ${theme.fg('dim', '⎿')} ${theme.fg('muted', oneLine(activity, width))}`);
-    } else {
-      lines.push(theme.fg('dim', aggStats || formatState(run.state ?? task.state ?? 'completed')));
-      const summary = terminalTaskLine(theme, task);
-      if (summary && !opts.expanded) lines.push(`  ${theme.fg('dim', '⎿')} ${theme.fg(summary.color, oneLine(summary.text, width))}`);
-      const pointers = pointerText(task, opts.expanded ?? false);
-      if (pointers) lines.push(theme.fg('dim', `  ${pointers}`));
-      if (opts.expanded) {
-        if (summary && ['error', 'warning', 'muted'].includes(summary.color)) {
-          lines.push(`  ${theme.fg('dim', '⎿')} ${theme.fg(summary.color, oneLine(summary.text, width))}`);
-        }
-        lines.push(...expandedOutputLines(theme, task, width, 40));
-      }
+    if (opts.expanded) {
+      const stats = statsText([task], { durationMs, live: active, now, startedAt: run.startedAt, endedAt: run.endedAt });
+      if (stats) lines.push(theme.fg('muted', `${prefix}  ${stats}`));
+      const pointers = pointerText(task, true);
+      if (pointers) lines.push(theme.fg('muted', `${prefix}  ${pointers}`));
+      lines.push(...expandedOutputLines(theme, task, width - prefix.length, parallel ? 12 : 40).map((line) => prefix + line));
     }
   }
-
+  if (run.results.length > shown.length) lines.push(theme.fg('muted', `  … +${run.results.length - shown.length} tasks`));
   return lines.map((line) => truncateToWidth(line, width));
 }

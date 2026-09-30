@@ -14,6 +14,10 @@
  */
 
 import * as path from "node:path";
+import { stripVTControlCharacters } from "node:util";
+import { truncateToWidth } from "@earendil-works/pi-tui";
+import type { Component } from "@earendil-works/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
@@ -185,6 +189,25 @@ export function backgroundTerminalStatus(running: number) {
 	return running > 0 ? `● ${running} background terminal${running === 1 ? "" : "s"} · /ps` : undefined;
 }
 
+export function backgroundTerminalWidget(running: TerminalSnapshot[], theme: Theme): Component {
+	return {
+		render(width) {
+			const lines = running
+				.slice(0, 4)
+				.map(
+					(entry) =>
+						theme.fg(
+							"accent",
+							`${stripVTControlCharacters(entry.title).replace(/[\x00-\x1f\x7f-\x9f]/g, " ")} · running`,
+						) + theme.fg("muted", ` · ${entry.id} · ${formatElapsed(entry.createdAt)}`),
+				);
+			if (running.length > 4) lines.push(theme.fg("muted", `… +${running.length - 4} more · /ps`));
+			return lines.map((line) => truncateToWidth(line, width));
+		},
+		invalidate() {},
+	};
+}
+
 function describe(snapshot: TerminalSnapshot): string {
 	const age = formatElapsed(snapshot.createdAt, snapshot.settledAt);
 	const exit =
@@ -258,12 +281,9 @@ export default function (pi: ExtensionAPI) {
 		if (!uiCtx?.hasUI) return;
 		const running = manager.list().filter((entry) => entry.status === "running");
 		const status = backgroundTerminalStatus(running.length);
-		uiCtx.ui.setStatus(UI_KEY, status ? uiCtx.ui.theme.fg("warning", status) : undefined);
+		uiCtx.ui.setStatus(UI_KEY, status ? uiCtx.ui.theme.fg("accent", status) : undefined);
 		if (!running.length) return uiCtx.ui.setWidget(UI_KEY, undefined);
-		uiCtx.ui.setWidget(
-			UI_KEY,
-			running.map((entry) => `● ${entry.id} ${entry.title} (${formatElapsed(entry.createdAt)})`),
-		);
+		uiCtx.ui.setWidget(UI_KEY, (_tui, theme) => backgroundTerminalWidget(running, theme));
 	};
 
 	const flush = () => {

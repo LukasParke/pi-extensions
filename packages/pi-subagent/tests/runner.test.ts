@@ -105,6 +105,23 @@ describe("ChildRunner", () => {
     expect(result.timeoutPhase).toBe("running");
   });
 
+  it('has no implicit turn or spend budget beyond 500 turns', async () => {
+    process.env.FAKE_PI_MODE = 'many-turns';
+    const result = await runner.run(defaultSpec);
+    expect(result.state).toBe('completed');
+    expect(result.usage.turns).toBe(510);
+    expect(result.usage.cost).toBeCloseTo(0.51);
+    expect(result.stopReason).not.toMatch(/max_turns|max_cost/);
+  });
+
+  it('honors an explicit budget above 500 rather than clamping it', async () => {
+    process.env.FAKE_PI_MODE = 'many-turns';
+    const result = await runner.run({ ...defaultSpec, maxTurns: 505, graceTurns: 0 });
+    expect(result.state).toBe('partial');
+    expect(result.stopReason).toBe('max_turns');
+    expect(result.usage.turns).toBeGreaterThanOrEqual(505);
+  });
+
   it("budget termination preserves partial work (maxTurns, graceTurns=0)", async () => {
     process.env.FAKE_PI_MODE = "success";
     const result = await runner.run({ ...defaultSpec, maxTurns: 0, graceTurns: 0 });

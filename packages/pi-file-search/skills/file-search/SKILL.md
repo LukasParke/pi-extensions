@@ -29,6 +29,10 @@ also return structured results: `fd.paths` contains complete bounded paths;
 `rg.output` and `rg.lines` preserve matches, requested context, and filenames without
 ambiguous colon parsing. Truncated results include a `file` path for the full output.
 
+Terminal previews are display-only; expand to read context. Ripgrep's displayed
+count includes context lines. Preserve partial-I/O caveats and follow the full
+results `file` pointer when the bounded output is insufficient.
+
 ## `fd` — find files by name
 
 ```

@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { explain, type FirecrawlConfig, firecrawlConfig } from "../src/config.ts";
+import { firecrawlRenderers } from "../src/tui.ts";
 import {
 	crawlSchema,
 	mapSchema,
@@ -119,6 +120,7 @@ export default function (pi: ExtensionAPI) {
 		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
 		outputSchema: scrapeSchema,
 		label: "Firecrawl Scrape",
+		...firecrawlRenderers("Firecrawl Scrape"),
 		description:
 			"Scrape a single URL with Firecrawl and return its content as clean markdown (and optionally other formats). Use for fetching the readable content of a specific web page.",
 		promptSnippet: "Scrape a single web page into clean markdown via Firecrawl",
@@ -181,6 +183,7 @@ export default function (pi: ExtensionAPI) {
 		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
 		outputSchema: searchSchema,
 		label: "Firecrawl Search",
+		...firecrawlRenderers("Firecrawl Search"),
 		description:
 			"Search the web with Firecrawl and return a list of results (title, URL, description). Optionally scrape the result pages into markdown.",
 		promptSnippet: "Search the web via Firecrawl",
@@ -246,6 +249,7 @@ export default function (pi: ExtensionAPI) {
 		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
 		outputSchema: mapSchema,
 		label: "Firecrawl Map",
+		...firecrawlRenderers("Firecrawl Map"),
 		description:
 			"Map a website with Firecrawl to quickly discover all of its URLs. Use to enumerate the links/pages available on a site.",
 		promptSnippet: "Discover all URLs on a website via Firecrawl",
@@ -296,6 +300,7 @@ export default function (pi: ExtensionAPI) {
 		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
 		outputSchema: crawlSchema,
 		label: "Firecrawl Crawl",
+		...firecrawlRenderers("Firecrawl Crawl"),
 		description:
 			"Crawl a website with Firecrawl, following links and scraping multiple pages into markdown. This starts a crawl job and waits for it to finish (up to a timeout). Use for gathering content across many pages of a site.",
 		promptSnippet: "Crawl multiple pages of a website into markdown via Firecrawl",

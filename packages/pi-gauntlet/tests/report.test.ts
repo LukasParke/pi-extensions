@@ -34,11 +34,11 @@ describe("failureReport", () => {
 });
 
 describe("widgetLines", () => {
-	it("shows ✓/✗/· per check and truncates the goal to one line", () => {
+	it("shows ✓/✗/· per check and leaves width handling to the native widget", () => {
 		const s = state({ goal: "a very long goal\nthat spans\nlines " + "x".repeat(100) });
 		const lines = widgetLines(s, 10);
 
-		expect(lines[0]).toMatch(/^Goal: .{1,81}$/);
+		expect(lines[0]).toBe(`Goal: ${s.goal!.replace(/\s+/g, " ").trim()}`);
 		expect(lines[0]).not.toContain("\n");
 		expect(lines[1]).toBe("iteration 2/10");
 		expect(lines[2]).toBe("✓ tests  ✗ lint  · types");

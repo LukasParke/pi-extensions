@@ -32,7 +32,13 @@ token against Notion's `me` endpoint and stores it under `notion.default`.
 
 ## Native Pi contracts
 
-Requires Pi **0.99.1 or newer**. All six tools belong to the `notion` namespace and declare
+Requires Pi **0.99.1 or newer**.
+
+Native tool rows follow Pi's theme and terminal width, with five preview rows and
+an overflow notice. Expand for returned page blocks, code, tables, links, and
+credential-source metadata (never key arguments). Expanded output is bounded to
+200 terminal lines. Empty pages, refusals, errors, and truncated responses are
+explicit; model content, structured results, and confirmation gates are unchanged. All six tools belong to the `notion` namespace and declare
 read/write, destructive, idempotent and open-world hints. Appending is additive and not
 idempotent. Connecting replaces a stored credential; disconnecting removes it locally.
 

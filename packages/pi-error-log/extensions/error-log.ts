@@ -15,6 +15,7 @@ import { errorLogConfig, logPath } from "../src/config.ts";
 import { appendError, type ErrorLogEntry, filterErrors, readErrors } from "../src/log.ts";
 import { serializeArgs } from "../src/redact.ts";
 import { errorLogResultSchema } from "../src/schemas.ts";
+import { errorLogRenderers } from "../src/tui.ts";
 
 const MAX_PENDING_ARGS = 1_000;
 const MAX_ERROR_MESSAGE = 2_000;
@@ -102,6 +103,7 @@ export default function errorLog(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "error_log",
 		label: "Error Log",
+		...errorLogRenderers,
 		namespace: { name: "errors", description: "Durable sanitized tool error history" },
 		annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
 		outputSchema: errorLogResultSchema,
