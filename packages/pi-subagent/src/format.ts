@@ -1,8 +1,7 @@
 import type { UsageStats, UsageSample, RunSnapshot, RunState, RunMode, TimeoutPhase } from './types.js';
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import * as os from 'node:os';
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
-import { stripVTControlCharacters } from 'node:util';
+import { stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 
 /**
  * Formatting helpers for pi-subagent UI.
@@ -20,11 +19,11 @@ export function isActiveState(state: string | undefined): boolean {
 
 /** Child output must not control the terminal or impersonate themed UI. */
 export function displayText(text: string): string {
-  return stripVTControlCharacters(text).replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, '');
+  return stripTerminalSequences(text).replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, '');
 }
 
 export function oneLine(text: string, max = 120): string {
-  return stripVTControlCharacters(truncateToWidth(displayText(text).replace(/\s+/g, ' ').trim(), Math.max(0, max), '…'));
+  return stripTerminalSequences(truncateToWidth(displayText(text).replace(/\s+/g, ' ').trim(), Math.max(0, max), '…'));
 }
 
 export interface FailureMessageSource {

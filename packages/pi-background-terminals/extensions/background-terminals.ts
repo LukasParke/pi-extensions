@@ -14,8 +14,7 @@
  */
 
 import * as path from "node:path";
-import { stripVTControlCharacters } from "node:util";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, truncateToWidth } from "@earendil-works/pi-tui";
 import type { Component } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -198,7 +197,7 @@ export function backgroundTerminalWidget(running: TerminalSnapshot[], theme: The
 					(entry) =>
 						theme.fg(
 							"accent",
-							`${stripVTControlCharacters(entry.title).replace(/[\x00-\x1f\x7f-\x9f]/g, " ")} · running`,
+							`${stripTerminalSequences(entry.title).replace(/[\x00-\x1f\x7f-\x9f]/g, " ")} · running`,
 						) + theme.fg("muted", ` · ${entry.id} · ${formatElapsed(entry.createdAt)}`),
 				);
 			if (running.length > 4) lines.push(theme.fg("muted", `… +${running.length - 4} more · /ps`));

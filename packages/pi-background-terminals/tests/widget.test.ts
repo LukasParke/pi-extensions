@@ -61,12 +61,13 @@ describe("backgroundTerminalWidget", () => {
 
 	it("sanitizes VT sequences and control characters in titles", () => {
 		const lines = backgroundTerminalWidget(
-			[snapshot({ title: "evil\x1b[2J\u0007title\nnewline" })],
+			[snapshot({ title: "\x1b]0;spoof\x07evil\x1b[2J\u0007title\nnewline" })],
 			theme,
 		).render(120);
 		const line = stripVTControlCharacters(lines[0]!);
 		expect(line).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
 		expect(line).toContain("evil title newline · running");
+		expect(line).not.toContain("spoof");
 	});
 });
 

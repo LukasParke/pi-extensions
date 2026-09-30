@@ -1,6 +1,12 @@
-import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { matchesKey, Text, truncateToWidth, type Component, type TUI } from "@earendil-works/pi-tui";
+import {
+	matchesKey,
+	stripTerminalSequences,
+	Text,
+	truncateToWidth,
+	type Component,
+	type TUI,
+} from "@earendil-works/pi-tui";
 import type { LiveWorkflowRun, WorkflowRunRegistry } from "./registry.ts";
 import { isTerminalState } from "./registry.ts";
 import { formatDuration, formatUsageLine } from "./usage.ts";
@@ -10,7 +16,7 @@ export const ENTRY_TYPE = "workflow-run-v1";
 export const COMPLETION_TYPE = "workflow-completion";
 
 export const cleanLabel = (text: string) =>
-	stripVTControlCharacters(text).replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
+	stripTerminalSequences(text).replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
 
 export function workflowTone(state: string) {
 	if (state === "failed") return "error";

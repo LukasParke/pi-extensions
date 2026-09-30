@@ -1,6 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { stripVTControlCharacters } from "node:util";
-import { truncateToWidth, type Component } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { dispatchQueue, ensureDelivery } from "@parke.dev/pi-dispatch";
 import type { DispatchPriority } from "@parke.dev/pi-dispatch";
@@ -101,7 +100,7 @@ export function sentinelWidget(
 ): Component {
 	return {
 		render(width) {
-			const clean = (text: string) => stripVTControlCharacters(text).replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
+			const clean = (text: string) => stripTerminalSequences(text).replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
 			const lines = items
 				.slice(0, 3)
 				.map(

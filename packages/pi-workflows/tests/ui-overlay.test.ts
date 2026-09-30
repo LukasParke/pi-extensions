@@ -86,9 +86,12 @@ describe("widgetLines", () => {
 	});
 
 	it("sanitizes malicious labels and phases", () => {
-		const lines = widgetLines([run({ label: "evil\x1b[31m\u0007name\ninjected", phase: "ph\u0001ase" })])!;
+		const lines = widgetLines([
+			run({ label: "\x1b]0;spoof\x07evil\x1b[31m\u0007name\ninjected", phase: "ph\u0001ase" }),
+		])!;
 		expect(lines[0]).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
 		expect(lines[0]).toContain("evil name injected · ph ase");
+		expect(lines[0]).not.toContain("spoof");
 	});
 });
 

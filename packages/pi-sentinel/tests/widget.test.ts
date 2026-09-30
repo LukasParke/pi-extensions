@@ -101,13 +101,14 @@ describe("sentinelWidget", () => {
 
 	it("sanitizes VT sequences and control characters in names", () => {
 		const lines = sentinelWidget(
-			[item({ name: "evil\x1b[31m\u0007name\ninjected" })],
+			[item({ name: "\x1b]0;spoof\x07evil\x1b[31m\u0007name\ninjected" })],
 			undefined,
 			theme,
 		).render(120);
 		const line = stripVTControlCharacters(lines[0]!);
 		expect(line).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
 		expect(line).toContain("evil name injected · running");
+		expect(line).not.toContain("spoof");
 	});
 });
 

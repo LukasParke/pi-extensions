@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { stripVTControlCharacters } from "node:util";
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { dispatchQueue, ensureDelivery } from "@parke.dev/pi-dispatch";
 import { Type } from "typebox";
 import { GraphitiClient, type FactResult } from "../src/client.ts";
@@ -69,7 +69,7 @@ export default function (pi: ExtensionAPI) {
 				message
 					? uiCtx.ui.theme.fg(
 							"warning",
-							`Memory unavailable: ${stripVTControlCharacters(message).replace(/[\x00-\x1f\x7f-\x9f]/g, " ")} · memory_status`,
+							`Memory unavailable: ${stripTerminalSequences(message).replace(/[\x00-\x1f\x7f-\x9f]/g, " ")} · memory_status`,
 						)
 					: undefined,
 			);

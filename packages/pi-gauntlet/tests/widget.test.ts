@@ -87,13 +87,14 @@ describe("gauntletWidget", () => {
 
 	it("sanitizes VT sequences and control characters in goals and check names", () => {
 		const s = state({
-			goal: "evil\x1b[2J\u0007goal\nnewline",
+			goal: "\x1b]0;spoof\x07evil\x1b[2J\u0007goal\nnewline",
 			checks: [{ name: "na\x1b[31mme\u0001", command: "x" }],
 			results: {},
 		});
 		const lines = gauntletWidget(s, 10, theme).render(120);
 		for (const line of lines) expect(stripVTControlCharacters(line)).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
 		expect(stripVTControlCharacters(lines[0]!)).toContain("evil goal newline");
+		expect(stripVTControlCharacters(lines[0]!)).not.toContain("spoof");
 	});
 });
 

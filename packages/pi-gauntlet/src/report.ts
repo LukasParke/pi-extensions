@@ -8,9 +8,8 @@
  */
 
 import type { GauntletCheck, GauntletState } from "./loop.ts";
-import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, type Component } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 
 /** Failure report injected into the conversation for another iteration. */
 export function failureReport(
@@ -52,7 +51,7 @@ export function widgetLines(state: GauntletState, maxIterations: number): string
 export function gauntletWidget(state: GauntletState, maxIterations: number, theme: Theme): Component {
 	return {
 		render(width) {
-			const clean = (text: string) => stripVTControlCharacters(text).replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
+			const clean = (text: string) => stripTerminalSequences(text).replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
 			const passed = state.checks.filter((c) => state.results[c.name]?.code === 0).length;
 			const lines = [
 				theme.fg("accent", clean(state.goal ?? "Gauntlet")),
