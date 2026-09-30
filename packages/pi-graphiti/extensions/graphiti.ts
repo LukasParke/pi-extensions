@@ -248,8 +248,8 @@ export default function (pi: ExtensionAPI) {
 		description: "Health-check the Graphiti memory server. Use when recall or remember calls fail.",
 		parameters: Type.Object({}),
 		async execute(_id, _params, signal) {
-			const c = await getClient();
 			const gen = ++generation;
+			const c = await getClient();
 			let status;
 			try {
 				status = await c.status(signal);
