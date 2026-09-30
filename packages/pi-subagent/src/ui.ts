@@ -396,7 +396,8 @@ export class SubagentsOverlay implements Component {
     });
     const size = this.pageSize();
     if (selectedRow < this.listScroll) this.listScroll = selectedRow;
-    if (selectedRow + 1 >= this.listScroll + size) this.listScroll = selectedRow + 2 - size;
+    const selectedBottom = selectedRow + Math.min(2, size) - 1;
+    if (selectedBottom >= this.listScroll + size) this.listScroll = selectedBottom + 1 - size;
     this.listScroll = Math.max(0, Math.min(this.listScroll, Math.max(0, lines.length - size)));
     const visible = lines.slice(this.listScroll, this.listScroll + size);
     const position = lines.length > size ? ` · ${this.selected + 1}/${runs.length}` : '';

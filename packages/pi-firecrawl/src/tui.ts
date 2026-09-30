@@ -66,7 +66,7 @@ export function firecrawlRenderers(title: string): Pick<ToolDefinition, "renderC
 					.find((line) => line.trim()) ?? "No content returned";
 			const crawl = title === "Firecrawl Crawl";
 			const failed = context.isError || d.refused === true || d.status === "failed";
-			const partial = crawl && !options.isPartial && d.status !== undefined && d.status !== "completed";
+			const partial = crawl && !options.isPartial && !failed && d.status !== "completed";
 			const waiting = options.isPartial && /waiting|queued|paused/.test(String(d.status));
 			const empty =
 				/^(No results|No URLs|\(no content)/i.test(first) ||

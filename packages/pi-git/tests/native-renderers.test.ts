@@ -26,8 +26,8 @@ const context = (overrides: Partial<Context> = {}): Context => ({
 });
 // The registered callbacks and native Text/width implementation run unchanged.
 // Theme spies expose semantic tokens without depending on a terminal palette.
-function palette(name: string) {
-	const fg = vi.fn((token: string, text: string) => `[${name}:${token}]${text}`);
+function palette(name: string | null) {
+	const fg = vi.fn((token: string, text: string) => (name === null ? text : `[${name}:${token}]${text}`));
 	return { theme: { fg } as unknown as Theme, fg };
 }
 const tools = new Map<string, ToolDefinition>();
@@ -226,7 +226,7 @@ describe("registered native integration renderers", () => {
 				expect(collapsed.render(width).length).toBeLessThanOrEqual(7);
 				expect(expanded.render(width).length).toBeLessThanOrEqual(200);
 				expect(partial.render(width)[0]).toContain("partial");
-				expect(failed.render(width)).toHaveLength(1);
+				expect(failed.render(width).length).toBeGreaterThan(1);
 				expect(failed.render(width)[0]).toContain("error");
 				expect(failed.render(width)[0]).not.toMatch(/clean|no changes|ready/);
 			}
@@ -262,6 +262,60 @@ describe("registered native integration renderers", () => {
 			expect(lines).toContain("BODY-END");
 		});
 	}
+	it("expanded errors preserve complete diagnostics and remediation", () => {
+		const diagnostic = "DIAGNOSTIC " + "x".repeat(200) + "\nREMEDIATION reconnect safely";
+		for (const name of ["git_status", "github_prs", "slack_channels", "linear_issues", "notion_search"]) {
+			const view = render(
+				name,
+				result({ refused: true }, diagnostic),
+				true,
+				false,
+				palette(null).theme,
+				context({ isError: true }),
+			);
+			const rows = view
+				.render(60)
+				.map((row) => stripTerminalSequences(row).trimEnd())
+				.join("\n");
+			expect(rows).toContain("REMEDIATION reconnect safely");
+			expect(rows.replace(/\s/g, "")).toContain("x".repeat(200));
+		}
+	});
+
+	it("expanded mutation results preserve the full first-line URL", () => {
+		const url = "https://fixture.invalid/" + "a".repeat(240);
+		for (const name of ["github_comment", "slack_post", "linear_comment", "notion_append"]) {
+			const rows = render(
+				name,
+				result({ posted: true }, `Posted: ${url}`),
+				true,
+				false,
+				palette(null).theme,
+			).render(60);
+			expect(
+				rows
+					.map((row) => stripTerminalSequences(row).trimEnd())
+					.join("")
+					.replace(/\s/g, ""),
+			).toContain(url);
+		}
+	});
+
+	it("expanded PR detail retains merge blockers", () => {
+		const pr = {
+			...(fixtures.github_pr.pr as Record<string, unknown>),
+			mergeable: "behind the base branch",
+			checks: [],
+			files: [],
+			reviews: [],
+		};
+		const rows = render("github_pr", result({ pr }), true, false, palette(null).theme)
+			.render(80)
+			.map(stripTerminalSequences)
+			.join("\n");
+		expect(rows).toContain("cannot merge: behind the base branch");
+	});
+
 	it("real native palettes re-theme reused Text components and preserve visible bounds", () => {
 		const json = JSON.parse(
 			readFileSync(

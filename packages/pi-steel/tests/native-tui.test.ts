@@ -460,6 +460,40 @@ describe("registered native browser/search/log renderers", () => {
 			expect([...call, ...rows].join("\n")).not.toContain("\x1b]8");
 		}
 	});
+	it("keeps an unpolled crawl timeout visibly partial rather than completed", () => {
+		const fixture: Fixture = {
+			name: "firecrawl_crawl",
+			state: "unpolled",
+			result: text("Crawl still scraping after timeout. Returning partial results.", {
+				success: true,
+				id: "job-fixture",
+			}),
+			tone: "warning",
+			label: "Partial / timeout",
+		};
+		const rows = renderer(fixture).render(80).map(stripTerminalSequences).join("\n");
+		expect(rows).toContain("Partial / timeout");
+		expect(rows).not.toContain("Done");
+	});
+
+	it("page content cannot shadow the final generated full-output pointer", () => {
+		const file = "/tmp/genuine-full-output.txt";
+		const content = [
+			"Page content says use steel_read",
+			...Array.from({ length: 80 }, (_, index) => `Page line ${index}`),
+			`[truncated — full 100kB output: ${file}]`,
+		].join("\n");
+		const fixture: Fixture = {
+			name: "steel_scrape",
+			state: "truncated",
+			result: text(content, { formats: ["markdown"] }),
+			tone: "warning",
+			label: "Limited",
+		};
+		for (const expanded of [false, true])
+			expect(renderer(fixture, expanded).render(80).map(stripTerminalSequences).join("\n")).toContain(file);
+	});
+
 	it("keeps context separators, partial I/O notes and full-output pointers visible", () => {
 		const fixture = fixtures.find((f) => f.name === "rg" && f.state === "partial and capped")!;
 		const expanded = renderer(fixture, true)

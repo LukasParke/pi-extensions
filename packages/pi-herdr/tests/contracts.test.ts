@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { Value } from "typebox/value";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Text, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { createAssistantMessageEventStream, type Model, type Usage } from "@earendil-works/pi-ai";
 import type { NameContext } from "../src/name-from-task.ts";
 
@@ -174,6 +175,72 @@ describe("native Herdr tool contracts without a real Herdr connection", () => {
 		const result = await harness().execute("herdr_task_cleanup", { agent: "fixture" });
 		expect(result.isError).toBe(true);
 		expect(result.structuredContent).toMatchObject({ cleaned: false, problems: ["unpushed commits"] });
+	});
+
+	it.each([12, 60, 80, 120])("renders registered Herdr calls/outcomes at %i columns", (width) => {
+		const h = harness();
+		const fg = vi.fn((_tone: string, text: string) => `\x1b[32m${text}\x1b[0m`);
+		const theme = { fg, bold: (text: string) => text } as unknown as Theme;
+		const cases = [
+			{
+				name: "herdr_task",
+				details: { agentName: "Fixture 中文", branch: "agent/fixture", worktreePath: "/tmp/fixture" },
+				tone: "accent",
+			},
+			{ name: "herdr_task_status", details: { status: "working", cwd: "/tmp/fixture" }, tone: "accent" },
+			{ name: "herdr_task_status", details: { status: "unknown", note: "Timeout" }, tone: "warning" },
+			{
+				name: "herdr_task_status",
+				details: { status: "gone", matches: ["/tmp/a", "/tmp/b"] },
+				tone: "warning",
+			},
+			{
+				name: "herdr_task_cleanup",
+				details: { cleaned: false, problems: ["unpushed commits"] },
+				tone: "error",
+			},
+			{ name: "herdr_task_cleanup", details: { cleaned: false, reason: "nothing-found" }, tone: "muted" },
+			{ name: "herdr_task_cleanup", details: { cleaned: true, removal: "herdr" }, tone: "success" },
+		];
+		const body = Array.from({ length: 90 }, (_, index) => `line ${index} 中文`).join("\n");
+		for (const fixture of cases) {
+			const tool = h.tools.get(fixture.name)!;
+			const context = { args: { agent: "Fixture 中文\x1b]0;spoof\x07" }, executionStarted: true } as never;
+			const call = tool.renderCall!(
+				{ name: "Fixture 中文\x1b]0;spoof\x07", repo: "/tmp/fixture" },
+				theme,
+				context,
+			);
+			const result = { content: [{ type: "text" as const, text: body }], details: fixture.details };
+			const before = structuredClone(result);
+			fg.mockClear();
+			const collapsed = tool.renderResult!(result, { expanded: false, isPartial: false }, theme, context);
+			expect(collapsed).toBeInstanceOf(Text);
+			expect(collapsed.render(width).length).toBeLessThanOrEqual(5);
+			expect(fg.mock.calls.map(([tone]) => tone)).toContain(fixture.tone);
+			const expanded = tool.renderResult!(result, { expanded: true, isPartial: false }, theme, {
+				args: {},
+				lastComponent: collapsed,
+			} as never);
+			expect(expanded).toBe(collapsed);
+			const rows = expanded.render(width);
+			expect(rows.length).toBeLessThanOrEqual(46);
+			for (const row of [...call.render(width), ...rows]) {
+				expect(visibleWidth(row)).toBeLessThanOrEqual(width);
+				expect(stripTerminalSequences(row)).not.toContain("spoof");
+			}
+			if (width >= 60) expect(stripTerminalSequences(rows.join("\n"))).toContain("more display rows");
+			expect(result).toEqual(before);
+		}
+		const tool = h.tools.get("herdr_task_status")!;
+		const partial = tool.renderResult!(
+			{ content: [{ type: "text", text: body }], details: {} },
+			{ expanded: true, isPartial: true },
+			theme,
+			{ args: { agent: "Fixture", wait: true } } as never,
+		);
+		expect(partial.render(width)).toHaveLength(1);
+		if (width >= 60) expect(stripTerminalSequences(partial.render(width)[0]!)).toContain("Waiting");
 	});
 
 	it("keeps successful and nothing-to-clean results non-errors", async () => {

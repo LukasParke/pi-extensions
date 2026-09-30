@@ -496,7 +496,7 @@ export function renderRunLines(run: InlineRunView, opts: InlineRenderOptions): s
     if (!opts.expanded || active || !task.finalOutput || task.errorMessage || task.wrappedUp || task.stopReason === 'stalled') {
       lines.push(`${prefix}  ${theme.fg(active ? 'muted' : summary?.color ?? stateTone(state), oneLine(preview, width))}`);
     }
-    if (opts.expanded) {
+    if (opts.expanded && !active) {
       const stats = statsText([task], { durationMs, live: active, now, startedAt: run.startedAt, endedAt: run.endedAt });
       if (stats) lines.push(theme.fg('muted', `${prefix}  ${stats}`));
       const pointers = pointerText(task, true);

@@ -121,7 +121,9 @@ export function browserRenderers(title: string): Pick<ToolDefinition, "renderCal
 							),
 						);
 				}
-				const pointer = text.split("\n").find((line) => /full .*output:|use steel_read/.test(line));
+				const tail = text.trimEnd().split("\n").at(-1);
+				const pointer =
+					tail?.startsWith("[truncated") && /output:|use steel_read/.test(tail) ? tail : undefined;
 				if (pointer) rows.push(nativeTheme.fg("warning", plain(pointer)));
 				return rows;
 			});

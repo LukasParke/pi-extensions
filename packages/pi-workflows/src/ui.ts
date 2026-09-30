@@ -24,7 +24,7 @@ export function workflowStatus(runs: LiveWorkflowRun[]) {
 	const active = runs.filter((run) => !isTerminalState(run.state)).length;
 	const ready = runs.filter((run) => isTerminalState(run.state) && !run.delivered && !run.claimed).length;
 	if (!active && !ready) return undefined;
-	return [active ? `⚙ ${active} running` : "", ready ? `${ready} ready` : "", "/workflows"]
+	return [active ? `${active} active` : "", ready ? `${ready} ready` : "", "/workflows"]
 		.filter(Boolean)
 		.join(" · ");
 }
@@ -126,7 +126,7 @@ export function openWorkflowsOverlay(
 			if (!runs.length) lines.push(theme.fg("muted", "No workflow runs in this session."));
 			for (const [index, item] of runs.slice(start, start + pageSize).entries()) {
 				const group = !isTerminalState(item.state)
-					? "running"
+					? "active"
 					: !item.delivered && !item.claimed
 						? "ready"
 						: "history";

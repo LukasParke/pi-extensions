@@ -74,10 +74,15 @@ function text(result: Result): string {
 }
 function failure(result: Result, options: Options, theme?: NativeTheme, context?: RenderContext) {
 	if (!(result.isError || context?.isError || result.details?.refused || result.details?.error)) return;
+	const message = plain(text(result) || String(result.details?.error ?? "Tool failed"));
 	return component(
-		() => [
-			color(theme, "error", `error · ${one(text(result) || String(result.details?.error ?? "Tool failed"))}`),
-		],
+		(width) =>
+			options.expanded
+				? [
+						color(theme, "error", "error"),
+						...wrapTextWithAnsi(message, width).map((line) => color(theme, "error", line)),
+					]
+				: [color(theme, "error", `error · ${one(message)}`)],
 		context,
 	);
 }

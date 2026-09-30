@@ -97,6 +97,16 @@ describe('native-width presentation contract', () => {
     expect(parallel.at(-1)).toContain('+2 tasks');
   });
 
+  it('keeps expanded active results fixed at two rows as output accumulates', () => {
+    for (const count of [1, 10, 80]) {
+      const value = run('live', 'running');
+      value.results[0]!.finalOutput = Array.from({ length: count }, (_, index) => `activity ${index}`).join('\n');
+      const lines = renderRunLines(value, { theme, width: 80, expanded: true, now: 13_000 });
+      expect(lines).toHaveLength(2);
+      expect(lines[1]).toContain(`activity ${count - 1}`);
+    }
+  });
+
   it('uses semantic state tones including warning waits and muted cancellations', () => {
     expect(['running', 'completed', 'waiting', 'partial', 'timeout', 'failed', 'cancelled'].map((s) => stateTone(s as RunState))).toEqual(['accent', 'success', 'warning', 'warning', 'warning', 'error', 'muted']);
   });
@@ -134,6 +144,13 @@ describe('inspector viewport and keys', () => {
     update([run('only', 'completed')]);
     overlay.handleInput('o');
     expect(adapter.showOutput).toHaveBeenLastCalledWith('only');
+  });
+
+  it.each([5, 6, 7])('prioritizes the selected title in a %i-row terminal', (rows) => {
+    const { overlay } = inspector([run('tiny', 'completed')], rows);
+    const lines = overlay.render(80);
+    expect(lines.join('\n')).toContain('Audit tiny');
+    expect(lines.join('\n')).toContain('›');
   });
 
   it('preserves state-aware cancel/steer/resume/output/apply/discard and idempotent close/disposal', () => {

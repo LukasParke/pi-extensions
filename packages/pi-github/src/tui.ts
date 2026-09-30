@@ -74,10 +74,15 @@ function text(result: Result): string {
 }
 function failure(result: Result, options: Options, theme?: NativeTheme, context?: RenderContext) {
 	if (!(result.isError || context?.isError || result.details?.refused || result.details?.error)) return;
+	const message = plain(text(result) || String(result.details?.error ?? "Tool failed"));
 	return component(
-		() => [
-			color(theme, "error", `error · ${one(text(result) || String(result.details?.error ?? "Tool failed"))}`),
-		],
+		(width) =>
+			options.expanded
+				? [
+						color(theme, "error", "error"),
+						...wrapTextWithAnsi(message, width).map((line) => color(theme, "error", line)),
+					]
+				: [color(theme, "error", `error · ${one(message)}`)],
 		context,
 	);
 }
@@ -276,6 +281,7 @@ export function renderToolResult(
 		const full = () => [
 			color(theme, "muted", `${one(p.author)} · ${one(p.branch)} → ${one(p.baseBranch)}`),
 			color(theme, "muted", one(p.url)),
+			...(p.mergeable ? [color(theme, "warning", `cannot merge: ${one(p.mergeable)}`)] : []),
 			color(theme, "accent", "Description"),
 			plain(p.body) || "(no description)",
 			color(theme, "accent", "Checks"),
@@ -327,6 +333,6 @@ export function renderToolResult(
 			: result.details?.connected || result.details?.posted
 				? "success"
 				: "muted",
-		() => plain(text(result)).split("\n").slice(1),
+		() => plain(text(result)).split("\n"),
 	);
 }
