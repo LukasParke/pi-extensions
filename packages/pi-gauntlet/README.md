@@ -10,6 +10,15 @@ you stop it.
 While the loop is active a widget shows the goal, the iteration count, and a
 `✓ / ✗ / ·` state per check.
 
+## Native Pi integration
+
+Requires Pi **0.99.1 or newer**. Native codemode receives `{ message, isError, state?,
+passed?, results? }`; unavailable or invalid operations set native `isError`.
+The tool is grouped under `gauntlet` and conservatively annotated because checks
+can execute arbitrary shell commands. Verification still happens after final
+settlement, not during an in-loop `agent_before_settle` boundary. Project seeds
+use the host's native configuration directory name.
+
 ## Install
 
 ```bash

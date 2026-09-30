@@ -5,6 +5,8 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { Value } from "typebox/value";
+import { errorLogEntrySchema } from "./schemas.ts";
 
 export interface ErrorLogEntry {
 	/** ISO timestamp. */
@@ -15,6 +17,8 @@ export interface ErrorLogEntry {
 	kind: "tool" | "extension";
 	tool?: string;
 	toolCallId?: string;
+	/** Calling orchestration tool, when this was a native nested call. */
+	parentToolCallId?: string;
 	/** Sanitized, serialized args (see redact.ts). */
 	args?: string;
 	error: { message: string; stack?: string };
@@ -51,8 +55,8 @@ export async function readErrors(filePath: string): Promise<ErrorLogEntry[]> {
 		const trimmed = line.trim();
 		if (!trimmed) continue;
 		try {
-			const parsed = JSON.parse(trimmed) as ErrorLogEntry;
-			if (parsed && typeof parsed.ts === "string" && parsed.error) entries.push(parsed);
+			const parsed: unknown = JSON.parse(trimmed);
+			if (Value.Check(errorLogEntrySchema, parsed)) entries.push(parsed);
 		} catch {
 			// skip corrupt/partial line
 		}

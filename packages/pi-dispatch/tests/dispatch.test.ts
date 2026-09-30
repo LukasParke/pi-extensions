@@ -180,6 +180,25 @@ describe("dispatch queue", () => {
 		expect(second.handlers.size).toBe(0);
 	});
 
+	it("rewires after shutdown without retaining the old session", async () => {
+		const first = harness();
+		first.start();
+		dispatchQueue().publish(item({ id: "old", urgency: "wake" }));
+		first.fire("session_shutdown");
+		const replacement = harness();
+		const otherConsumer = harness();
+		replacement.start();
+		dispatchQueue().publish(item({ id: "new", urgency: "wake" }));
+		await vi.advanceTimersByTimeAsync(2_100);
+		expect(first.sentMessages).toHaveLength(0);
+		expect(replacement.sentMessages).toHaveLength(1);
+		expect(otherConsumer.handlers.size).toBe(0);
+		expect(replacement.sentMessages[0]!.message.details.items.map((i: DispatchItem) => i.id)).toEqual([
+			"new",
+		]);
+		expect(dispatchQueue().size()).toBe(0);
+	});
+
 	it("keeps the batch queued when sending fails", async () => {
 		const h = harness();
 		h.start();

@@ -16,23 +16,45 @@ import {
 	type PullDetail,
 	type PullRow,
 } from "../src/viewmodel.ts";
+import {
+	prsSchema,
+	prSchema,
+	issuesSchema,
+	checksSchema,
+	commentSchema,
+	reviewSchema,
+	statusSchema,
+	connectSchema,
+	disconnectSchema,
+} from "../src/schemas.ts";
 
 const MAX_LIMIT = 50;
+const namespace = { name: "github", description: "GitHub pull requests, issues, checks and credentials" };
+const readAnnotations = {
+	readOnlyHint: true,
+	destructiveHint: false,
+	idempotentHint: true,
+	openWorldHint: true,
+};
 
-interface ToolResult {
-	content: { type: "text"; text: string }[];
-	details: unknown;
+function ok(text: string, details: unknown) {
+	return {
+		content: [{ type: "text" as const, text }],
+		details,
+		structuredContent: JSON.parse(JSON.stringify(details)),
+	};
 }
 
-function ok(text: string, details: unknown = {}): ToolResult {
-	return { content: [{ type: "text", text }], details };
-}
-
-function refuse(text: string, details?: unknown): ToolResult {
-	return ok(text, {
+function refuse(text: string, details?: unknown) {
+	const data = {
 		refused: true,
 		...(typeof details === "object" && details !== null ? details : {}),
-	});
+	};
+	return {
+		...ok(text, data),
+		structuredContent: JSON.parse(JSON.stringify({ ...data, error: text })),
+		isError: true,
+	};
 }
 
 function explain(e: unknown): string {
@@ -178,6 +200,9 @@ export default function github(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "github_prs",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: prsSchema,
 		label: "GitHub PRs",
 		description:
 			"List pull requests in a GitHub repository with their review state and check status. " +
@@ -235,6 +260,9 @@ export default function github(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "github_pr",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: prSchema,
 		label: "GitHub PR",
 		description:
 			"Read one pull request in full: description, changed files with patches, check runs and reviews. " +
@@ -264,6 +292,9 @@ export default function github(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "github_issues",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: issuesSchema,
 		label: "GitHub issues",
 		description:
 			"List or search issues in a GitHub repository. Pull requests are excluded even though GitHub returns them " +
@@ -303,6 +334,7 @@ export default function github(pi: ExtensionAPI): void {
 					segment: "issues",
 					rows: res.data,
 					rate: res.rate,
+					truncated: res.truncated === true,
 				});
 			} catch (e) {
 				return refuse(explain(e));
@@ -317,6 +349,9 @@ export default function github(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "github_checks",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: checksSchema,
 		label: "GitHub checks",
 		description:
 			"Check runs for a branch, tag or commit SHA, each with its conclusion and duration. " +
@@ -354,6 +389,9 @@ export default function github(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "github_comment",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+		outputSchema: commentSchema,
 		label: "GitHub comment",
 		description:
 			"Post a comment on a pull request or issue. The user is asked to confirm first, and nothing is posted if they " +
@@ -405,6 +443,9 @@ export default function github(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "github_review",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+		outputSchema: reviewSchema,
 		label: "GitHub review",
 		description:
 			"Submit a review on a pull request. Default event is comment. Approve is Luke-only and requires " +
@@ -477,6 +518,9 @@ export default function github(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "github_status",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: statusSchema,
 		label: "GitHub status",
 		description:
 			"Report whether GitHub is reachable, which credential is in use and where it came from, and what this " +
@@ -519,6 +563,9 @@ export default function github(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "github_connect",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+		outputSchema: connectSchema,
 		label: "Connect GitHub",
 		description:
 			"Store a GitHub personal access token for this extension. Only needed when `gh auth login` and $GITHUB_TOKEN " +
@@ -573,6 +620,9 @@ export default function github(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "github_disconnect",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+		outputSchema: disconnectSchema,
 		label: "Disconnect GitHub",
 		description: "Remove the stored GitHub token. Does not touch `gh` or your environment.",
 		parameters: Type.Object({}),

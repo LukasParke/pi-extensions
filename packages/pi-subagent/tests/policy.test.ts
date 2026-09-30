@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { validateSubagentRequest, parseDepth, parseSpawnPolicy, SPAWNS_ENV_VAR, WRITE_TOOLS, READ_ONLY_TOOLS } from "../src/policy.js";
 import type { ParentContext } from "../src/policy.js";
 
@@ -11,14 +11,23 @@ const parent: ParentContext = {
   depth: 0,
 };
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe("policy", () => {
   it("parses depth robustly and fails closed on malformed values", () => {
+    vi.stubEnv("PI_SUBAGENT_DEPTH", undefined);
     expect(parseDepth(undefined)).toBe(0);
     expect(parseDepth("")).toBe(0);
     expect(parseDepth("2")).toBe(2);
     // Malformed / negative: fail closed so env scrubbing cannot reset to top-level.
     expect(parseDepth("nope")).toBe(100);
     expect(parseDepth("-3")).toBe(100);
+  });
+
+  it("inherits the real depth when no value is supplied", () => {
+    vi.stubEnv("PI_SUBAGENT_DEPTH", "3");
+    expect(parseDepth()).toBe(3);
+    expect(parseDepth(undefined)).toBe(3);
   });
 
   it("rejects depth overflow", () => {

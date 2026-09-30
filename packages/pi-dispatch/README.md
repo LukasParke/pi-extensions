@@ -97,7 +97,10 @@ export function formatBatch(items: DispatchItem[]): string; // markdown batch bo
 
 Publishing before `ensureDelivery` runs is safe: items queue but do not flush
 until delivery is wired and the session is idle. `session_shutdown` clears the
-queue, and a failed `sendMessage` leaves the batch queued for the next drain.
+queue and releases the old API/context binding. Replacement extension factories
+can call `ensureDelivery` again, while multiple consumers within the same live
+runtime still wire only once. A failed `sendMessage` leaves the batch queued for
+the next drain.
 
 ## License
 

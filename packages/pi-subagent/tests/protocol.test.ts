@@ -20,6 +20,18 @@ describe("ProtocolParser", () => {
     expect(updates.map((u) => u.type)).toEqual(["session", "live-text", "message", "agent-end", "agent-settled"]);
   });
 
+  it("terminates successful handled prompts without waiting for an agent run", () => {
+    const parser = new ProtocolParser();
+    expect(parser.feed(JSON.stringify({ type: "response", command: "prompt", success: true, data: { disposition: "handled" } }) + "\n")).toEqual([
+      { type: "fatal", error: "Child handled the prompt without starting an agent run." },
+    ]);
+  });
+
+  it.each(["started", "queued", undefined])("accepts prompt disposition %s without declaring an early failure", (disposition) => {
+    const parser = new ProtocolParser();
+    expect(parser.feed(JSON.stringify({ type: "response", command: "prompt", success: true, data: { disposition } }) + "\n")).toEqual([]);
+  });
+
   it("accepts cumulative pre-0.84 message updates", () => {
     const parser = new ProtocolParser();
     const updates = parser.feed(JSON.stringify({ type: "message_update", message: { role: "assistant", content: [{ type: "text", text: "legacy" }] } }) + "\n");

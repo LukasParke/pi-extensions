@@ -8,23 +8,42 @@ import { NotionClient } from "../src/client.ts";
 import { NOTION_DESCRIPTION } from "../src/describe.ts";
 import { renderBlocks, renderPages, renderToolCall } from "../src/tui.ts";
 import { type PageBlock, type PageRow, pageToText, toPageDetail, toPageRow } from "../src/viewmodel.ts";
+import {
+	searchSchema,
+	pageSchema,
+	appendSchema,
+	statusSchema,
+	connectSchema,
+	disconnectSchema,
+} from "../src/schemas.ts";
 
 const MAX_LIMIT = 50;
+const namespace = { name: "notion", description: "Notion pages, content and credentials" };
+const readAnnotations = {
+	readOnlyHint: true,
+	destructiveHint: false,
+	idempotentHint: true,
+	openWorldHint: true,
+};
 
-interface ToolResult {
-	content: { type: "text"; text: string }[];
-	details: unknown;
+function ok(text: string, details: unknown) {
+	return {
+		content: [{ type: "text" as const, text }],
+		details,
+		structuredContent: JSON.parse(JSON.stringify(details)),
+	};
 }
 
-function ok(text: string, details: unknown = {}): ToolResult {
-	return { content: [{ type: "text", text }], details };
-}
-
-function refuse(text: string, details?: unknown): ToolResult {
-	return ok(text, {
+function refuse(text: string, details?: unknown) {
+	const data = {
 		refused: true,
 		...(typeof details === "object" && details !== null ? details : {}),
-	});
+	};
+	return {
+		...ok(text, data),
+		structuredContent: JSON.parse(JSON.stringify({ ...data, error: text })),
+		isError: true,
+	};
 }
 
 function explain(e: unknown): string {
@@ -91,6 +110,9 @@ export default function notion(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "notion_search",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: searchSchema,
 		label: "Notion search",
 		description:
 			"Find Notion pages this integration can see. Most recently edited first. Pass a query to search; omit it to list. " +
@@ -129,6 +151,9 @@ export default function notion(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "notion_page",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: pageSchema,
 		label: "Notion page",
 		description:
 			"Read one page as structured blocks. This is the main read — it returns the page content, so no follow-up call is " +
@@ -165,6 +190,9 @@ export default function notion(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "notion_append",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+		outputSchema: appendSchema,
 		label: "Notion append",
 		description:
 			"Append plain-text paragraphs to a page, one per non-empty line. The user is asked to confirm and sees the full " +
@@ -213,6 +241,9 @@ export default function notion(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "notion_status",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: statusSchema,
 		label: "Notion status",
 		description:
 			"Report whether Notion is reachable, which credential is in use and where it came from, and what this extension " +
@@ -247,6 +278,9 @@ export default function notion(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "notion_connect",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+		outputSchema: connectSchema,
 		label: "Connect Notion",
 		description:
 			"Store a Notion internal-integration token for this extension. Create one at Notion → Settings → Connections → " +
@@ -300,6 +334,9 @@ export default function notion(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "notion_disconnect",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+		outputSchema: disconnectSchema,
 		label: "Disconnect Notion",
 		description: "Remove the stored Notion key. Does not touch your environment.",
 		parameters: Type.Object({}),

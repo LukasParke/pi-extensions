@@ -44,6 +44,18 @@ pi install npm:@parke.dev/pi-graphiti
   server is unreachable; the session-start check is fire-and-forget and never
   delays the session.
 
+## Native Pi integration
+
+Requires Pi **0.99.1 or newer**. Tools are grouped under `memory`; native
+codemode receives `{ mode, results }`, `{ message }`, or a health object.
+Facts have a typed schema; node and episode attributes remain server-defined.
+The memory policy uses a native prompt section, and late recall results are
+suppressed after shutdown.
+
+The direct client is intentional: native MCP registration does not expose
+`ctx.executeTool` to off-turn event/timer callbacks, so it cannot replace
+background recall without changing behavior.
+
 ## Configuration
 
 `~/.pi/graphiti.json` or environment (`defaults ← file ← env`):

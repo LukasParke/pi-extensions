@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-git",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Structured Git status, diffs, branches, history and pre-PR checks for the Pi coding agent",
   "type": "module",
   "license": "MIT",

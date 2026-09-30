@@ -4,6 +4,11 @@ Captures every tool error in a pi session into one reviewable place: a single
 append-only JSONL log at `~/.pi/logs/errors.jsonl`, plus an `error_log` tool
 so the agent (or you) can ask "what failed recently?" and get real answers.
 
+Requires Pi **0.99.1 or newer**. Native codemode receives `{ path, entries }`
+with complete sanitized records; `path: null` indicates logging is disabled.
+Nested tool failures include `parentToolCallId`, linking them to the orchestrating
+call. The tool is grouped under `errors` and annotated as a local read.
+
 ## Install
 
 ```bash
@@ -32,17 +37,18 @@ appends one JSON line:
 }
 ```
 
-| Field        | Meaning                                                        |
-| ------------ | -------------------------------------------------------------- |
-| `ts`         | ISO timestamp                                                  |
-| `session`    | session file path, when the session is persisted               |
-| `cwd`        | working directory of the session                               |
-| `kind`       | `tool` (pi's extension API exposes no `extension_error` event) |
-| `tool`       | tool name                                                      |
-| `toolCallId` | correlates with the transcript                                 |
-| `args`       | sanitized, serialized tool args (see below)                    |
-| `error`      | message, plus stack when present                               |
-| `model`      | provider/id of the active model, when available                |
+| Field              | Meaning                                                        |
+| ------------------ | -------------------------------------------------------------- |
+| `ts`               | ISO timestamp                                                  |
+| `session`          | session file path, when the session is persisted               |
+| `cwd`              | working directory of the session                               |
+| `kind`             | `tool` (pi's extension API exposes no `extension_error` event) |
+| `tool`             | tool name                                                      |
+| `toolCallId`       | correlates with the transcript                                 |
+| `parentToolCallId` | parent call for a native nested tool, when present             |
+| `args`             | sanitized, serialized tool args (see below)                    |
+| `error`            | message, plus stack when present                               |
+| `model`            | provider/id of the active model, when available                |
 
 ### Args safety
 

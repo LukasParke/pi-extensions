@@ -174,6 +174,9 @@ export class ProtocolParser {
       if (event.success === false && (event.command === "prompt" || event.command === "parse")) {
         return [{ type: "fatal", error: String(event.error ?? "child rejected the prompt") }];
       }
+      if (event.command === "prompt" && event.success === true && event.data?.disposition === "handled") {
+        return [{ type: "fatal", error: "Child handled the prompt without starting an agent run." }];
+      }
       return [];
     }
 

@@ -63,7 +63,8 @@ describe.skipIf(!canSandbox)("executeWorkflow", () => {
 
 		expect(exec.state).toBe("completed");
 		expect(exec.usage.input).toBe(20);
-		expect(exec.usage.cost).toBeCloseTo(0.02);
+		expect(exec.usage.cost).toBeCloseTo(0.02, 10);
+		expect(exec.executionUsage).toEqual(exec.usage);
 		expect(runAgent).toHaveBeenCalledTimes(2);
 
 		const journal = await readJournal(exec.summary.artifactPath);
@@ -139,7 +140,69 @@ describe.skipIf(!canSandbox)("executeWorkflow", () => {
 		expect(second.result).toEqual(["live:one:1", "live:two:2"]);
 		expect(second.summary.agentCount).toBe(2);
 		expect(second.summary.completedAgents).toBe(2);
+		expect(second.usage.cost).toBeCloseTo(0.002, 10);
+		expect(second.executionUsage).toEqual(emptyUsage());
 	});
+
+	it.each(["cancel", "script-error"])(
+		"waits for paid child cleanup before terminal accounting on %s",
+		async (mode) => {
+			const agentDir = await tempDir();
+			const controller = new AbortController();
+			let began!: () => void;
+			let drained!: () => void;
+			const started = new Promise<void>((resolve) => {
+				began = resolve;
+			});
+			const settled = new Promise<void>((resolve) => {
+				drained = resolve;
+			});
+			const expectedAgents = mode === "cancel" ? 1 : 2;
+			const promise = executeWorkflow({
+				runId: newRunId(),
+				label: "late-accounting",
+				cwd: process.cwd(),
+				agentDir,
+				source:
+					mode === "cancel"
+						? 'return await agent("long", { isolation: "worktree" });'
+						: 'await Promise.all([agent("long", { isolation: "worktree" }), (async () => { await agent("short", { isolation: "worktree" }); throw new Error("Script failed"); })()]);',
+				config: { ...defaultConfig, approval: "never" },
+				signal: controller.signal,
+				ctx: { cwd: process.cwd(), model: undefined },
+				runAgent: async (spec, signal) => {
+					if (spec.task === "short") {
+						await started;
+						return { ok: true, output: "short", usage: { ...emptyUsage(), cost: 0.1, input: 1 } };
+					}
+					began();
+					await new Promise<void>((resolve) => {
+						signal.addEventListener(
+							"abort",
+							() => {
+								setTimeout(resolve, 200);
+							},
+							{ once: true },
+						);
+					});
+					return { ok: false, output: "paid cleanup", usage: { ...emptyUsage(), cost: 0.25, input: 2 } };
+				},
+				onProgress: (progress) => {
+					if (progress.completedAgents === expectedAgents) drained();
+				},
+			});
+			try {
+				await started;
+				if (mode === "cancel") controller.abort(new Error("Cancelled fixture"));
+				const result = await promise;
+				expect(result.state).toBe(mode === "cancel" ? "cancelled" : "failed");
+				expect(result.executionUsage.cost).toBeCloseTo(mode === "cancel" ? 0.25 : 0.35, 10);
+				expect(result.summary.completedAgents).toBe(expectedAgents);
+			} finally {
+				await settled;
+			}
+		},
+	);
 
 	it("passes maxCost through unclamped when agentMaxCost is unset", async () => {
 		const agentDir = await tempDir();

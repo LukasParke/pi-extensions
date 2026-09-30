@@ -68,6 +68,10 @@ if (isMain) {
       emit({ type: "response", command: "prompt", success: false, error: "prompt rejected by fake" });
       return; // stays alive (idle) like real RPC mode; parent must stop it
     }
+    if (mode === "prompt-handled") {
+      emit({ type: "response", command: "prompt", success: true, data: { disposition: "handled" } });
+      return;
+    }
     if (mode === "nonzero-complete") { emit(header); emit(message); emit(agentEnd); emit(agentSettled); process.exit(1); return; }
     if (mode === "provider-error") {
       emit(header);

@@ -27,8 +27,6 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 
 /** Max concurrently running terminals. */
 export const MAX_RUNNING = 8;
@@ -475,9 +473,4 @@ export function tail(text: string, maxBytes: number, maxLines: number): { text: 
 		truncated = true;
 	}
 	return { text: out, truncated };
-}
-
-/** Where spilled full logs would go, if we add spill later. */
-export function spillRoot(): string {
-	return path.join(os.tmpdir(), "pi-bg-terminals");
 }

@@ -6,23 +6,29 @@ import { summarizeDiff } from "../src/diff.ts";
 import { isRepository, LocalGitExec, repositoryRoot } from "../src/exec.ts";
 import { branches, commitsBetween, diff, isSafeRevisionSpec, status, worktrees } from "../src/repo.ts";
 import { renderBranches, renderChecklist, renderDiff, renderStatus, renderToolCall } from "../src/tui.ts";
+import { branchesSchema, checklistSchema, diffSchema, logSchema, statusSchema } from "../src/schemas.ts";
 
 const MAX_LIMIT = 200;
 
-interface ToolResult {
-	content: { type: "text"; text: string }[];
-	details: unknown;
+const namespace = { name: "git", description: "Local Git status, diffs, history, and verification" };
+const readAnnotations = {
+	readOnlyHint: true,
+	destructiveHint: false,
+	idempotentHint: true,
+	openWorldHint: false,
+};
+
+function ok(text: string, details: unknown = {}) {
+	return {
+		content: [{ type: "text" as const, text }],
+		details,
+		structuredContent: JSON.parse(JSON.stringify(details)),
+	};
 }
 
-function ok(text: string, details: unknown = {}): ToolResult {
-	return { content: [{ type: "text", text }], details };
-}
-
-function refuse(text: string, details?: unknown): ToolResult {
-	return ok(text, {
-		refused: true,
-		...(typeof details === "object" && details !== null ? details : {}),
-	});
+function refuse(text: string, details?: unknown) {
+	const data = { refused: true, ...(typeof details === "object" && details !== null ? details : {}) };
+	return { ...ok(text, data), structuredContent: { ...data, error: text }, isError: true };
 }
 
 const exec = new LocalGitExec();
@@ -46,6 +52,9 @@ async function repoDir(
 export default function git(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "git_status",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: statusSchema,
 		label: "Git status",
 		description:
 			"Parsed working-tree status: branch, upstream position, and every changed file with its state as a WORD " +
@@ -93,6 +102,9 @@ export default function git(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "git_diff",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: diffSchema,
 		label: "Git diff",
 		description:
 			"A parsed diff: per-file additions, deletions and hunks. Use `ref` for a revision or range " +
@@ -162,6 +174,9 @@ export default function git(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "git_branches",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: branchesSchema,
 		label: "Git branches",
 		description:
 			"Local branches with their upstream, how far ahead or behind each is, and its last commit subject — so a branch " +
@@ -209,6 +224,9 @@ export default function git(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "git_checklist",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+		outputSchema: checklistSchema,
 		label: "Git checklist",
 		description:
 			'Answers "can I open a pull request?" in one call: conflicts, working-tree cleanliness, and any verification ' +
@@ -262,6 +280,9 @@ export default function git(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "git_log",
+		namespace,
+		annotations: readAnnotations,
+		outputSchema: logSchema,
 		label: "Git log",
 		description:
 			"Commits on a branch or between two revisions, newest first, with author and subject. Use this to summarise what " +

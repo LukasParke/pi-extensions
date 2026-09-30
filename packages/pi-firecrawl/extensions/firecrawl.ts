@@ -2,6 +2,22 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { explain, type FirecrawlConfig, firecrawlConfig } from "../src/config.ts";
+import {
+	crawlSchema,
+	mapSchema,
+	namespace,
+	scrapeSchema,
+	searchSchema,
+	type CrawlStatus,
+	type Page,
+	type SearchResult,
+} from "../src/contracts.ts";
+
+interface ApiResponse {
+	success?: boolean;
+	error?: string;
+	details?: string;
+}
 
 // Firecrawl integration for pi.
 //
@@ -19,12 +35,12 @@ function buildHeaders(config: FirecrawlConfig): Record<string, string> {
 	return headers;
 }
 
-async function firecrawlPost(
+async function firecrawlPost<T extends ApiResponse>(
 	config: FirecrawlConfig,
 	path: string,
 	body: unknown,
 	signal: AbortSignal | undefined,
-): Promise<any> {
+): Promise<T> {
 	const url = `${config.baseUrl}${path}`;
 	const response = await fetch(url, {
 		method: "POST",
@@ -34,7 +50,7 @@ async function firecrawlPost(
 	});
 
 	const text = await response.text();
-	let json: any;
+	let json: T;
 	try {
 		json = text ? JSON.parse(text) : {};
 	} catch {
@@ -51,11 +67,11 @@ async function firecrawlPost(
 	return json;
 }
 
-async function firecrawlGet(
+async function firecrawlGet<T extends ApiResponse>(
 	config: FirecrawlConfig,
 	path: string,
 	signal: AbortSignal | undefined,
-): Promise<any> {
+): Promise<T> {
 	const url = `${config.baseUrl}${path}`;
 	const response = await fetch(url, {
 		method: "GET",
@@ -64,7 +80,7 @@ async function firecrawlGet(
 	});
 
 	const text = await response.text();
-	let json: any;
+	let json: T;
 	try {
 		json = text ? JSON.parse(text) : {};
 	} catch {
@@ -81,17 +97,27 @@ async function firecrawlGet(
 	return json;
 }
 
-function textResult(text: string, details: unknown) {
+function textResult(text: string, details: unknown, structuredContent: unknown) {
 	return {
 		content: [{ type: "text" as const, text }],
-		details: details as Record<string, unknown>,
+		details,
+		structuredContent: JSON.parse(JSON.stringify(structuredContent)),
 	};
+}
+
+function refusal(error: unknown, config: FirecrawlConfig) {
+	const text = explain(error, config);
+	const data = { refused: true, error: text };
+	return { ...textResult(text, data, data), isError: true };
 }
 
 export default function (pi: ExtensionAPI) {
 	// ---- Scrape a single URL ----
 	pi.registerTool({
 		name: "firecrawl_scrape",
+		namespace,
+		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+		outputSchema: scrapeSchema,
 		label: "Firecrawl Scrape",
 		description:
 			"Scrape a single URL with Firecrawl and return its content as clean markdown (and optionally other formats). Use for fetching the readable content of a specific web page.",
@@ -118,34 +144,42 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, signal) {
 			const config = await firecrawlConfig();
-			const body: Record<string, unknown> = {
-				url: params.url,
-				formats: params.formats ?? ["markdown"],
-			};
-			if (params.onlyMainContent !== undefined) body.onlyMainContent = params.onlyMainContent;
-			if (params.waitFor !== undefined) body.waitFor = params.waitFor;
+			try {
+				const body: Record<string, unknown> = {
+					url: params.url,
+					formats: params.formats ?? ["markdown"],
+				};
+				if (params.onlyMainContent !== undefined) body.onlyMainContent = params.onlyMainContent;
+				if (params.waitFor !== undefined) body.waitFor = params.waitFor;
 
-			const json = await firecrawlPost(config, "/v1/scrape", body, signal);
-			const data = json.data ?? {};
-			const parts: string[] = [];
+				const json = await firecrawlPost<ApiResponse & { data?: Page }>(config, "/v1/scrape", body, signal);
+				const data = json.data ?? {};
+				const parts: string[] = [];
 
-			if (data.metadata?.title) parts.push(`# ${data.metadata.title}`);
-			if (data.metadata?.sourceURL || data.metadata?.url)
-				parts.push(`Source: ${data.metadata.sourceURL ?? data.metadata.url}`);
-			if (data.markdown) parts.push("\n" + data.markdown);
-			if (data.summary) parts.push("\nSummary:\n" + data.summary);
-			if (data.html && !data.markdown) parts.push("\n" + data.html);
-			if (data.rawHtml && !data.markdown && !data.html) parts.push("\n" + data.rawHtml);
-			if (Array.isArray(data.links) && data.links.length) parts.push("\nLinks:\n" + data.links.join("\n"));
+				if (data.metadata?.title) parts.push(`# ${data.metadata.title}`);
+				if (data.metadata?.sourceURL || data.metadata?.url)
+					parts.push(`Source: ${data.metadata.sourceURL ?? data.metadata.url}`);
+				if (data.markdown) parts.push("\n" + data.markdown);
+				if (data.summary) parts.push("\nSummary:\n" + data.summary);
+				if (data.html && !data.markdown) parts.push("\n" + data.html);
+				if (data.rawHtml && !data.markdown && !data.html) parts.push("\n" + data.rawHtml);
+				if (Array.isArray(data.links) && data.links.length) parts.push("\nLinks:\n" + data.links.join("\n"));
 
-			const text = parts.join("\n").trim() || "(no content returned)";
-			return textResult(text, data);
+				const text = parts.join("\n").trim() || "(no content returned)";
+				return textResult(text, data, { page: data });
+			} catch (error) {
+				if (signal?.aborted) throw error;
+				return refusal(error, config);
+			}
 		},
 	});
 
 	// ---- Search the web ----
 	pi.registerTool({
 		name: "firecrawl_search",
+		namespace,
+		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+		outputSchema: searchSchema,
 		label: "Firecrawl Search",
 		description:
 			"Search the web with Firecrawl and return a list of results (title, URL, description). Optionally scrape the result pages into markdown.",
@@ -166,38 +200,51 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, signal) {
 			const config = await firecrawlConfig();
-			const body: Record<string, unknown> = {
-				query: params.query,
-				limit: params.limit ?? 5,
-			};
-			if (params.scrapeResults) {
-				body.scrapeOptions = { formats: ["markdown"] };
-			}
-
-			const json = await firecrawlPost(config, "/v1/search", body, signal);
-			const results: any[] = Array.isArray(json.data) ? json.data : [];
-
-			if (results.length === 0) {
-				return textResult("No results found.", json);
-			}
-
-			const parts = results.map((r, i) => {
-				const lines = [`${i + 1}. ${r.title ?? "(untitled)"}`, `   ${r.url}`];
-				if (r.description) lines.push(`   ${r.description}`);
-				if (r.markdown) {
-					const snippet = String(r.markdown).slice(0, 2000);
-					lines.push(`\n   --- content ---\n${snippet}`);
+			try {
+				const body: Record<string, unknown> = {
+					query: params.query,
+					limit: params.limit ?? 5,
+				};
+				if (params.scrapeResults) {
+					body.scrapeOptions = { formats: ["markdown"] };
 				}
-				return lines.join("\n");
-			});
 
-			return textResult(parts.join("\n\n"), json);
+				const json = await firecrawlPost<ApiResponse & { data?: SearchResult[] }>(
+					config,
+					"/v1/search",
+					body,
+					signal,
+				);
+				const results = Array.isArray(json.data) ? json.data : [];
+
+				if (results.length === 0) {
+					return textResult("No results found.", json, { results });
+				}
+
+				const parts = results.map((r, i) => {
+					const lines = [`${i + 1}. ${r.title ?? "(untitled)"}`, `   ${r.url}`];
+					if (r.description) lines.push(`   ${r.description}`);
+					if (r.markdown) {
+						const snippet = String(r.markdown).slice(0, 2000);
+						lines.push(`\n   --- content ---\n${snippet}`);
+					}
+					return lines.join("\n");
+				});
+
+				return textResult(parts.join("\n\n"), json, { results });
+			} catch (error) {
+				if (signal?.aborted) throw error;
+				return refusal(error, config);
+			}
 		},
 	});
 
 	// ---- Map a site's URLs ----
 	pi.registerTool({
 		name: "firecrawl_map",
+		namespace,
+		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+		outputSchema: mapSchema,
 		label: "Firecrawl Map",
 		description:
 			"Map a website with Firecrawl to quickly discover all of its URLs. Use to enumerate the links/pages available on a site.",
@@ -218,26 +265,36 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, signal) {
 			const config = await firecrawlConfig();
-			const body: Record<string, unknown> = { url: params.url };
-			if (params.search !== undefined) body.search = params.search;
-			if (params.limit !== undefined) body.limit = params.limit;
+			try {
+				const body: Record<string, unknown> = { url: params.url };
+				if (params.search !== undefined) body.search = params.search;
+				if (params.limit !== undefined) body.limit = params.limit;
 
-			const json = await firecrawlPost(config, "/v1/map", body, signal);
-			const links: string[] = Array.isArray(json.links)
-				? json.links
-				: Array.isArray(json.data)
-					? json.data.map((l: any) => (typeof l === "string" ? l : l.url))
-					: [];
+				const json = await firecrawlPost<
+					ApiResponse & { links?: string[]; data?: (string | { url: string })[] }
+				>(config, "/v1/map", body, signal);
+				const links = Array.isArray(json.links)
+					? json.links
+					: Array.isArray(json.data)
+						? json.data.map((l) => (typeof l === "string" ? l : l.url))
+						: [];
 
-			const text =
-				links.length === 0 ? "No URLs found." : `Found ${links.length} URL(s):\n\n${links.join("\n")}`;
-			return textResult(text, json);
+				const text =
+					links.length === 0 ? "No URLs found." : `Found ${links.length} URL(s):\n\n${links.join("\n")}`;
+				return textResult(text, json, { links });
+			} catch (error) {
+				if (signal?.aborted) throw error;
+				return refusal(error, config);
+			}
 		},
 	});
 
 	// ---- Crawl a site (async job) ----
 	pi.registerTool({
 		name: "firecrawl_crawl",
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+		outputSchema: crawlSchema,
 		label: "Firecrawl Crawl",
 		description:
 			"Crawl a website with Firecrawl, following links and scraping multiple pages into markdown. This starts a crawl job and waits for it to finish (up to a timeout). Use for gathering content across many pages of a site.",
@@ -265,61 +322,87 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, signal, onUpdate) {
 			const config = await firecrawlConfig();
-			const body: Record<string, unknown> = {
-				url: params.url,
-				limit: params.limit ?? 10,
-				scrapeOptions: { formats: ["markdown"] },
-			};
-			if (params.maxDepth !== undefined) body.maxDepth = params.maxDepth;
+			try {
+				const body: Record<string, unknown> = {
+					url: params.url,
+					limit: params.limit ?? 10,
+					scrapeOptions: { formats: ["markdown"] },
+				};
+				if (params.maxDepth !== undefined) body.maxDepth = params.maxDepth;
 
-			const start = await firecrawlPost(config, "/v1/crawl", body, signal);
-			const jobId: string | undefined = start.id;
-			if (!jobId) {
-				throw new Error("Firecrawl crawl did not return a job id.");
-			}
-
-			const timeoutMs = (params.pollTimeoutSeconds ?? 120) * 1000;
-			const deadline = Date.now() + timeoutMs;
-			let status = "scraping";
-			let last: any = start;
-
-			while (Date.now() < deadline) {
-				if (signal?.aborted) throw new Error("Crawl aborted.");
-				last = await firecrawlGet(config, `/v1/crawl/${jobId}`, signal);
-				status = last.status;
-				onUpdate?.({
-					content: [
-						{
-							type: "text",
-							text: `Crawl ${status}: ${last.completed ?? 0}/${last.total ?? "?"} pages`,
-						},
-					],
-					details: { status, completed: last.completed ?? 0, total: last.total ?? null },
-				} as never);
-				if (status === "completed" || status === "failed") break;
-				await new Promise((resolve) => setTimeout(resolve, 3000));
-			}
-
-			const pages: any[] = Array.isArray(last.data) ? last.data : [];
-			if (status !== "completed") {
-				const note =
-					status === "failed"
-						? "Crawl failed."
-						: `Crawl still ${status} after timeout (${last.completed ?? 0}/${last.total ?? "?"}). Returning partial results.`;
-				if (pages.length === 0) {
-					return textResult(note, last);
+				const start = await firecrawlPost<ApiResponse & CrawlStatus & { id?: string }>(
+					config,
+					"/v1/crawl",
+					body,
+					signal,
+				);
+				const jobId: string | undefined = start.id;
+				if (!jobId) {
+					throw new Error("Firecrawl crawl did not return a job id.");
 				}
+
+				const timeoutMs = (params.pollTimeoutSeconds ?? 120) * 1000;
+				const deadline = Date.now() + timeoutMs;
+				let status = "scraping";
+				let last: CrawlStatus = start;
+				const snapshot = () => ({
+					jobId,
+					status,
+					completed: last.completed ?? 0,
+					total: last.total ?? null,
+					pages: Array.isArray(last.data) ? last.data : [],
+					partial: status !== "completed",
+				});
+
+				while (Date.now() < deadline) {
+					if (signal?.aborted) throw new Error("Crawl aborted.");
+					last = await firecrawlGet<ApiResponse & CrawlStatus>(config, `/v1/crawl/${jobId}`, signal);
+					status = last.status ?? status;
+					onUpdate?.({
+						content: [
+							{
+								type: "text",
+								text: `Crawl ${status}: ${last.completed ?? 0}/${last.total ?? "?"} pages`,
+							},
+						],
+						details: { status, completed: last.completed ?? 0, total: last.total ?? null },
+						structuredContent: JSON.parse(JSON.stringify(snapshot())),
+					});
+					if (status === "completed" || status === "failed") break;
+					await new Promise((resolve) => setTimeout(resolve, 3000));
+				}
+
+				const data = {
+					...snapshot(),
+					...(status === "failed" ? { refused: true, error: last.error ?? "Crawl failed." } : {}),
+				};
+				const pages = data.pages;
+				if (status !== "completed") {
+					const note =
+						status === "failed"
+							? "Crawl failed."
+							: `Crawl still ${status} after timeout (${last.completed ?? 0}/${last.total ?? "?"}). Returning partial results.`;
+					if (pages.length === 0) {
+						return { ...textResult(note, last, data), ...(status === "failed" ? { isError: true } : {}) };
+					}
+				}
+
+				const parts = pages.map((p, i) => {
+					const title = p.metadata?.title ?? "(untitled)";
+					const src = p.metadata?.sourceURL ?? p.metadata?.url ?? "";
+					const md = p.markdown ? String(p.markdown).slice(0, 4000) : "";
+					return `### ${i + 1}. ${title}\n${src}\n\n${md}`;
+				});
+
+				const header = `Crawled ${pages.length} page(s) (status: ${status}).\n\n`;
+				return {
+					...textResult(header + parts.join("\n\n---\n\n"), last, data),
+					...(status === "failed" ? { isError: true } : {}),
+				};
+			} catch (error) {
+				if (signal?.aborted) throw error;
+				return refusal(error, config);
 			}
-
-			const parts = pages.map((p, i) => {
-				const title = p.metadata?.title ?? "(untitled)";
-				const src = p.metadata?.sourceURL ?? p.metadata?.url ?? "";
-				const md = p.markdown ? String(p.markdown).slice(0, 4000) : "";
-				return `### ${i + 1}. ${title}\n${src}\n\n${md}`;
-			});
-
-			const header = `Crawled ${pages.length} page(s) (status: ${status}).\n\n`;
-			return textResult(header + parts.join("\n\n---\n\n"), last);
 		},
 	});
 

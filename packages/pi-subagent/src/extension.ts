@@ -769,7 +769,7 @@ export default function registerSubagent(pi: ExtensionAPI): void {
     runtime.depth = parseDepth();
     runtime.output = new OutputManager(runtime.config);
     runtime.semaphore = new Semaphore(runtime.config.maxActiveProcesses, runtime.config.maxQueuedTasks);
-    runtime.worktrees = new WorktreeManager(undefined, runtime.config.worktreeDir);
+    runtime.worktrees = new WorktreeManager(undefined, runtime.config.worktreeDir, runtime.config.worktreeFinalizeTimeoutMs);
     runtime.locks = new ProcessLockManager({
       rootDir: runtime.config.lockDir,
       maxGlobalActive: runtime.config.maxGlobalActive,
@@ -940,6 +940,9 @@ export default function registerSubagent(pi: ExtensionAPI): void {
   const subagentTool = {
     name: "subagent",
     label: "Subagent",
+    exposure: "model-only",
+    namespace: { name: "agents", description: "Isolated child agents and worktree orchestration" },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     description: "Run isolated Pi subagents in foreground, parallel, or cancellable background mode.",
     // Guidelines are baked into the system prompt at registration (extension
     // load runs per-session in the project cwd). Agents added mid-session are
@@ -1150,12 +1153,11 @@ export default function registerSubagent(pi: ExtensionAPI): void {
         }
         const delivered = runtime.output.capOutputForDelivery(terminal.results);
         const text = delivered.text || terminal.summary || "(no output)";
-        // Locate runs and partial/timeout deliveries still return content; hard
-        // failures and “lost with resume blocked” raise so the agent notices.
-        // (Thrown deliveries cannot carry native usage; the extension ledger
-        // still counts them from persisted entries.)
-        if (terminal.state === "failed" || terminal.state === "lost") fail(composeRunFailureMessage(terminal, text));
-        return deliveredResult(text, details(terminal.mode, delivered.cappedResults as any, terminal), terminal.results);
+        const isError = terminal.state === "failed" || terminal.state === "lost";
+        return {
+          ...deliveredResult(isError ? composeRunFailureMessage(terminal, text) : text, details(terminal.mode, delivered.cappedResults as any, terminal), terminal.results),
+          isError,
+        };
       }
 
       if (validated.planOnly) {
@@ -1360,12 +1362,15 @@ export default function registerSubagent(pi: ExtensionAPI): void {
       const meta: RunMeta | undefined = finished.status === "found" && finished.run && !("controller" in finished.run)
         ? finished.run
         : { state: result.state };
-      // timeout is reportable content (with timeoutPhase for retry policy), not a hard throw.
-      if (result.state === "failed") fail(composeRunFailureMessage(result, text));
+      const isError = result.state === "failed";
+      const resultText = isError ? composeRunFailureMessage(result, text) : text;
       const resultDetails = details(result.mode, delivered.cappedResults as any, meta);
-      return firstDelivery
-        ? deliveredResult(text, resultDetails, result.results)
-        : { content: [{ type: "text", text }], details: resultDetails };
+      return {
+        ...(firstDelivery
+          ? deliveredResult(resultText, resultDetails, result.results)
+          : { content: [{ type: "text", text: resultText }], details: resultDetails }),
+        isError,
+      };
     },
     renderCall(args, theme, context) {
       // Stable component identity: reuse the previous block and swap content.
@@ -1487,8 +1492,8 @@ export default function registerSubagent(pi: ExtensionAPI): void {
           undefined,
           ctx as never,
         );
-        // The tool signals failure by throwing (fail()), so reaching here is success.
         const text = result.content.find((item) => item.type === "text")?.text ?? "(no output)";
+        if ("isError" in result && result.isError) throw new Error(String(text));
         pi.appendEntry(BTW_ENTRY_TYPE, { state: "done", question, label, answer: String(text) } satisfies BtwEntry);
         ctx.ui.notify(`by the way: ${label} — answered`, "info");
       } catch (error) {
@@ -1506,6 +1511,9 @@ export default function registerSubagent(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "subagent_wait",
     label: "Subagent wait",
+    exposure: "model-only",
+    namespace: { name: "agents", description: "Isolated child agents and worktree orchestration" },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     description:
       "Block until a background subagent run (async:true) settles, then deliver its output. Equivalent to subagent { action: 'wait', id }. Aborting or timing out leaves the run alive and collectable; use subagent { action: 'cancel' } to stop it.",
     parameters: SubagentWaitParamsSchema,

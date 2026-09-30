@@ -28,19 +28,40 @@ import {
 	DEFAULT_MAX_LINES,
 	formatSize,
 	truncateHead,
+	withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { explain, imageMime, steelGet, steelPost, withRetry } from "../src/client.ts";
 import { cdpBase, looksRemote, steelConfig } from "../src/config.ts";
 
+const namespace = { name: "steel", description: "Self-hosted Steel browser tools" };
+
 /** Cap tool text the same way Pi's built-ins do, spilling the rest to a file. */
-async function capped(text: string, label: string): Promise<string> {
+async function capped(
+	text: string,
+	label: string,
+): Promise<{ text: string; truncated: boolean; file?: string }> {
 	const result = truncateHead(text, { maxBytes: DEFAULT_MAX_BYTES, maxLines: DEFAULT_MAX_LINES });
-	if (!result.truncated) return result.content;
+	if (!result.truncated) return { text: result.content, truncated: false };
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-steel-"));
 	const file = path.join(dir, `${label}.txt`);
 	await fs.writeFile(file, text, "utf8");
-	return `${result.content}\n\n[truncated — full ${formatSize(Buffer.byteLength(text, "utf8"))} output: ${file}]`;
+	return {
+		text: `${result.content}\n\n[truncated — full ${formatSize(Buffer.byteLength(text, "utf8"))} output: ${file}]`,
+		truncated: true,
+		file,
+	};
+}
+
+/** Pick only the metadata fields we declare, with the types we declare. */
+function scrapeMetadata(meta: any) {
+	return {
+		...(typeof meta?.title === "string" ? { title: meta.title } : {}),
+		...(typeof meta?.urlSource === "string" ? { urlSource: meta.urlSource } : {}),
+		...(typeof meta?.statusCode === "number" ? { statusCode: meta.statusCode } : {}),
+		...(typeof meta?.description === "string" ? { description: meta.description } : {}),
+		...(typeof meta?.wordCount === "number" ? { wordCount: meta.wordCount } : {}),
+	};
 }
 
 export default function (pi: ExtensionAPI) {
@@ -71,6 +92,30 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		namespace,
+		annotations: { readOnlyHint: true, openWorldHint: true },
+		outputSchema: Type.Object({
+			url: Type.String(),
+			metadata: Type.Object({
+				title: Type.Optional(Type.String()),
+				urlSource: Type.Optional(Type.String()),
+				statusCode: Type.Optional(Type.Number()),
+				description: Type.Optional(Type.String()),
+				wordCount: Type.Optional(Type.Number()),
+			}),
+			content: Type.Record(Type.String(), Type.String(), {
+				description: "Requested formats mapped to their full, untruncated text.",
+			}),
+			links: Type.Optional(
+				Type.Array(Type.Object({ text: Type.Optional(Type.String()), url: Type.String() }), {
+					description: "All extracted links when includeLinks is true; model-facing text shows at most 200.",
+				}),
+			),
+			truncated: Type.Boolean({
+				description: "Whether the model-facing text was capped. `content` here is always complete.",
+			}),
+			fullOutputPath: Type.Optional(Type.String()),
+		}),
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			let payload: any;
@@ -105,21 +150,35 @@ export default function (pi: ExtensionAPI) {
 				.join("\n");
 			sections.push(head);
 
-			const content = payload?.content ?? {};
-			for (const [key, value] of Object.entries(content)) {
+			const content: Record<string, string> = {};
+			for (const [key, value] of Object.entries(payload?.content ?? {})) {
+				if (typeof value === "string") content[key] = value;
 				if (typeof value === "string" && value.trim()) sections.push(`## ${key}\n${value}`);
 			}
+			const links: { text?: string; url: string }[] = [];
 			if (params.includeLinks && Array.isArray(payload?.links) && payload.links.length) {
-				const links = payload.links
-					.slice(0, 200)
-					.map((link: any) => `- ${link.text ? `${link.text} — ` : ""}${link.url}`)
-					.join("\n");
-				sections.push(`## links (${payload.links.length})\n${links}`);
+				links.push(...payload.links);
+				sections.push(
+					`## links (${payload.links.length})\n` +
+						links
+							.slice(0, 200)
+							.map((link) => `- ${link.text ? `${link.text} — ` : ""}${link.url}`)
+							.join("\n"),
+				);
 			}
 
+			const cap = await capped(sections.join("\n\n"), "scrape");
 			return {
-				content: [{ type: "text" as const, text: await capped(sections.join("\n\n"), "scrape") }],
+				content: [{ type: "text" as const, text: cap.text }],
 				details: { url: params.url, metadata: meta, formats: Object.keys(content) },
+				structuredContent: {
+					url: params.url,
+					metadata: scrapeMetadata(meta),
+					content,
+					...(links.length ? { links } : {}),
+					truncated: cap.truncated,
+					...(cap.file ? { fullOutputPath: cap.file } : {}),
+				},
 			};
 		},
 	});
@@ -145,6 +204,27 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		namespace,
+		annotations: { readOnlyHint: true, openWorldHint: true },
+		outputSchema: Type.Object({
+			url: Type.String(),
+			bytes: Type.Number(),
+			mimeType: Type.String(),
+			fullPage: Type.Boolean(),
+			file: Type.Union([Type.String(), Type.Null()], {
+				description: "Saved image path for oversized or unrecognized bytes; null when inline.",
+			}),
+			image: Type.Union([
+				Type.Object({
+					type: Type.Literal("image"),
+					data: Type.String({
+						description: "Base64 image bytes, identical to the model-facing image block.",
+					}),
+					mimeType: Type.String(),
+				}),
+				Type.Null(),
+			]),
+		}),
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			let bytes: Buffer;
@@ -185,16 +265,25 @@ export default function (pi: ExtensionAPI) {
 						file,
 						fullPage: params.fullPage === true,
 					},
+					structuredContent: {
+						url: params.url,
+						bytes: bytes.length,
+						mimeType,
+						fullPage: params.fullPage === true,
+						file,
+						image: null,
+					},
 				};
 			}
 
+			const image = { type: "image" as const, data: bytes.toString("base64"), mimeType };
 			return {
 				content: [
 					{
 						type: "text" as const,
 						text: `Screenshot of ${params.url} (${size}, ${mimeType}${params.fullPage ? ", full page" : ""})`,
 					},
-					{ type: "image" as const, data: bytes.toString("base64"), mimeType },
+					image,
 				],
 				details: {
 					url: params.url,
@@ -202,6 +291,14 @@ export default function (pi: ExtensionAPI) {
 					mimeType,
 					file: undefined as string | undefined,
 					fullPage: params.fullPage === true,
+				},
+				structuredContent: {
+					url: params.url,
+					bytes: bytes.length,
+					mimeType,
+					fullPage: params.fullPage === true,
+					file: null,
+					image,
 				},
 			};
 		},
@@ -228,7 +325,14 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
-		async execute(_id, params: any, signal) {
+		namespace,
+		annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+		outputSchema: Type.Object({
+			url: Type.String(),
+			bytes: Type.Number(),
+			file: Type.String({ description: "Path the PDF was written to." }),
+		}),
+		async execute(_id, params: any, signal, _onUpdate, ctx) {
 			const config = await steelConfig();
 			let bytes: Buffer;
 			try {
@@ -243,12 +347,15 @@ export default function (pi: ExtensionAPI) {
 			}
 			let file = params.output;
 			if (file) {
-				await fs.mkdir(path.dirname(path.resolve(file)), { recursive: true });
-				file = path.resolve(file);
+				file = path.resolve(ctx.cwd, file);
+				await fs.mkdir(path.dirname(file), { recursive: true });
 			} else {
 				file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "pi-steel-")), "page.pdf");
 			}
-			await fs.writeFile(file, bytes);
+			await withFileMutationQueue(file, async () => {
+				signal?.throwIfAborted();
+				await fs.writeFile(file, bytes);
+			});
 			return {
 				content: [
 					{
@@ -257,6 +364,7 @@ export default function (pi: ExtensionAPI) {
 					},
 				],
 				details: { url: params.url, bytes: bytes.length, file },
+				structuredContent: { url: params.url, bytes: bytes.length, file },
 			};
 		},
 	});
@@ -275,6 +383,21 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		namespace,
+		annotations: { readOnlyHint: true, openWorldHint: true },
+		outputSchema: Type.Object({
+			query: Type.String(),
+			count: Type.Number(),
+			results: Type.Array(
+				Type.Object({
+					title: Type.Optional(Type.String()),
+					url: Type.String(),
+					description: Type.Optional(Type.String()),
+				}),
+			),
+			truncated: Type.Boolean(),
+			fullOutputPath: Type.Optional(Type.String()),
+		}),
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			let payload: any;
@@ -283,13 +406,14 @@ export default function (pi: ExtensionAPI) {
 			} catch (error) {
 				throw new Error(explain(error, config));
 			}
-			const results: any[] = Array.isArray(payload?.results)
+			const results: { title?: string; url: string; description?: string }[] = Array.isArray(payload?.results)
 				? payload.results.slice(0, params.limit ?? 10)
 				: [];
 			if (!results.length) {
 				return {
 					content: [{ type: "text" as const, text: `No results for "${params.query}".` }],
 					details: { query: params.query, count: 0 },
+					structuredContent: { query: params.query, count: 0, results: [], truncated: false },
 				};
 			}
 			const text = results
@@ -299,9 +423,17 @@ export default function (pi: ExtensionAPI) {
 					return lines.join("\n");
 				})
 				.join("\n\n");
+			const cap = await capped(text, "search");
 			return {
-				content: [{ type: "text" as const, text: await capped(text, "search") }],
+				content: [{ type: "text" as const, text: cap.text }],
 				details: { query: params.query, count: results.length },
+				structuredContent: {
+					query: params.query,
+					count: results.length,
+					results,
+					truncated: cap.truncated,
+					...(cap.file ? { fullOutputPath: cap.file } : {}),
+				},
 			};
 		},
 	});

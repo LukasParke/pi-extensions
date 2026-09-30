@@ -1,6 +1,8 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Value } from "typebox/value";
+import type { TSchema } from "typebox";
 import { dispatchQueue, resetDispatchForTests } from "@parke.dev/pi-dispatch";
 import type { FactResult } from "../src/client.ts";
 import { resetConfigCache } from "../src/config.ts";
@@ -15,6 +17,8 @@ const { MockGraphitiClient } = vi.hoisted(() => {
 			Promise.resolve([]),
 		);
 		static addMemory = vi.fn<(input: unknown) => Promise<string>>(() => Promise.resolve("stored"));
+		static searchNodes = vi.fn<() => Promise<unknown[]>>(() => Promise.resolve([{ name: "Luke" }]));
+		static recentEpisodes = vi.fn<() => Promise<unknown[]>>(() => Promise.resolve([{ name: "Decision" }]));
 		status() {
 			return MockGraphitiClient.status();
 		}
@@ -23,6 +27,12 @@ const { MockGraphitiClient } = vi.hoisted(() => {
 		}
 		addMemory(input: unknown) {
 			return MockGraphitiClient.addMemory(input);
+		}
+		searchNodes() {
+			return MockGraphitiClient.searchNodes();
+		}
+		recentEpisodes() {
+			return MockGraphitiClient.recentEpisodes();
 		}
 		close() {}
 	}
@@ -40,7 +50,10 @@ const LONG_PROMPT = "refactor the graphiti extension to be non-blocking and conv
 
 function harness() {
 	const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
-	const tools = new Map<string, { execute: (...args: unknown[]) => Promise<unknown> }>();
+	const tools = new Map<
+		string,
+		{ execute: (...args: unknown[]) => Promise<unknown>; outputSchema?: TSchema }
+	>();
 	const pi = {
 		on: (name: string, handler: (...args: unknown[]) => unknown) => {
 			handlers.set(name, [...(handlers.get(name) ?? []), handler]);
@@ -61,6 +74,7 @@ function harness() {
 		tools,
 		ctx,
 		fire(name: string, event: Record<string, unknown> = {}) {
+			if (name === "before_agent_start") event.systemPromptOptions ??= { sections: {} };
 			const results: unknown[] = [];
 			for (const handler of handlers.get(name) ?? []) results.push(handler(event, ctx));
 			return results;
@@ -90,18 +104,65 @@ describe("graphiti extension", () => {
 		resetDispatchForTests();
 	});
 
-	it("before_agent_start returns synchronously with only the system prompt append", async () => {
+	it("adds the native memory prompt section synchronously without replacing instructions", async () => {
 		const h = harness();
 		h.fire("session_start");
-		const [result] = h.fire("before_agent_start", { prompt: LONG_PROMPT, systemPrompt: "base" }) as [
-			{ systemPrompt: string; message?: unknown },
-		];
-		expect(result).not.toBeInstanceOf(Promise);
-		expect(result.systemPrompt).toContain("base");
-		expect(result.systemPrompt).toContain("## Graphiti memory");
-		expect(result.message).toBeUndefined();
+		const event = {
+			prompt: LONG_PROMPT,
+			systemPrompt: "base",
+			systemPromptOptions: { sections: { existing: "Keep me" } },
+		};
+		const [result] = h.fire("before_agent_start", event);
+		expect(result).toBeUndefined();
+		expect(event.systemPrompt).toBe("base");
+		expect(event.systemPromptOptions.sections).toMatchObject({
+			existing: "Keep me",
+			graphiti_memory: expect.stringContaining("## Graphiti memory"),
+		});
 		// Let the background recall settle so it cannot leak into later tests.
 		await vi.waitFor(() => expect(MockGraphitiClient.searchFacts).toHaveBeenCalled());
+	});
+
+	it.each(["facts", "nodes", "episodes"])("returns schema-valid structured %s results", async (mode) => {
+		const h = harness();
+		const tool = h.tools.get("memory_recall")!;
+		const result = (await tool.execute("id", { query: "q", mode }, undefined)) as {
+			content: { text: string }[];
+			structuredContent: { mode: string; results: unknown[] };
+		};
+		expect(Value.Check(tool.outputSchema!, result.structuredContent)).toBe(true);
+		expect(result.structuredContent.mode).toBe(mode);
+		expect(result.structuredContent.results).toEqual(JSON.parse(result.content[0]!.text));
+	});
+
+	it("returns schema-valid memory writes and health data", async () => {
+		const h = harness();
+		for (const [name, params] of [
+			["memory_remember", { name: "n", body: "b" }],
+			["memory_status", {}],
+		] as const) {
+			const tool = h.tools.get(name)!;
+			const result = (await tool.execute("id", params, undefined)) as { structuredContent: unknown };
+			expect(Value.Check(tool.outputSchema!, result.structuredContent)).toBe(true);
+		}
+	});
+
+	it("does not publish a recall that finishes after session shutdown", async () => {
+		let finish!: (facts: FactResult[]) => void;
+		MockGraphitiClient.searchFacts.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const h = harness();
+		h.fire("session_start");
+		h.fire("before_agent_start", { prompt: LONG_PROMPT });
+		await vi.waitFor(() => expect(MockGraphitiClient.searchFacts).toHaveBeenCalled());
+		h.fire("session_shutdown");
+		finish([{ fact: "Stale session fact" }]);
+		await flushMicrotasks();
+		expect(dispatchQueue().size()).toBe(0);
 	});
 
 	it("never rejects when the client explodes during background recall", async () => {

@@ -5,6 +5,8 @@ description: Ask the user one multiple-choice question via ask_user when the rig
 
 # Ask User
 
+`ask_user` is model-only: call it directly, not from native codemode or another tool.
+
 Use `ask_user` when committing to the wrong fork burns a whole turn — which library,
 which of several files, migrate vs rewrite, keep vs delete. Do **not** use it for
 low-stakes choices you can reverse cheaply; pick and state the assumption instead.

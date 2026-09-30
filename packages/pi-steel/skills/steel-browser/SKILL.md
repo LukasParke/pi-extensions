@@ -32,6 +32,14 @@ Use `delay` (ms, max 30000) for pages that hydrate late. **If a scrape comes bac
 suspiciously empty, add a delay before concluding the page is broken** — that is
 the single most common false alarm.
 
+## Native codemode
+
+On Pi 0.99.1+, scripts receive typed data instead of rendered text. Forward a
+screenshot with `image(result.image)` when `image` is present; otherwise inspect
+`file`/`tooLarge`. Shared-session tools use sequential execution: await navigation,
+read, and actions in order. A selector miss is an error with data; an intentionally
+withheld oversized image is not. PDF paths are relative to the tool's `ctx.cwd`.
+
 ## Persistent session
 
 Use this when the task needs a login, a form filled, a click, or several steps of

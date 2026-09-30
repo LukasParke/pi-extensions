@@ -58,9 +58,9 @@ is suppressed. You will not be told the same thing twice, and you will not miss 
   whole process tree so child processes do not leak. Termination completes even if the
   tool call itself is aborted. Use it when a process is stuck or no longer needed.
 
-Full output is captured to spill files; tool results and completion messages show a
-truncated tail, labelled with how much was omitted. If you need the whole log, redirect it
-to a file in the command itself.
+Output is retained in memory, bounded per stream (2 MiB); tool results and completion
+messages show a truncated tail, labelled with how much was omitted. There are no spill
+files — if you need the whole log, redirect it to a file in the command itself.
 
 ## Lifecycle and the user
 

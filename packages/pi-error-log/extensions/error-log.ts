@@ -14,6 +14,7 @@ import { Type } from "typebox";
 import { errorLogConfig, logPath } from "../src/config.ts";
 import { appendError, type ErrorLogEntry, filterErrors, readErrors } from "../src/log.ts";
 import { serializeArgs } from "../src/redact.ts";
+import { errorLogResultSchema } from "../src/schemas.ts";
 
 const MAX_PENDING_ARGS = 1_000;
 const MAX_ERROR_MESSAGE = 2_000;
@@ -87,6 +88,7 @@ export default function errorLog(pi: ExtensionAPI) {
 				kind: "tool",
 				tool: event.toolName,
 				toolCallId: event.toolCallId,
+				...(event.parentToolCallId ? { parentToolCallId: event.parentToolCallId } : {}),
 				...(args !== undefined ? { args: serializeArgs(args) } : {}),
 				error: extractError(event.result),
 				...(modelRef(ctx) ? { model: modelRef(ctx) } : {}),
@@ -100,6 +102,9 @@ export default function errorLog(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "error_log",
 		label: "Error Log",
+		namespace: { name: "errors", description: "Durable sanitized tool error history" },
+		annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+		outputSchema: errorLogResultSchema,
 		description:
 			"Read tool errors captured this session (and previous sessions) from the central error log. Use to review what failed recently, filter by tool or time window, and inspect full error details.",
 		promptSnippet: "Review captured tool errors from the central error log",
@@ -124,6 +129,7 @@ export default function errorLog(pi: ExtensionAPI) {
 				return {
 					content: [{ type: "text", text: "Error log is disabled (error-log.enabled = false)." }],
 					details: { path: undefined as string | undefined, entries: [] as ErrorLogEntry[] },
+					structuredContent: { path: null, entries: [] },
 				};
 			}
 			const file = logPath(config);
@@ -137,6 +143,7 @@ export default function errorLog(pi: ExtensionAPI) {
 				return {
 					content: [{ type: "text", text: `No matching errors in ${file}.` }],
 					details: { path: file, entries: [] },
+					structuredContent: { path: file, entries: [] },
 				};
 			}
 			const lines = entries.map((entry) => {
@@ -151,6 +158,7 @@ export default function errorLog(pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text", text: `${entries.length} error(s) from ${file}:\n\n${lines.join("\n")}` }],
 				details: { path: file, entries },
+				structuredContent: JSON.parse(JSON.stringify({ path: file, entries })),
 			};
 		},
 	});

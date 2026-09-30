@@ -1,6 +1,7 @@
 import { NO_REPO_MESSAGE } from "@parke.dev/pi-github";
 import { resetDispatchForTests } from "@parke.dev/pi-dispatch";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Value } from "typebox/value";
 import { registerSentinel } from "../extensions/sentinel.ts";
 import { SentinelManager } from "../src/manager.ts";
 
@@ -30,6 +31,7 @@ function harness(manager = new SentinelManager()) {
 		ctx,
 		handlers,
 		manager,
+		tools,
 		sentMessages,
 		setIdle(value: boolean) {
 			idle = value;
@@ -45,6 +47,32 @@ function harness(manager = new SentinelManager()) {
 
 describe("sentinel extension delivery", () => {
 	afterEach(() => vi.useRealTimers());
+
+	it("returns schema-valid native watch, sleep, gate, status, and cancellation data", async () => {
+		vi.useFakeTimers();
+		const h = harness(new SentinelManager(async () => ({ exitCode: 0, stdout: "done", stderr: "" })));
+		h.setIdle(false);
+		h.fire("session_start");
+		for (const [name, params] of [
+			["sentinel_watch", { name: "checks", command: "test" }],
+			["sentinel_sleep", { minutes: 1 }],
+			["sentinel_gate", { criteria: [{ name: "ready", command: "test" }] }],
+			["sentinel_status", {}],
+			["sentinel_cancel", { all: true }],
+		] as const) {
+			const result = await h.execute(name, params);
+			expect(Value.Check(h.tools.get(name).outputSchema, result.structuredContent)).toBe(true);
+			expect(JSON.parse(JSON.stringify(result.details))).toEqual(result.structuredContent);
+		}
+		for (const tool of h.tools.values()) {
+			expect(tool.namespace.name).toBe("sentinel");
+			expect(tool.outputSchema).toBeDefined();
+		}
+		expect(h.tools.get("sentinel_status").annotations.readOnlyHint).toBe(true);
+		expect(h.tools.get("sentinel_watch").annotations.destructiveHint).toBe(true);
+		expect(h.tools.get("sentinel_gate").annotations.idempotentHint).toBe(false);
+		h.fire("session_shutdown");
+	});
 
 	it("replaces unnamed sleeps in the fixed sleep slot", async () => {
 		vi.useFakeTimers();

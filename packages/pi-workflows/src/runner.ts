@@ -86,6 +86,8 @@ export interface WorkflowExecutionResult {
 	failure?: string;
 	summary: WorkflowSummary;
 	usage: UsageStats;
+	/** Newly executed child requests only; replayed journal usage is excluded. */
+	executionUsage: UsageStats;
 }
 
 export async function executeWorkflow(options: RunWorkflowOptions): Promise<WorkflowExecutionResult> {
@@ -150,6 +152,7 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 	let completedAgents = 0;
 	let failedAgents = 0;
 	let usage = emptyUsage();
+	let executionUsage = emptyUsage();
 	// Seed progress counters from the contiguous prefix we may replay.
 	for (const entry of cursor.cached.values()) {
 		completedAgents++;
@@ -197,7 +200,7 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 			};
 		});
 
-	const onAgent = async (
+	const executeAgent = async (
 		prompt: string,
 		rawOptions: AgentRequestOptions,
 		agentSignal: AbortSignal,
@@ -315,8 +318,19 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 		completedAgents++;
 		if (!agentResult.ok) failedAgents++;
 		usage = addUsage(usage, agentResult.usage);
+		executionUsage = addUsage(executionUsage, agentResult.usage);
 		report();
 		return toSandboxResult(journalResult);
+	};
+	const pendingAgents = new Set<Promise<SandboxAgentResult>>();
+	const onAgent = (prompt: string, rawOptions: AgentRequestOptions, signal: AbortSignal) => {
+		const pending = executeAgent(prompt, rawOptions, signal);
+		pendingAgents.add(pending);
+		const remove = () => {
+			pendingAgents.delete(pending);
+		};
+		void pending.then(remove, remove);
+		return pending;
 	};
 
 	let result: unknown;
@@ -348,6 +362,7 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 		else state = "failed";
 	}
 
+	await Promise.allSettled([...pendingAgents]);
 	const laneFinal = await lane.finalize().catch(() => lane.snapshot);
 	if (result !== undefined) await writeResult(artifactPath, result).catch(() => {});
 
@@ -376,7 +391,7 @@ export async function executeWorkflow(options: RunWorkflowOptions): Promise<Work
 	}).catch(() => {});
 	report(state);
 
-	return { runId: options.runId, state, result, failure, summary, usage };
+	return { runId: options.runId, state, result, failure, summary, usage, executionUsage };
 }
 
 export function newRunId() {

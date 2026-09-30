@@ -60,6 +60,20 @@ when it exits; only call `bg_status` when you need output _now_ (server up
 before a request, how far a build has got). Check `bg_list` before starting a
 second copy of something that may already be running.
 
+## Native codemode
+
+Requires Pi **0.99.1 or newer**. Tools are grouped in `background-terminals` and
+return typed process data to native codemode. `bg_status` includes bounded
+stdout/stderr tails and exact omitted-byte counts; `bg_list` includes process
+summaries. `bg_kill` returns per-id outcomes and sets native `isError` if any
+id fails. Reading a settled result consumes it, so `bg_status` is intentionally
+not annotated as read-only or idempotent. Shutdown also cancels pending deliveries.
+
+```js
+const started = await tools.bg_start({ command: "npm run dev", title: "dev" });
+return { id: started.id, cwd: started.cwd };
+```
+
 ## Diagnostics
 
 ```

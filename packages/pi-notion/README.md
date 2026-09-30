@@ -30,6 +30,26 @@ not do.
 `/notion-login` is the masked interactive setup command: it validates the
 token against Notion's `me` endpoint and stores it under `notion.default`.
 
+## Native Pi contracts
+
+Requires Pi **0.99.1 or newer**. All six tools belong to the `notion` namespace and declare
+read/write, destructive, idempotent and open-world hints. Appending is additive and not
+idempotent. Connecting replaces a stored credential; disconnecting removes it locally.
+
+Each tool has a typed output schema. Native `codemode` receives the business data directly,
+not a text string or a `details` wrapper:
+
+```js
+const pages = await tools.notion_search({ query: "Runbook" });
+if (pages.refused) return { error: pages.error };
+return pages.rows.map((page) => ({ title: page.title, url: page.url }));
+```
+
+Structured results expose page rows, the typed block union, truncation, append counts/block IDs
+and credential status as appropriate. Refusals carry `{ refused: true, error: "..." }` and set
+`isError: true`; status refusals also retain `connected: false` and the credential source when
+known. Existing text `content`, renderer `details`, confirmations and masked login remain unchanged.
+
 ## Credentials
 
 For most interactive coding-agent users, the simplest setup is Notion's

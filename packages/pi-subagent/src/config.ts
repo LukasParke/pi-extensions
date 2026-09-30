@@ -50,6 +50,8 @@ export interface SubagentConfig {
   maxDepth: number;
   /** Grace period between SIGTERM and SIGKILL for child process trees. */
   killGraceMs: number;
+  /** Deadline for finished-worktree inspection/removal; timed-out work is preserved. */
+  worktreeFinalizeTimeoutMs: number;
   sessionDir: string;
   /** Durable root for subagent git worktrees (never a purgeable tmpdir). */
   worktreeDir: string;
@@ -111,6 +113,7 @@ export const defaultConfig: SubagentConfig = {
   maxCompletedInMemory: 20,
   maxDepth: 2,
   killGraceMs: 3_000,
+  worktreeFinalizeTimeoutMs: 8_000,
   sessionDir: path.join(os.homedir(), ".pi", "subagent-sessions"),
   worktreeDir: path.join(os.homedir(), ".pi", "subagent-worktrees"),
   lockDir: path.join(os.homedir(), ".pi", "subagent-locks"),
@@ -219,6 +222,7 @@ export function sanitizeConfigOverrides(raw: unknown): Partial<SubagentConfig> {
     maxCompletedInMemory: positiveNumber(value.maxCompletedInMemory),
     maxDepth: positiveNumber(value.maxDepth, 0),
     killGraceMs: positiveNumber(value.killGraceMs, 100),
+    worktreeFinalizeTimeoutMs: positiveNumber(value.worktreeFinalizeTimeoutMs, 1),
     sessionDir: nonEmptyString(value.sessionDir),
     worktreeDir: nonEmptyString(value.worktreeDir),
     lockDir: nonEmptyString(value.lockDir),
@@ -245,6 +249,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Partial<Sub
     defaultTimeoutMs: positiveNumber(env.PI_SUBAGENT_TIMEOUT_MS),
     maxDepth: positiveNumber(env.PI_SUBAGENT_MAX_DEPTH, 0),
     killGraceMs: positiveNumber(env.PI_SUBAGENT_KILL_GRACE_MS, 100),
+    worktreeFinalizeTimeoutMs: positiveNumber(env.PI_SUBAGENT_WORKTREE_FINALIZE_TIMEOUT_MS, 1),
     sessionDir: nonEmptyString(env.PI_SUBAGENT_SESSION_DIR),
     worktreeDir: nonEmptyString(env.PI_SUBAGENT_WORKTREE_DIR),
     lockDir: nonEmptyString(env.PI_SUBAGENT_LOCK_DIR),

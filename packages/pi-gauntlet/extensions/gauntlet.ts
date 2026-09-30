@@ -28,7 +28,12 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { truncateTail, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	CONFIG_DIR_NAME,
+	truncateTail,
+	type ExtensionAPI,
+	type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { defaultConfig, gauntletConfig } from "../src/config.ts";
 import { GauntletEngine, type CheckExecResult, type GauntletState } from "../src/loop.ts";
@@ -50,6 +55,25 @@ const gauntletParams = Type.Object(
 );
 /** Per-check output kept in state and reports; tails are what matter for failures. */
 const OUTPUT_TAIL_BYTES = 2_048;
+const resultsSchema = Type.Record(
+	Type.String(),
+	Type.Object({ code: Type.Integer(), output: Type.String() }),
+);
+const outputSchema = Type.Object({
+	message: Type.String(),
+	isError: Type.Boolean(),
+	state: Type.Optional(
+		Type.Object({
+			goal: Type.Optional(Type.String()),
+			active: Type.Boolean(),
+			iteration: Type.Integer(),
+			checks: Type.Array(Type.Object({ name: Type.String(), command: Type.String() })),
+			results: resultsSchema,
+		}),
+	),
+	passed: Type.Optional(Type.Boolean()),
+	results: Type.Optional(resultsSchema),
+});
 
 export default function (pi: ExtensionAPI) {
 	let engine: GauntletEngine | undefined;
@@ -92,7 +116,7 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.isProjectTrusted()) return undefined;
 		try {
 			const checks = parseSeedChecks(
-				JSON.parse(await readFile(join(ctx.cwd, ".pi", "gauntlet.json"), "utf8")),
+				JSON.parse(await readFile(join(ctx.cwd, CONFIG_DIR_NAME, "gauntlet.json"), "utf8")),
 			);
 			if (!checks) return undefined;
 			return { active: false, iteration: 0, checks, results: {} };
@@ -205,6 +229,9 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "gauntlet",
 		label: "Gauntlet",
+		namespace: { name: "gauntlet", description: "Goal verification with named shell checks" },
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+		outputSchema,
 		description:
 			"Drive the goal/gauntlet loop: named shell checks that must all exit 0. " +
 			"start sets a goal and, after each agent run, runs every check and injects failures back until all pass, " +
@@ -214,34 +241,35 @@ export default function (pi: ExtensionAPI) {
 		parameters: gauntletParams,
 		async execute(_id, params: Static<typeof gauntletParams>, _signal, _onUpdate, ctx) {
 			lastCtx = ctx;
-			if (!engine) {
-				return {
-					content: [{ type: "text" as const, text: "Gauntlet is not initialized yet." }],
-					details: {},
-				};
-			}
-			const text = (t: string, details: Record<string, unknown> = {}) => ({
+			const text = (t: string, details: Record<string, unknown> = {}, isError = false) => ({
 				content: [{ type: "text" as const, text: t }],
 				details,
+				structuredContent: JSON.parse(JSON.stringify({ message: t, ...details, isError })),
+				isError,
 			});
+			if (!engine) return text("Gauntlet is not initialized yet.", {}, true);
 			switch (params.action) {
 				case "add_check": {
 					const name = params.name?.trim();
 					const command = params.command?.trim();
-					if (!name || !command) return text("add_check needs both name and command.");
+					if (!name || !command) return text("add_check needs both name and command.", {}, true);
 					engine.addCheck(name, command);
 					return text(`Check "${name}" saved.`);
 				}
 				case "remove_check": {
 					const name = params.name?.trim();
-					if (!name) return text("remove_check needs a name.");
+					if (!name) return text("remove_check needs a name.", {}, true);
 					return text(engine.removeCheck(name) ? `Check "${name}" removed.` : `No check named "${name}".`);
 				}
 				case "start": {
 					const goal = params.goal?.trim() || engine.state.goal;
-					if (!goal) return text("start needs a goal — pass one, or set one first.");
+					if (!goal) return text("start needs a goal — pass one, or set one first.", {}, true);
 					if (engine.state.checks.length === 0) {
-						return text("No gauntlet checks defined. Add checks with add_check before starting the loop.");
+						return text(
+							"No gauntlet checks defined. Add checks with add_check before starting the loop.",
+							{},
+							true,
+						);
 					}
 					engine.start(goal);
 					return text(
@@ -271,7 +299,7 @@ export default function (pi: ExtensionAPI) {
 					return text(lines.join("\n"), { passed, results });
 				}
 				default:
-					return text(`Unknown action "${String(params.action)}".`);
+					return text(`Unknown action "${String(params.action)}".`, {}, true);
 			}
 		},
 	});

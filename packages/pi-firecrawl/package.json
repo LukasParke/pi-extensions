@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-firecrawl",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Firecrawl search, scrape, map and crawl tools for the pi coding agent",
   "type": "module",
   "license": "MIT",

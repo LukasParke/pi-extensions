@@ -14,6 +14,14 @@ complete before their criteria pass.
 | `sentinel_status` | Show attached PRs, watches, sleeps, gate state, output, and poll ETAs        |
 | `sentinel_cancel` | Cancel one sentinel, the gate, or everything, including queued notifications |
 
+## Native Pi integration
+
+Requires Pi **0.99.1 or newer**. Tools are grouped under `sentinel`; native
+codemode receives watch/sleep/PR snapshots, gate criteria, full status snapshots,
+or cancelled names. Final-settlement wakeup behavior is unchanged. Status is
+annotated as a local read; command-backed watches/gates are conservatively
+annotated because they can run arbitrary shell commands.
+
 ## Install
 
 ```bash

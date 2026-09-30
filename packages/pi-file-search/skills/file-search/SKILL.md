@@ -9,6 +9,26 @@ Prefer these tools over `bash find` and `bash grep`. They are faster, respect
 `.gitignore` by default, skip hidden files (and binaries, for `rg`), bound their
 output, and cannot turn a user pattern into a shell flag.
 
+## Native `find`/`grep` vs these `fd`/`rg` tools
+
+Pi also ships native `find` and `grep` tools. They are not replacements for these
+specialized tools — the `fd`/`rg` tools here preserve semantics the native ones do not:
+
+- gitignore-aware defaults with a single `hidden: true` escape hatch that enables both
+  hidden and ignored files
+- automatic multiline mode when a pattern contains a newline, and automatic glob retry
+  for `*`/`?`-leading fd patterns (with notes when either fires)
+- smart-case by default on `rg` (omit `case_sensitive`), with per-file match limits
+- partial-I/O tolerance: unreadable paths (broken symlinks, permissions) still return
+  real matches, marked `partial: true` with a note, instead of failing the whole search
+- bounded output with the full result set spilled to a temp file when truncated
+
+Use `fd`/`rg` when you need any of that (usually: code search in a real repo). The
+native `find`/`grep` tools are fine for simple one-off lookups. Both `fd` and `rg`
+also return structured results: `fd.paths` contains complete bounded paths;
+`rg.output` and `rg.lines` preserve matches, requested context, and filenames without
+ambiguous colon parsing. Truncated results include a `file` path for the full output.
+
 ## `fd` — find files by name
 
 ```

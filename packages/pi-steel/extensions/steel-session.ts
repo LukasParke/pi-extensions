@@ -42,6 +42,43 @@ import { CdpSession, jsString, waitForIdle } from "../src/cdp.ts";
 import { headers } from "../src/client.ts";
 import { cdpBase, type SteelConfig, steelConfig } from "../src/config.ts";
 
+const namespace = { name: "steel", description: "Self-hosted Steel browser tools" };
+
+const sessionOutput = Type.Object({
+	action: StringEnum(["start", "status", "end"]),
+	live: Type.Boolean(),
+	id: Type.Union([Type.String(), Type.Null()]),
+	url: Type.Union([Type.String(), Type.Null()]),
+	viewerUrl: Type.Union([Type.String(), Type.Null()]),
+	released: Type.Union([Type.String(), Type.Null()]),
+});
+
+const readField = Type.Object({
+	selector: Type.String(),
+	unique: Type.Boolean(),
+	tag: Type.String(),
+	type: Type.Union([Type.String(), Type.Null()]),
+	label: Type.String(),
+	required: Type.Boolean(),
+});
+
+const readOutput = Type.Object({
+	mode: StringEnum(["text", "links", "forms", "all"]),
+	sessionId: Type.String(),
+	url: Type.Optional(Type.String()),
+	title: Type.Optional(Type.String()),
+	text: Type.Optional(Type.String()),
+	links: Type.Optional(Type.Array(Type.Object({ text: Type.String(), href: Type.String() }))),
+	fields: Type.Optional(Type.Array(readField)),
+	buttons: Type.Optional(Type.Array(readField)),
+	truncated: Type.Boolean({
+		description: "Whether the model-facing text was capped; extraction limits still apply.",
+	}),
+	error: Type.Union([Type.String(), Type.Null()], {
+		description: "Read failure, e.g. selector matched nothing; null on success.",
+	}),
+});
+
 /** Uniform detail shape for steel_session so every branch types identically. */
 interface LookDetails {
 	url?: string;
@@ -155,10 +192,13 @@ async function releaseSession(config: SteelConfig): Promise<string | undefined> 
 	return id;
 }
 
-async function capped(text: string, label: string): Promise<string> {
+async function capped(text: string, label: string): Promise<{ text: string; truncated: boolean }> {
 	const result = truncateHead(text, { maxBytes: DEFAULT_MAX_BYTES, maxLines: DEFAULT_MAX_LINES });
-	if (!result.truncated) return result.content;
-	return `${result.content}\n\n[truncated ${label}; use steel_read with a selector to narrow it down]`;
+	if (!result.truncated) return { text: result.content, truncated: false };
+	return {
+		text: `${result.content}\n\n[truncated ${label}; use steel_read with a selector to narrow it down]`,
+		truncated: true,
+	};
 }
 
 /**
@@ -281,6 +321,10 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		namespace,
+		executionMode: "sequential",
+		annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: true },
+		outputSchema: sessionOutput,
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			if (params.action === "end") {
@@ -291,6 +335,14 @@ export default function (pi: ExtensionAPI) {
 						{ type: "text" as const, text: id ? `Released Steel session ${id}.` : "No live Steel session." },
 					],
 					details: { action: "end", released: id ?? null } as SessionDetails,
+					structuredContent: {
+						action: "end",
+						live: false,
+						id: null,
+						url: null,
+						viewerUrl: null,
+						released: id ?? null,
+					},
 				};
 			}
 			if (params.action === "status") {
@@ -300,6 +352,14 @@ export default function (pi: ExtensionAPI) {
 							{ type: "text" as const, text: "No live Steel session. Use action:'start' to open one." },
 						],
 						details: { action: "status", live: false } as SessionDetails,
+						structuredContent: {
+							action: "status",
+							live: false,
+							id: null,
+							url: null,
+							viewerUrl: null,
+							released: null,
+						},
 					};
 				}
 				const age = Math.round((Date.now() - live.startedAt) / 1000);
@@ -320,6 +380,14 @@ export default function (pi: ExtensionAPI) {
 						},
 					],
 					details: { action: "status", live: true, id: live.id, url } as SessionDetails,
+					structuredContent: {
+						action: "status",
+						live: true,
+						id: live.id,
+						url: url ?? null,
+						viewerUrl: live.viewerUrl ?? null,
+						released: null,
+					},
 				};
 			}
 			const session = await ensureSession(config, signal);
@@ -338,6 +406,14 @@ export default function (pi: ExtensionAPI) {
 					},
 				],
 				details: { action: "start", id: session.id, viewerUrl: session.viewerUrl ?? null } as SessionDetails,
+				structuredContent: {
+					action: "start",
+					live: true,
+					id: session.id,
+					url: session.lastUrl ?? null,
+					viewerUrl: session.viewerUrl ?? null,
+					released: null,
+				},
 			};
 		},
 	});
@@ -360,6 +436,17 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		namespace,
+		executionMode: "sequential",
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+		outputSchema: Type.Object({
+			url: Type.String(),
+			sessionId: Type.String(),
+			title: Type.Optional(Type.String()),
+			text: Type.Optional(Type.String({ description: "Visible text, limited to 40,000 characters." })),
+			error: Type.Optional(Type.String()),
+			truncated: Type.Boolean(),
+		}),
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			const session = await ensureSession(config, signal);
@@ -370,9 +457,19 @@ export default function (pi: ExtensionAPI) {
 			session.lastUrl = params.url;
 			refreshStatus();
 			const data = await cdp.evaluate<any>(READ_SCRIPT("text", undefined));
+			const cap = await capped(renderRead(data), "page text");
 			return {
-				content: [{ type: "text" as const, text: await capped(renderRead(data), "page text") }],
+				isError: Boolean(data?.error),
+				content: [{ type: "text" as const, text: cap.text }],
 				details: { url: data?.url ?? params.url, title: data?.title, sessionId: session.id },
+				structuredContent: {
+					url: data?.url ?? params.url,
+					sessionId: session.id,
+					...(typeof data?.title === "string" ? { title: data.title } : {}),
+					...(typeof data?.text === "string" ? { text: data.text } : {}),
+					...(data?.error ? { error: String(data.error) } : {}),
+					truncated: cap.truncated,
+				},
 			};
 		},
 	});
@@ -405,6 +502,15 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		namespace,
+		executionMode: "sequential",
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+		outputSchema: Type.Object({
+			action: StringEnum(["click", "type", "press", "select", "scroll", "wait"]),
+			selector: Type.Union([Type.String(), Type.Null()]),
+			url: Type.Optional(Type.String({ description: "Page URL after the action settled." })),
+			summary: Type.String(),
+		}),
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			const session = await ensureSession(config, signal);
@@ -510,6 +616,12 @@ export default function (pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text" as const, text: `${summary}. Now at ${url ?? "unknown url"}.` }],
 				details: { action: params.action, selector: params.selector ?? null, url },
+				structuredContent: {
+					action: params.action,
+					selector: params.selector ?? null,
+					...(typeof url === "string" ? { url } : {}),
+					summary,
+				},
 			};
 		},
 	});
@@ -530,14 +642,33 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		namespace,
+		executionMode: "sequential",
+		annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: true },
+		outputSchema: readOutput,
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			const session = await ensureSession(config, signal);
 			refreshStatus();
-			const data = await session.cdp!.evaluate<any>(READ_SCRIPT(params.mode ?? "text", params.selector));
+			const mode = params.mode ?? "text";
+			const data = await session.cdp!.evaluate<any>(READ_SCRIPT(mode, params.selector));
+			const cap = await capped(renderRead(data), "page content");
 			return {
-				content: [{ type: "text" as const, text: await capped(renderRead(data), "page content") }],
-				details: { mode: params.mode ?? "text", url: data?.url, sessionId: session.id },
+				content: [{ type: "text" as const, text: cap.text }],
+				details: { mode, url: data?.url, sessionId: session.id },
+				structuredContent: {
+					mode,
+					sessionId: session.id,
+					...(typeof data?.url === "string" ? { url: data.url } : {}),
+					...(typeof data?.title === "string" ? { title: data.title } : {}),
+					...(typeof data?.text === "string" ? { text: data.text } : {}),
+					...(Array.isArray(data?.links) ? { links: data.links } : {}),
+					...(Array.isArray(data?.fields) ? { fields: data.fields } : {}),
+					...(Array.isArray(data?.buttons) ? { buttons: data.buttons } : {}),
+					truncated: cap.truncated,
+					error: data?.error ? String(data.error) : null,
+				},
+				isError: Boolean(data?.error),
 			};
 		},
 	});
@@ -555,6 +686,27 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		namespace,
+		executionMode: "sequential",
+		annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: true },
+		outputSchema: Type.Object({
+			url: Type.Optional(Type.String()),
+			bytes: Type.Number(),
+			mimeType: Type.String(),
+			fullPage: Type.Boolean(),
+			tooLarge: Type.Boolean({
+				description: "True when the image exceeded the inline budget and was withheld.",
+			}),
+			image: Type.Optional(
+				Type.Object({
+					type: Type.Literal("image"),
+					data: Type.String({
+						description: "Base64 image bytes, identical to the model-facing image block.",
+					}),
+					mimeType: Type.String(),
+				}),
+			),
+		}),
 		async execute(_id, params: any, signal) {
 			const config = await steelConfig();
 			const session = await ensureSession(config, signal);
@@ -575,14 +727,30 @@ export default function (pi: ExtensionAPI) {
 						},
 					],
 					details: { url, bytes: bytes.length, fullPage: params.fullPage === true } as LookDetails,
+					structuredContent: {
+						...(typeof url === "string" ? { url } : {}),
+						bytes: bytes.length,
+						mimeType,
+						fullPage: params.fullPage === true,
+						tooLarge: true,
+					},
 				};
 			}
+			const image = { type: "image" as const, data: bytes.toString("base64"), mimeType };
 			return {
 				content: [
 					{ type: "text" as const, text: `Current page: ${url ?? "unknown"} (${formatSize(bytes.length)})` },
-					{ type: "image" as const, data: bytes.toString("base64"), mimeType },
+					image,
 				],
 				details: { url, bytes: bytes.length, fullPage: params.fullPage === true } as LookDetails,
+				structuredContent: {
+					...(typeof url === "string" ? { url } : {}),
+					bytes: bytes.length,
+					mimeType,
+					fullPage: params.fullPage === true,
+					tooLarge: false,
+					image,
+				},
 			};
 		},
 	});

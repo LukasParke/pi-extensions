@@ -69,6 +69,12 @@ If the catalog fetch fails, sync aborts and leaves `models.json` untouched.
 
 ## Benchmark harness
 
+The benchmark targets Pi **0.99.1 or newer**. Direct provider streams take a
+native `TranscriptContext`; each turn uses `normalizeContext()` to fold in the
+system/tool declarations and include every preceding assistant/tool-result turn.
+The full-catalog generator and benchmarked surface-routing rules remain intact:
+Pi's native catalog refresh is not a replacement for them.
+
 ```sh
 bun run benchmark [model] [--trials N] [--surfaces completions,responses,messages]
 ```

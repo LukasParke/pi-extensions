@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-github",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "GitHub pull requests, reviews, checks and issues for the Pi coding agent",
   "type": "module",
   "license": "MIT",

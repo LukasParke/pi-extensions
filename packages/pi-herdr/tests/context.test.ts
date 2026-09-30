@@ -194,38 +194,39 @@ describe("runtime guards", () => {
 });
 
 describe("prompt context", () => {
-	it("adds concise standalone guidance without persistent messages or duplicates", async () => {
+	it("adds a native section without replacing existing instructions", async () => {
 		setProcessEnv({});
 		const app = harness([]);
-		const first = (await app.emit("before_agent_start", { systemPrompt: "base" })) as {
-			systemPrompt: string;
-		};
-		const second = (await app.emit("before_agent_start", first)) as { systemPrompt: string };
-		expect(first).not.toHaveProperty("message");
-		expect(second.systemPrompt.match(/Herdr context:/g)).toHaveLength(1);
-		expect(second.systemPrompt).toContain("subagent or background terminals");
+		const event = { systemPrompt: "base", systemPromptOptions: { sections: { existing: "Keep me" } } };
+		expect(await app.emit("before_agent_start", event)).toBeUndefined();
+		expect(await app.emit("before_agent_start", event)).toBeUndefined();
+		expect(event.systemPrompt).toBe("base");
+		expect(event.systemPromptOptions.sections).toMatchObject({
+			existing: "Keep me",
+			herdr_context: expect.stringContaining("subagent or background terminals"),
+		});
 	});
 
-	it("includes safe managed identity and refreshes stale context", async () => {
-		setProcessEnv(managedEnv());
-		const app = harness([]);
-		const result = (await app.emit("before_agent_start", {
-			systemPrompt: `${herdrContextLine(detectHerdrContext({}))}\nbase`,
-		})) as { systemPrompt: string };
-		expect(result.systemPrompt).toContain("workspace workspace-1, tab tab-2, pane pane-3");
-		expect(result.systemPrompt).not.toContain("standalone Pi session");
-		expect(result.systemPrompt).not.toContain("herdr.sock");
-	});
-
-	it("re-evaluates environment between turns", async () => {
+	it("refreshes the native context section between turns with safe identity", async () => {
 		setProcessEnv({});
 		const app = harness([]);
-		const standalone = (await app.emit("before_agent_start", { systemPrompt: "base" })) as {
-			systemPrompt: string;
-		};
+		const event = { systemPrompt: "base", systemPromptOptions: { sections: { herdr_context: "stale" } } };
+		await app.emit("before_agent_start", event);
+		expect(event.systemPromptOptions.sections.herdr_context).toContain("standalone");
 		setProcessEnv(managedEnv());
-		const managed = withHerdrContext(standalone.systemPrompt, detectHerdrContext());
-		expect(managed).toContain("managed Pi session");
-		expect(managed.match(/Herdr context:/g)).toHaveLength(1);
+		await app.emit("before_agent_start", event);
+		expect(event.systemPromptOptions.sections.herdr_context).toContain(
+			"workspace workspace-1, tab tab-2, pane pane-3",
+		);
+		expect(event.systemPromptOptions.sections.herdr_context).not.toContain("standalone Pi session");
+		expect(event.systemPromptOptions.sections.herdr_context).not.toContain("herdr.sock");
+		expect(event.systemPrompt).toBe("base");
+	});
+
+	it("keeps the public plain-text context helper idempotent", () => {
+		const context = detectHerdrContext(managedEnv());
+		const first = withHerdrContext("base", context);
+		expect(withHerdrContext(first, context)).toBe(first);
+		expect(first).toContain(herdrContextLine(context));
 	});
 });

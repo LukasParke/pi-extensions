@@ -57,6 +57,12 @@ export default function (pi: ExtensionAPI) {
 			},
 			{ additionalProperties: false },
 		),
+		exposure: "model-only",
+		namespace: {
+			name: "ask-user",
+			description: "Interactive user dialog for genuinely ambiguous decisions.",
+		},
+		annotations: { readOnlyHint: true, openWorldHint: false },
 		async execute(_id, params: any, signal, _onUpdate, ctx) {
 			const options: Array<{ label: string; description?: string }> = params.options;
 

@@ -1,6 +1,7 @@
 # @parke.dev/pi-linear
 
 Linear issues: read, search, comment on and transition tickets, as a Pi extension.
+Requires Pi **0.99.1 or newer**.
 
 ```sh
 pi install npm:@parke.dev/pi-linear
@@ -31,6 +32,22 @@ not do.
 
 `/linear-login` is the masked interactive setup command: it validates the key
 against Linear's `viewer` and stores it under `linear.default`.
+
+## Native codemode
+
+Tools are grouped in the native `linear` namespace and return typed business data
+to Pi's `codemode`; direct calls keep their text and TUI renderers. For example:
+
+```js
+const result = await tools.linear_issues({ mine: true });
+if (result.refused) return result;
+return result.rows.map(({ identifier, title, state }) => ({ identifier, title, state }));
+```
+
+Every output schema includes a `{ refused: true }` alternative. Refusals set
+native `isError`; no matching issues or states is a successful empty list. Reads
+are annotated as read-only and open-world. Remote writes and credential changes
+are non-read-only; codemode does not bypass authentication or confirmation.
 
 ## Credentials
 

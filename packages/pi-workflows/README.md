@@ -43,6 +43,18 @@ pi install npm:@parke.dev/pi-subagent
 Requires a Node build that supports permission mode (`>=22.19.0`). The sandbox
 **refuses to run** without `--permission`.
 
+## Native Pi integration
+
+Requires Pi **0.99.1 or newer**. `workflow` uses native `model-only` exposure:
+it orchestrates child agents, while native `codemode` batches tools in this
+session. Codemode does not replace budgets, journals, resume, or worktree lanes.
+
+Tool delivery reports newly executed child usage to Pi once, including failed
+runs. Replayed journal usage remains in the workflow summary but is not billed
+again; a later `wait` can report usage after a background completion notification.
+Ultracode uses a native prompt section and restores one-shot thinking only after
+final settlement, so automatic retries keep the policy active.
+
 ## When NOT to use this
 
 If you already know the task list, use the `subagent` tool's `tasks` array.
@@ -100,6 +112,11 @@ Each run writes an append-only journal under
 `result.json`, `summary.json`). Resume restarts the script and replays the
 **contiguous completed prefix** of `agent()` calls (matched by request id +
 hash of prompt/options). Source, args, and cwd must still match.
+
+Cancellation requests abort children but do not make a run terminal until its
+promise settles. Same-ID resume is blocked during cleanup, and session shutdown
+still drains cancelled-but-unsettled runs. Child/worktree cleanup is awaited
+before terminal accounting; worktree finalization has a bounded safety deadline.
 
 Session custom entries (`workflow-run-v1`) hold lightweight summaries; full
 outputs stay in the artifact directory.
