@@ -3,6 +3,11 @@
 Dispatch tasks to pi agents running in [herdr](https://github.com/LukasParke/herdr)-managed
 git worktrees, from inside the [Pi coding agent](https://pi.dev).
 
+Native-themed tool rows prioritize the agent and lifecycle state, with branch
+and worktree context. Collapsed results use at most five rows; expanded output
+shows up to 40 body rows with overflow disclosure. Refused cleanup and unavailable
+transcripts remain visible rather than looking like successful work.
+
 ```sh
 pi install npm:@parke.dev/pi-herdr
 ```

@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-sentinel",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Criteria-gated wakeups for Pi agents watching CI, reviews, deployments and other external state",
   "type": "module",
   "license": "MIT",
@@ -49,7 +49,7 @@
   },
   "dependencies": {
     "@parke.dev/pi-dispatch": "^0.1.1",
-    "@parke.dev/pi-github": "^0.2.0"
+    "@parke.dev/pi-github": "^0.3.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

@@ -87,6 +87,17 @@ Notable opt-ins:
   then set `"enabled": true` in `~/.pi/dashboard.json` (or
   `PI_DASHBOARD_ENABLED=true`).
 
+## Native presentation and budgets
+
+Tool previews, widgets and inspectors share Pi's native theme and width handling.
+Expand tool results for diagnostics, bodies and artifacts; use `/subagents` and
+`/workflows` for run details. The dashboard remains opt-in.
+
+Subagent and workflow turns/spend are unbounded by default. Explicit per-run
+budgets remain enforced; workflow config ceilings are retired. Timeouts,
+cancellation, concurrency, nesting and permission controls remain in place.
+See [presentation and migration details](docs/extension-ui.md).
+
 ## Develop
 
 ```bash

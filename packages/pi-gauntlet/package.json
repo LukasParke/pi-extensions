@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-gauntlet",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Goal + gauntlet loop for the pi coding agent: named shell checks that must pass before the agent stops iterating",
   "type": "module",
   "license": "MIT",

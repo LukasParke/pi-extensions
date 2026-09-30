@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-error-log",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Captures every tool error in a pi session into one reviewable JSONL log",
   "type": "module",
   "license": "MIT",

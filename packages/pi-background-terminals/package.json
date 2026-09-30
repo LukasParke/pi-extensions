@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-background-terminals",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Long-running shell commands for the pi coding agent: dev servers, watchers and builds that keep running while the agent works",
   "type": "module",
   "license": "MIT",

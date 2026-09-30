@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-integrations",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Git, GitHub, Slack, Linear and Notion integrations for the Pi coding agent",
   "type": "module",
   "license": "MIT",
@@ -34,11 +34,11 @@
     "access": "public"
   },
   "dependencies": {
-    "@parke.dev/pi-git": "^0.2.0",
-    "@parke.dev/pi-github": "^0.2.0",
-    "@parke.dev/pi-linear": "^0.2.0",
-    "@parke.dev/pi-notion": "^0.2.0",
-    "@parke.dev/pi-slack": "^0.2.0"
+    "@parke.dev/pi-git": "^0.3.0",
+    "@parke.dev/pi-github": "^0.3.0",
+    "@parke.dev/pi-linear": "^0.3.0",
+    "@parke.dev/pi-notion": "^0.3.0",
+    "@parke.dev/pi-slack": "^0.3.0"
   },
   "bundledDependencies": [
     "@parke.dev/pi-git",

@@ -5,6 +5,11 @@ Sentinel polls or streams shell commands extension-side, wakes the model only fo
 meaningful transitions, and prevents babysitting tasks from being declared
 complete before their criteria pass.
 
+The native-themed widget shows up to three named monitors, their states and next
+poll time, plus any completion gate and overflow disclosure. Activity uses accent;
+blocked/waiting state uses warning. Use `sentinel_status` for the full monitor list.
+Polling, wake delivery and completion gates are unchanged.
+
 | Tool              | What it does                                                                 |
 | ----------------- | ---------------------------------------------------------------------------- |
 | `sentinel_pr`     | Attach a GitHub PR and wake for conflicts, broken CI, reviews, or closure    |

@@ -3,6 +3,10 @@
 Long-running shell commands for the [pi coding agent](https://pi.dev): dev
 servers, watchers and builds that keep running while the agent works.
 
+Active terminals use a native-themed, width-aware widget: title first, then ID
+and elapsed time. It shows up to four terminals with overflow disclosure; use
+`/ps` for the full list. The widget clears when no terminals remain active.
+
 Four tools plus a `/ps` command:
 
 | Tool        | What it does                                                       |

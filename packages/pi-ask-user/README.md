@@ -2,7 +2,9 @@
 
 Requires Pi **0.99.1 or newer**. `ask_user` uses native `model-only` exposure:
 it remains directly available to the model, but cannot be called from codemode
-scripts or another tool. TUI and RPC dialogs are still supported.
+scripts or another tool. TUI and RPC dialogs are still supported. Cancellation
+before or during either dialog returns no answer; dismissal is a separate outcome,
+and blocked-state indicators are released even when a dialog fails.
 
 One tool for the [pi coding agent](https://pi.dev): `ask_user`. Lets the model
 ask you a single multiple-choice question when the right course of action is

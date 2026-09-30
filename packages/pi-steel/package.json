@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-steel",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Steel browser tools for the pi coding agent: scrape, search, screenshot, PDF, plus a persistent session for logins and multi-step flows",
   "type": "module",
   "license": "MIT",

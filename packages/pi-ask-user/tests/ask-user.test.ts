@@ -82,6 +82,52 @@ describe("ask_user dialogs", () => {
 		expect(h.emit.mock.calls).toEqual([...blocked, ...blocked]);
 	});
 
+	it("does not open dialogs or emit blocked state without a UI", async () => {
+		const h = harness("A — first");
+		const ctx = { ...h.ctx, hasUI: false };
+		const result = await h.tool.execute("id", params, new AbortController().signal, undefined, ctx);
+		expect(result.details).toMatchObject({ answer: null, outcome: "no-ui" });
+		expect(h.select).not.toHaveBeenCalled();
+		expect(h.emit).not.toHaveBeenCalled();
+	});
+
+	it("does not open a pre-cancelled question", async () => {
+		const h = harness("A — first");
+		const controller = new AbortController();
+		controller.abort();
+		const result = await h.tool.execute("id", params, controller.signal, undefined, h.ctx);
+		expect(result.details).toMatchObject({ answer: null, outcome: "cancelled" });
+		expect(h.select).not.toHaveBeenCalled();
+		expect(h.emit).not.toHaveBeenCalled();
+	});
+
+	it.each(["selection", "input"])("does not treat %s cancellation as an answer", async (stage) => {
+		const h = harness("Let me type my own answer…", "late answer");
+		const controller = new AbortController();
+		if (stage === "selection")
+			h.select.mockImplementation(async () => {
+				controller.abort();
+				return "A — first";
+			});
+		else
+			h.input.mockImplementation(async () => {
+				controller.abort();
+				return "late answer";
+			});
+		const result = await h.tool.execute("id", params, controller.signal, undefined, h.ctx);
+		expect(result.details).toMatchObject({ answer: null, outcome: "cancelled" });
+		expect(h.emit.mock.calls).toEqual(stage === "selection" ? blocked : [...blocked, ...blocked]);
+	});
+
+	it("releases blocked state when a native dialog throws", async () => {
+		const h = harness(undefined);
+		h.select.mockRejectedValue(new Error("native dialog failure"));
+		await expect(
+			h.tool.execute("id", params, new AbortController().signal, undefined, h.ctx),
+		).rejects.toThrow("native dialog failure");
+		expect(h.emit.mock.calls).toEqual(blocked);
+	});
+
 	it("releases the signal when the option dialog is dismissed", async () => {
 		const h = harness(undefined);
 		const result = await h.tool.execute("id", params, new AbortController().signal, undefined, h.ctx);
