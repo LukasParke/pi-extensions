@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import register from "../src/extension.js";
 import { RUN_ENTRY_TYPE } from "../src/persistence.js";
+import { visibleWidth } from '@earendil-works/pi-tui';
 import { isolateConfigEnv, makeIsolatedDirs, type IsolatedDirs } from "./helpers/test-config.js";
 
 interface Harness {
@@ -324,6 +325,65 @@ describe("extension end-to-end wiring", () => {
     );
     expect(typeof rendered.render).toBe("function");
     expect(rendered.render(80)).toEqual(expect.any(Array));
+  });
+
+  it('reuses inline components, renders failures honestly, and omits trivial expand hints', () => {
+    const h = harness();
+    const theme = h.ctx.ui.theme;
+    const options = { expanded: false, isPartial: false };
+    const component = h.tool.renderResult({ content: [{ type: 'text', text: '\x1b[31mFailure\x1b[0m\nDetails' }] }, options, theme, { isError: true });
+    expect(component.render(60).join('\n')).toContain('Failure');
+    expect(component.render(60).join('\n')).not.toContain('Details');
+    const result = { details: { mode: 'single', state: 'completed', results: [{ label: 'Audit files', state: 'completed', finalOutput: 'ok' }] }, content: [] };
+    const updated = h.tool.renderResult(result, options, theme, { lastComponent: component });
+    expect(updated).toBe(component);
+    expect(updated.render(60)).toHaveLength(2);
+    expect(updated.render(60).join('\n')).not.toMatch(/expand|ctrl\+o/);
+  });
+
+  it('completion rows share glance vocabulary and keep accounting expanded', () => {
+    const h = harness();
+    const renderer = h.pi.registerMessageRenderer.mock.calls.find((call: unknown[]) => call[0] === 'subagent-completion')[1];
+    const message = { details: { runs: [{ id: 'id', label: 'Audit files', state: 'failed', preview: 'Provider failed', cost: 1, turns: 8, tokens: 1000, output: 100, durationMs: 12_000, model: 'provider/model', pointers: ['/tmp/output.md'] }] } };
+    for (const width of [12, 60, 80, 120]) {
+      const compact = renderer(message, { expanded: false }, h.ctx.ui.theme).render(width);
+      expect(compact.every((line: string) => visibleWidth(line) <= width)).toBe(true);
+      expect(compact.join('\n')).not.toMatch(/tok|↻|\$/);
+      const expanded = renderer(message, { expanded: true }, h.ctx.ui.theme).render(width);
+      expect(expanded.every((line: string) => visibleWidth(line) <= width)).toBe(true);
+      if (width >= 60) {
+        expect(compact.join('\n')).toContain('failed 12s · model');
+        expect(expanded.join('\n')).toContain('/tmp/output.md');
+        expect(expanded.join('\n')).toContain('↻8');
+      }
+    }
+  });
+
+  it('background widget uses native themed width-aware components and clears on settlement', async () => {
+    const h = harness();
+    h.ctx.hasUI = true;
+    await h.handlers.get('session_start')!({}, h.ctx);
+    process.env.FAKE_PI_MODE = 'signal';
+    const started = await execute(h, { task: 'long prompt', description: 'Audit files', profile: 'explore', async: true });
+    const id = runId(started.content[0].text);
+    let factory: Function | undefined;
+    await vi.waitFor(() => {
+      factory = h.ctx.ui.setWidget.mock.calls.findLast((call: unknown[]) => call[0] === 'subagent' && typeof call[1] === 'function')?.[1];
+      expect(factory).toBeTruthy();
+    });
+    for (const width of [12, 60, 80, 120]) {
+      const component = factory!({}, h.ctx.ui.theme);
+      const lines = component.render(width);
+      expect(lines.every((line: string) => visibleWidth(line) <= width)).toBe(true);
+      expect(lines.join('\n')).not.toMatch(/tok|↻|\$|⚙|├|└|⎿/);
+      if (width >= 60) expect(lines.join('\n')).toContain('Audit files');
+    }
+    const themed = factory!({}, { fg: (_tone: string, text: string) => `\x1b[32m${text}\x1b[0m`, bold: (text: string) => text });
+    expect(themed.render(80).join('\n')).toContain('\x1b[32m');
+    await execute(h, { action: 'cancel', id });
+    await execute(h, { action: 'wait', id });
+    expect(h.ctx.ui.setWidget).toHaveBeenLastCalledWith('subagent', undefined);
+    await h.handlers.get('session_shutdown')!();
   });
 
   it("shutdown cancels and awaits live work without cross-session append", async () => {

@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-file-search",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "First-class fd and rg tools for the pi coding agent (uses system or agent-bin binaries; no automatic download)",
   "type": "module",
   "license": "MIT",

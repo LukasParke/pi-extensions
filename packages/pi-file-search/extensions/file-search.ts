@@ -46,6 +46,7 @@ import {
 	getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { searchRenderers } from "../src/tui.ts";
 
 const EXEC_TIMEOUT_MS = 60_000;
 /** Guard against a pathological match set eating memory before truncation. */
@@ -295,6 +296,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "fd",
 		label: "Find Files",
+		...searchRenderers("Find Files"),
 		description:
 			"Find files and directories by name using fd. Respects .gitignore and skips hidden files by default. Much faster and more predictable than `find` via bash. The pattern is a regex unless glob:true (a pattern starting with `*` or `?` is automatically treated as a glob, and a pattern starting with a literal dot automatically includes hidden files).",
 		parameters: Type.Object(
@@ -420,6 +422,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "rg",
 		label: "Search Content",
+		...searchRenderers("Search Content"),
 		description:
 			"Search file contents with ripgrep. Respects .gitignore, skips binaries, and returns file:line:match. Much faster than grep via bash. Pattern is a regex unless fixed_strings:true. Patterns containing a literal newline automatically enable multiline mode. If some paths are unreadable (e.g. broken symlinks), matches are still returned with a note.",
 		parameters: Type.Object(

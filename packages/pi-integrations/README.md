@@ -1,5 +1,9 @@
 # @parke.dev/pi-integrations
 
+The bundled providers use native-themed, width-aware call/result previews.
+Expand for actual patches, threads, pages, diagnostics and mutation links;
+model-facing text and typed business results remain available unchanged.
+
 One install for the Git, GitHub, Slack, Linear, and Notion Pi integrations.
 Requires Pi **0.99.1 or newer**.
 

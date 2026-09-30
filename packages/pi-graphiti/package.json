@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-graphiti",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Graphiti shared memory for the pi coding agent: automatic recall on every prompt, explicit remember/recall tools, direct MCP-over-HTTP connection",
   "type": "module",
   "license": "MIT",
@@ -48,6 +48,7 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "engines": {

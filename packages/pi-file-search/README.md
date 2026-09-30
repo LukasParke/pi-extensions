@@ -29,6 +29,14 @@ Pi's native `find`/`grep` are suitable for simple lookups; these tools retain
 regex/type/depth filters, smart-case, multiline, per-file limits, partial-I/O
 resilience, and an explicit no-downloader policy.
 
+## Terminal presentation
+
+Native themed rows show the pattern/target and path or output-line count (ripgrep
+counts include context). Collapsed previews stay compact; expand for up to 40
+wrapped display rows, preserving raw context and separators. Partial-I/O notes
+and full-results file pointers remain visible. Display clipping does not change
+model-facing text or structured lines.
+
 ## Install
 
 ```bash

@@ -95,7 +95,7 @@ Parallel write-capable tasks sharing one checkout are rejected unless each uses
 
 ## Budgets and safety
 
-- Prefer `max_turns`, `max_cost`, and/or `timeout_ms` on long or write-capable runs.
+- Turn and spend budgets are optional; omitted `max_turns` / `max_cost` stay unbounded unless a named agent or configured profile supplies a default. Set them only when the task calls for a deliberate limit; explicit budgets (including more than 500 turns) are honored. Timeouts, cancellation, concurrency and nesting controls still apply.
 - `output_schema` asks the child for a fenced `json:result` block (one repair round).
 - `context: "fork"` continues from a fork of the parent session (pi/claude).
 - Do not poll `status` in a tight loop — use `wait` / `subagent_wait`, or let the

@@ -334,6 +334,11 @@ Notes on behavior:
 - `timeout_ms` covers queue time plus runtime, but timed-out tasks report
   `state: "timeout"` with `timeoutPhase: "queued"|"starting"|"running"` so
   agents can retry capacity issues without confusing them for task failures.
+- Turn/spend budgets are optional. Omitted `max_turns` / `max_cost` remain
+  unbounded unless a named agent or configured profile supplies them; explicit
+  budgets, including more than 500 turns, pass through unchanged. Synthesis has
+  no automatic turn cap. Timeout, cancellation, concurrency and nesting controls
+  still apply.
 - Budget stops (`max_turns`, `max_cost`) trigger a **graceful wrap-up**: the
   child is steered to produce its final answer NOW and allowed `graceTurns`
   more turns before SIGTERM. Results end as `partial` with `wrappedUp: true`
@@ -540,7 +545,7 @@ Tests use a deterministic `fake-pi` child. No live model calls are required.
 
 ## Cost accounting
 
-`status`, `/subagent-cost`, and the `/subagents` overlay header show separate
+`status` and `/subagent-cost` show separate
 **root**, **subagent**, and **combined** totals based on provider-reported
 usage. On Pi builds after v0.80.10, delivered runs also report their total
 usage natively on the tool result
@@ -550,6 +555,16 @@ run. Failed/lost deliveries also return native `isError` results with their
 paid usage and failure details; pre-run validation errors still throw. Nested
 usage reported by a child's tool
 results (e.g. grandchild subagents) folds into the run's totals and budgets.
+
+### TUI inspection
+
+Inline results, background widgets and completions lead with meaningful labels,
+state, elapsed/model and a summary preview. Turn/token/cost details and artifact
+pointers are available when expanded. `/subagents` groups Active, Ready and
+History runs, preserves selection by ID, and fits the native terminal height.
+Detail is summary-first; `t` reveals live or saved transcripts on demand. Existing
+cancel, steer, resume, output, apply and discard actions remain available.
+See [docs/UX.md](docs/UX.md) for keyboard controls and presentation behavior.
 The extension footer stays terse (running/ready counts only). Delivery and
 replay do not double count runs. See
 [docs/COST-ACCOUNTING.md](./docs/COST-ACCOUNTING.md).

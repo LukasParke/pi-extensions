@@ -1,141 +1,101 @@
 # pi-subagent UX
 
-## Overview
-The standalone pi-subagent provides rich TUI support for monitoring, inspecting, and interacting with isolated subagent runs (single and parallel modes): inline streaming blocks, a terse footer, an ambient widget for background runs, batched completion notifications, mid-run steering, a worktree apply loop, and the `/subagents` inspector. UI logic is kept independent from `runner`/`registry` via small structural adapters (`SubagentAdapter`).
+## Glance first, detail on demand
 
-## Design principles
+Calls lead with the task's short label (the prompt is the fallback). Results,
+background widgets and completions share the same vocabulary:
 
-1. **Pi's tool shell owns state signaling.** The Box wrapper paints
-   `toolPendingBg` / `toolSuccessBg` / `toolErrorBg`, so inline blocks do not
-   repeat state words or draw their own success/error framing.
-2. **Cost is a per-run attribute, not a competing ledger.** Dollar cost appears
-   inside the run's own result block; the parent/children/combined ledger is
-   available on demand via `/subagent-cost`, in `status` tool output, and in the
-   `/subagents` overlay header. The footer never shows cost.
-3. **Fixed-height, mutate-in-place progress.** Streaming blocks keep a stable
-   shape (stats line + one `⎿ activity` line; parallel adds one line per task)
-   and the same component identity is reused across partial renders.
-4. **Trailing-edge streaming flush.** Structural updates (state transition, new
-   session id, billed turn) emit immediately; live-text bursts coalesce with a
-   deferred flush so the last update of a burst always lands.
+```text
+⠹ Audit dependencies running 8s · model
+  Reading package manifests…
 
-## Surfaces
-
-### Inline tool block (foreground runs)
-- `renderCall` is exactly one line: `subagent <task preview>` (or
-  `N parallel tasks — first task…`, `wait a1b2c3d4`, `… · background`).
-- `renderResult` while streaming (fixed shape, spinner animates via wall-clock
-  frame; Pi's working indicator drives repaints):
-  ```
-  ⠹ ↻3 · 12.4k tok · 8s
-    ⎿ reading src/auth/middleware.ts…
-  ```
-- Terminal single run:
-  ```
-  ↻8 · 33.8k tok · $0.012 · 12s
-    ⎿ Found 5 middleware call sites…
-    → /tmp/report.md
-  ```
-- Parallel: one line per task with a themed state glyph
-  (`◌ queued · ⠹ running · ✓ done · ✗ failed · ◐ partial · − cancelled · ◷ timeout`),
-  per-task stats, and a one-line tail (live activity or first output line).
-- Expanded (Ctrl+O / `app.tools.expand`): full task output capped with a dim
-  `… +N lines` trailer pointing at the artifact/child session.
-- Durations freeze at `endedAt`; running durations tick at render time.
-- Reliability annotations render inline: `[attempt 2]` during a retry,
-  `[stalled 2m]` while the stall watchdog is flagging silence, and
-  `◐ wrapped up` on budget-stopped runs that concluded gracefully.
-
-### Footer status
-Terse and actionable only: `⚙ 2 running · 1 ready · /subagents`. Cleared when
-nothing is running or ready. No cost — Pi's footer already shows session cost.
-
-### Ambient widget (background runs only)
-An above-editor widget renders while `async: true` runs are live — foreground
-runs already render inline as the tool result, so they never appear here
-(avoids double-render):
-
-```
-● Subagents
-├─ ⠼ Audit deps · ↻4 · 18k tok · 41s
-│   ⎿ checking license headers…
-└─ ◌ License scan · 12s
+✓ Audit dependencies done 12s · model
+  Found two outdated dependencies
 ```
 
-Cleared when the last background run settles. Spinner and elapsed animate on
-a 250ms interval that exists only while background runs are live.
+A single streaming result always occupies two rows, even before activity arrives.
+Parallel results add a progress header and two rows per task; collapsed results
+show at most six tasks with an overflow count. The component is reused across
+updates. Durations freeze when the run settles. Failures show their reason rather
+than an empty success scaffold. Retried and stalled tasks carry short annotations.
 
-### Completion notifications (background runs only)
-When an async run reaches a terminal state, a `followUp` message (custom type
-`subagent-completion`) notifies the parent LLM so it reacts without polling.
-The human sees a themed compact box (state glyph, label, stats, one-line
-preview, artifact pointers); the LLM sees plain text with run ids and a
-`wait { id }` pointer.
+Expanded results show turn/token/cost/throughput detail, artifact/session/branch
+pointers, and wrapped output (40 lines for a single task, 12 per parallel task).
+Overflow points to the artifact or child session. There is no permanent expand
+hint for trivial output. Pi's native footer accounts for session cost; the
+`/subagent-cost` command and tool `status` retain the separate usage ledger.
 
-- Successes within a short window batch into one message (no fanout spam);
-  failures bypass batching and flush immediately, carrying held successes.
-- A `wait` that already delivered the run suppresses the redundant
-  notification (delivered-state is re-checked at flush time).
+All surfaces use native semantic theme tones: accent for queued/running, success
+for ready/done, warning for waiting/partial/timeout/stalled/paused, error for
+failed/lost, muted for cancelled/history. Untrusted text loses terminal control
+sequences before theming. Width is measured in terminal columns, including CJK;
+rendering and wrapping use Pi's native ANSI-aware utilities.
 
-### `/subagents` overlay
-- Header: title + running/ready counters + full usage ledger + rule.
-- List: two lines per run — glyph/id/state/stats, then the task preview.
-  Selection cursor `▶`, animated spinner for live runs.
-- Detail: run stats, summary, then per-task sections (glyph, label,
-  model/profile/thinking, usage, pointers, transcript/final output/errors),
-  scrollable with ↑↓/j/k and PageUp/PageDown.
-- Actions: `c` cancel, `s` steer (prompts for a message, injects it into the
-  running child), `d` dismiss, `r` resume, `o` output pointers, `a` apply a
-  finished run's changed worktree into the main checkout (confirm dialog),
-  `x` discard worktree + branch (confirm dialog), Enter drill-down,
-  Esc/b back, Esc/q close.
-- Live transcript (`t` on a **running** run's detail): tails the child's
-  session file (`sessionDir/<…sessionId…>.jsonl`) on a 500ms poll while the
-  pane is visible — compact role/tool lines, auto-follow unless you scroll
-  up (which pauses follow). No RPC reads; hidden/finished runs never poll.
-  Missing file shows “waiting for child session…”. `s` steering still works
-  from the same pane so observe → steer stays on one surface.
+## Footer, widget and completion
 
-### `/subagent-cost`
-Prints the root/subagents/combined ledger once, on demand.
+The terse footer is actionable only: `2 active · 1 ready · /subagents`. It clears
+when nothing is active or ready.
 
-### Mid-run steering
-Children run in Pi RPC mode, so their stdin stays open as a command channel.
-`action: "steer"` (or `s` in the overlay) queues a message that is delivered
-after the child's current assistant turn, before its next LLM call — course
-correction without cancel + retry. Parallel runs steer one task via `index`.
+The above-editor widget shows only background (`async:true`) tasks. It shares the
+two-row result layout, caps at three tasks, and shows overflow without tree or
+gear ornaments. Its native component factory uses the current theme and available
+width. A 250ms refresh exists only while background runs are live; the widget
+clears when they settle or the session shuts down.
 
-### Worktree loop
-Finished runs with changed worktrees support `diff` / `apply` / `discard`
-actions (tool) and `a` / `x` keys (overlay). `apply` lands the worktree's
-combined patch (committed + uncommitted + untracked vs base) onto the main
-checkout as **uncommitted working-tree changes** via `git apply --3way`; it
-never commits and never deletes the worktree. `discard` is the explicit
-cleanup step and always confirms first.
+Background completions retain their model-facing `followUp` delivery. The human
+sees label, outcome, frozen elapsed/model and a summary preview. Accounting and
+artifact pointers appear when expanded. Successful completions batch; failures
+flush immediately. A prior `wait` delivery suppresses a duplicate notification.
 
-### Parallel fan-in
-`synthesis: "<instruction>"` on a parallel run spawns one read-only child
-after all tasks settle that folds their outputs into a single brief, delivered
-first in the result. Synthesis failures degrade silently to raw results.
+## `/subagents` inspector
 
-## States
-- **Queued/Running**: spinner + live stats + activity tail from live text.
-- **Completed/Partial/Failed/Cancelled/Timeout/Lost**: state glyph, frozen
-  duration, usage summary, output pointers; failures show the error message.
-- **Delivered vs Undelivered**: footer/overlay track pending delivery.
-- **Notification**: one per terminal transition to avoid spam.
+- Active, Ready (undelivered), and History groups. Each run leads with its label,
+  outcome and elapsed/model, followed by a summary/error preview.
+- Selection follows the run ID across new arrivals, reordering and lifecycle
+  transitions. If a run disappears, selection falls back to the nearest position.
+- List and detail viewports derive from native `tui.terminal.rows`, respecting the
+  overlay's 80% height. Resize and PageUp/PageDown use the current viewport size.
+- Detail starts with the summary, then per-task output/error, accounting and
+  artifact pointers. `t` toggles transcripts on demand, including saved
+  transcripts for terminal runs.
+- A visible live transcript tails the child session file on a 500ms poll. It
+  follows new lines until scrolling up pauses follow. Missing files show a waiting
+  message. Hidden, finished or disposed panes do not poll.
+- Contextual one-line help shows navigation and actions appropriate to the
+  selected state, rather than a permanent dump of every key.
 
-## Integration Notes
-- Extension wires via `ctx.ui.custom((tui, theme, kb, done) => createSubagentsOverlay(tui, theme, adapter, done), {overlay: true})`.
-- Adapter provides getActiveRuns/getCompletedRuns/cancelRun etc. without tight coupling.
-- Inline renderers reuse `context.lastComponent` (a `LineBlock`) so the row keeps
-  a stable component identity across partial renders.
-- Streamed tool updates separate LLM-facing `content` (compact status string)
-  from render-facing `details` (state, usage, live-text tail, run timing).
-- Tests combine pure UI models with a headless Pi extension harness: format
-  helpers, block layouts (collapsed/streaming/terminal/parallel), navigation,
-  truncation (ANSI-safe via `visibleWidth`), ready state, lifecycle/disposal.
-- Follows Pi TUI guidelines (render(width), handleInput, invalidate,
-  requestRender, dispose). The overlay owns a single animation interval.
+### Keys
 
-See ARCHITECTURE.md for ownership boundaries. All rendering respects terminal width and ANSI safety.
+| Key | Action |
+| --- | --- |
+| ↑↓ / j/k, PageUp/PageDown | Select runs or scroll detail |
+| Enter | Open detail |
+| t | Toggle summary/transcript in detail |
+| c / s | Cancel / steer an active child |
+| o | Show output pointers |
+| r | Resume a terminal run (unless blocked) |
+| d | Dismiss a terminal run |
+| a / x | Apply / discard changed terminal worktrees (confirmation dialogs) |
+| Esc / b / Backspace | Detail back |
+| Esc / q | Close list |
+
+Actions remain available even when omitted from contextual help. Steering uses
+Pi's input dialog; apply/discard retain native confirmations. Closing resolves the
+native custom-UI callback once and disposes subscription, animation and transcript
+polling. No separate focus manager or terminal renderer is introduced.
+
+## Budgets and lifecycle
+
+Turn/spend limits are optional: an omitted budget stays undefined unless a named
+agent or configured profile explicitly supplies it. There is no schema ceiling at
+500 turns, including parallel tasks, and synthesis has no automatic turn cap.
+Explicit `max_turns` / `max_cost` still enforce graceful wrap-up and preserve
+partial output. Timeout, cancellation, concurrency, nesting, trust and permission
+controls are unchanged.
+
+Structural progress updates flush immediately; text bursts use trailing-edge
+coalescing. Model-facing content, notification deduplication, usage accounting and
+worktree operations are independent of presentation. Headless runs do not need UI.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and
+[COST-ACCOUNTING.md](COST-ACCOUNTING.md) for billing.

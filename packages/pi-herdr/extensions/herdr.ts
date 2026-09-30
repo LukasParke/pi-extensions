@@ -17,6 +17,7 @@ import { AGENT_NAME_PATTERN, AGENT_TARGET_PATTERN } from "../src/names.ts";
 import { knownRepos, resolveRepo, worktreeBaseRepo, worktreeTrust } from "../src/repos.ts";
 import { getHerdrTaskStatus } from "../src/status.ts";
 import { cleanupSchema, dispatchSchema, statusSchema } from "../src/schemas.ts";
+import { herdrRenderers } from "../src/tui.ts";
 
 const namespace = { name: "herdr", description: "Dispatch and manage agents in Herdr-owned worktrees" };
 
@@ -57,6 +58,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "herdr_task",
 		label: "Herdr Task",
+		...herdrRenderers("dispatch"),
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 		outputSchema: dispatchSchema,
@@ -122,6 +124,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "herdr_task_status",
 		label: "Herdr Task Status",
+		...herdrRenderers("status"),
 		namespace,
 		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 		outputSchema: statusSchema,
@@ -201,6 +204,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "herdr_task_cleanup",
 		label: "Herdr Task Cleanup",
+		...herdrRenderers("cleanup"),
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
 		outputSchema: cleanupSchema,

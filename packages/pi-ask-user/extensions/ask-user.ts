@@ -79,12 +79,11 @@ export default function (pi: ExtensionAPI) {
 					details: { question: params.question, answer: null, outcome: "no-ui" },
 				};
 			}
-			if (signal?.aborted) {
-				return {
-					content: [{ type: "text" as const, text: "The question was cancelled before it was shown." }],
-					details: { question: params.question, answer: null, outcome: "cancelled" },
-				};
-			}
+			const cancelled = () => ({
+				content: [{ type: "text" as const, text: "The question was cancelled. No answer was given." }],
+				details: { question: params.question, answer: null, outcome: "cancelled" },
+			});
+			if (signal?.aborted) return cancelled();
 
 			// Render descriptions inline: ctx.ui.select takes plain strings, and the
 			// detail is often what makes an option meaningful.
@@ -95,6 +94,8 @@ export default function (pi: ExtensionAPI) {
 			const choice = await withBlockedSignal(pi, blockedLabel, () =>
 				ctx.ui.select(params.question, [...labels, CUSTOM_LABEL], { signal }),
 			);
+
+			if (signal?.aborted) return cancelled();
 
 			// Dismissed (Esc): the model must not assume an answer.
 			if (choice === undefined || choice === null) {
@@ -115,6 +116,7 @@ export default function (pi: ExtensionAPI) {
 						ctx.ui.input(params.question, "Type your answer…", { signal }),
 					)
 				)?.trim();
+				if (signal?.aborted) return cancelled();
 				if (!typed) {
 					return {
 						content: [

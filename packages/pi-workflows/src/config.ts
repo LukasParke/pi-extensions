@@ -1,14 +1,4 @@
-/**
- * Workflow configuration.
- *
- * Turn and time budgets have ceilings because they bound runaway loops
- * without pricing assumptions. Cost budgets are different: what an agent
- * should be allowed to spend is a pricing decision only the user can make, so
- * `agentMaxCost` has no default — unset means no cost ceiling at all. The
- * default model is likewise left unset — "inherit whatever the parent session
- * uses" — rather than hardcoding a model that may not exist for the
- * installing user.
- */
+/** Workflow configuration. Turn/spend budgets are optional per-agent requests. */
 
 import { boolean, load, nonEmptyString, number, oneOf, type Schema } from "@parke.dev/pi-ext-config";
 
@@ -30,15 +20,6 @@ export interface WorkflowConfig {
 	defaultModel?: string;
 	defaultThinking: ThinkingLevel;
 	defaultProfile: Profile;
-	/** Per-agent ceilings. A runaway script must not be able to loop unbounded. */
-	agentMaxTurns: number;
-	/**
-	 * Per-agent cost ceiling. Unset by default: when undefined, `agent()` calls
-	 * get no cost ceiling and script-supplied `maxCost` passes through unclamped
-	 * (still validated ≥ 0). When set, it is both the default for calls that omit
-	 * `maxCost` and the clamp for calls that set it higher.
-	 */
-	agentMaxCost?: number;
 	agentTimeoutMs: number;
 	/** Whole-run ceilings. */
 	workflowTimeoutMs: number;
@@ -62,7 +43,6 @@ export interface WorkflowConfig {
 export const defaultConfig: WorkflowConfig = {
 	defaultThinking: "medium",
 	defaultProfile: "explore",
-	agentMaxTurns: 20,
 	agentTimeoutMs: 10 * 60_000,
 	workflowTimeoutMs: 45 * 60_000,
 	maxAgentRequests: 32,
@@ -77,8 +57,6 @@ export const schema: Schema<WorkflowConfig> = {
 	defaultModel: { validate: nonEmptyString, env: "PI_WORKFLOW_MODEL" },
 	defaultThinking: { validate: oneOf(THINKING_LEVELS), env: "PI_WORKFLOW_THINKING" },
 	defaultProfile: { validate: oneOf(PROFILES), env: "PI_WORKFLOW_PROFILE" },
-	agentMaxTurns: { validate: number(1), env: "PI_WORKFLOW_AGENT_MAX_TURNS" },
-	agentMaxCost: { validate: number(0), env: "PI_WORKFLOW_AGENT_MAX_COST" },
 	agentTimeoutMs: { validate: number(10_000), env: "PI_WORKFLOW_AGENT_TIMEOUT_MS" },
 	workflowTimeoutMs: { validate: number(60_000), env: "PI_WORKFLOW_TIMEOUT_MS" },
 	// Hard-capped: the sandbox enforces these, and raising them without bound

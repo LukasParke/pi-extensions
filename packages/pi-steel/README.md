@@ -47,6 +47,14 @@ if (shot.image) image(shot.image);
 else return { tooLarge: shot.tooLarge, bytes: shot.bytes };
 ```
 
+## Terminal presentation
+
+Native themed rows show the target and completion state; expand for page text,
+links/forms, artifacts, and image metadata. Expanded text is bounded to 40 display
+rows with overflow and existing full-output pointers. Limited/empty/failed/closed
+states are explicit. Browser progress stays compact; typed input is omitted from
+call previews. Rendering does not start sessions or alter screenshot delivery.
+
 ## Parameters
 
 - `steel_scrape` — `url`; `format?` (`markdown` \| `readability` \|

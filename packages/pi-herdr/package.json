@@ -1,6 +1,6 @@
 {
   "name": "@parke.dev/pi-herdr",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Dispatch, monitor, and safely clean up pi agents in herdr-managed worktrees",
   "type": "module",
   "license": "MIT",

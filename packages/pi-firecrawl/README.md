@@ -36,6 +36,14 @@ its job status and pages; a timeout returns partial data without an error. Empty
 search results are successful. Scrape/search/map are annotated as remote reads;
 crawl starts a potentially paid job and is neither read-only nor idempotent.
 
+## Terminal presentation
+
+Native themed rows show URL/query, counts, and completion state. Crawl progress
+uses a stable status + completed/total row; waiting, partial timeouts, refusals,
+and failures remain distinct from completion. Expand for readable page bodies
+(up to 40 display rows plus overflow). This display cap does not change tool text
+or structured results.
+
 ## Parameters
 
 - `firecrawl_scrape` — `url` (required); `formats?` (`markdown` \| `html` \|

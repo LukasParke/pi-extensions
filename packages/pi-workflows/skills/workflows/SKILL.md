@@ -75,16 +75,20 @@ Names resolve only under:
 
 ## Limits (defaults)
 
-| Limit               | Value                                  |
-| ------------------- | -------------------------------------- |
-| agent calls per run | 32                                     |
-| concurrency         | 4                                      |
-| turns per agent     | 20                                     |
-| cost per agent      | no ceiling (opt-in via `agentMaxCost`) |
-| workflow timeout    | 45 min                                 |
+| Limit               | Value                                   |
+| ------------------- | --------------------------------------- |
+| agent calls per run | 32                                      |
+| concurrency         | 4                                       |
+| turns per agent     | unbounded; optional per-call `maxTurns` |
+| cost per agent      | unbounded; optional per-call `maxCost`  |
+| workflow timeout    | 45 min                                  |
 
 Hard config ceilings: 200 agents / 16 concurrency. Size guidelines for
 Ultracode (`small`/`medium`/`large`/`unrestricted`) are advisory only.
+Explicit `maxTurns`/`maxCost` pass through unchanged (including zero). Use them
+when a budget is requested; omit them otherwise. Retired `agentMaxTurns` and
+`agentMaxCost` config/env ceilings are ignored; migrate deliberate budgets to
+per-call options. Child timeout remains bounded by `agentTimeoutMs`.
 
 ## Pattern: pipeline over a discovered set
 

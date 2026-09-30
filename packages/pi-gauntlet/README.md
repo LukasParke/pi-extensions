@@ -1,5 +1,9 @@
 # @parke.dev/pi-gauntlet
 
+The active widget uses native theme and terminal-width handling, with goal first
+and bounded check previews. Normal activity uses the accent tone; failed checks
+use error and waits use warning. Verification-loop limits are unchanged.
+
 A goal / gauntlet loop for the [pi coding agent](https://pi.dev). Set a **goal**
 plus a **gauntlet** — named shell checks that must all exit 0 (tests,
 typecheck, lint, anything). After each agent run settles, the extension runs

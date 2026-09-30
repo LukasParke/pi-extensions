@@ -28,6 +28,8 @@ export interface InstallHandles {
 	uninstall: () => void;
 	/** Ask the TUI to repaint, if installed. */
 	requestRender: () => void;
+	/** Local-only inspection; never forwarded into model context. */
+	statuses: () => ReadonlyMap<string, string>;
 }
 
 /**
@@ -45,6 +47,7 @@ export function installDashboardUi(
 
 	const costCache = createSessionCostCache();
 	let requestRender: () => void = () => {};
+	let footerProvider: ReadonlyFooterDataProvider | undefined;
 
 	if (state.config.header) {
 		ctx.ui.setHeader((tui, theme) => {
@@ -55,7 +58,7 @@ export function installDashboardUi(
 					const current = getState();
 					const label = sanitizeTerminalLabel(current.config.title ?? current.title);
 					const line = theme.fg("accent", center(label, width));
-					return ["", line, ""];
+					return [line];
 				},
 			};
 		});
@@ -63,6 +66,7 @@ export function installDashboardUi(
 
 	if (state.config.footer) {
 		ctx.ui.setFooter((tui, theme, footerData: ReadonlyFooterDataProvider) => {
+			footerProvider = footerData;
 			requestRender = () => tui.requestRender();
 			const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
 
@@ -124,13 +128,12 @@ export function installDashboardUi(
 						columns(usageLine, theme.fg("muted", gitText), width),
 					];
 
-					const statuses = footerData.getExtensionStatuses();
-					for (const [, text] of [...statuses.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-						if (!text) continue;
-						for (const statusLine of text.split("\n")) {
-							lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "…")));
-						}
+					const statuses = [...footerData.getExtensionStatuses()].filter(([, text]) => text.trim()).sort(([a], [b]) => a.localeCompare(b));
+					for (const [, text] of statuses.slice(0, 2)) {
+						const rows = text.split("\n").filter((row) => row.trim());
+						lines.push(truncateToWidth(`${rows[0] ?? ""}${rows.length > 1 ? theme.fg("muted", " · more: /dashboard status") : ""}`, width, theme.fg("dim", "…")));
 					}
+					if (statuses.length > 2) lines.push(truncateToWidth(theme.fg("muted", `… +${statuses.length - 2} extension statuses · /dashboard status`), width));
 
 					return lines;
 				},
@@ -147,7 +150,9 @@ export function installDashboardUi(
 
 	return {
 		requestRender: () => requestRender(),
+		statuses: () => new Map(footerProvider?.getExtensionStatuses() ?? []),
 		uninstall() {
+			footerProvider = undefined;
 			try {
 				if (state.config.header) ctx.ui.setHeader(undefined);
 				if (state.config.footer) ctx.ui.setFooter(undefined);

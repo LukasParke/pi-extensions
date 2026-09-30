@@ -80,6 +80,13 @@ error_log({ tool?: string, kind?: "tool" | "extension", since?: string, limit?: 
 - `kind: "extension"` is accepted by the filter for forward compatibility and
   hand-written lines, but this extension only ever appends `kind: "tool"`
 
+## Terminal presentation
+
+Native themed rows distinguish ready, empty, disabled, and failed reads. The
+collapsed result previews three error messages plus overflow. Expand for stored
+args, stacks, and working directories (up to 40 display rows), with a full-log
+pointer. Rendering preserves existing redaction and never rewrites log records.
+
 ## Configuration
 
 Precedence: **defaults ← `~/.pi/error-log.json` ← environment**.

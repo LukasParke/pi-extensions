@@ -40,6 +40,10 @@ screenshot with `image(result.image)` when `image` is present; otherwise inspect
 read, and actions in order. A selector miss is an error with data; an intentionally
 withheld oversized image is not. PDF paths are relative to the tool's `ctx.cwd`.
 
+Terminal rows are display-only previews: expand for bodies and image metadata.
+For clipped text, follow the existing full-output pointer or narrow `steel_read`;
+use typed data for automation. A limited screenshot is not a browser failure.
+
 ## Persistent session
 
 Use this when the task needs a login, a form filled, a click, or several steps of

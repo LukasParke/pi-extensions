@@ -38,7 +38,7 @@ import { Type, type Static } from "typebox";
 import { defaultConfig, gauntletConfig } from "../src/config.ts";
 import { GauntletEngine, type CheckExecResult, type GauntletState } from "../src/loop.ts";
 import { parseCheckArgs, parseSeedChecks, parseStateEntry } from "../src/parse.ts";
-import { checkListText, statusText, widgetLines } from "../src/report.ts";
+import { checkListText, statusText, gauntletWidget } from "../src/report.ts";
 
 const ENTRY_TYPE = "gauntlet-state";
 
@@ -84,9 +84,18 @@ export default function (pi: ExtensionAPI) {
 		if (!lastCtx?.hasUI) return;
 		if (!engine?.state.active) {
 			lastCtx.ui.setWidget("gauntlet", undefined);
+			lastCtx.ui.setStatus("gauntlet", undefined);
 			return;
 		}
-		lastCtx.ui.setWidget("gauntlet", widgetLines(engine.state, maxIterations));
+		const state = engine.state;
+		const failed = state.checks.some(
+			(check) => state.results[check.name]?.code !== undefined && state.results[check.name]?.code !== 0,
+		);
+		lastCtx.ui.setStatus(
+			"gauntlet",
+			lastCtx.ui.theme.fg(failed ? "warning" : "accent", `Gauntlet · running · /goal status`),
+		);
+		lastCtx.ui.setWidget("gauntlet", (_tui, theme) => gauntletWidget(state, maxIterations, theme));
 	}
 
 	function notify(message: string, type?: "info" | "warning" | "error"): void {
@@ -159,6 +168,12 @@ export default function (pi: ExtensionAPI) {
 			restoreState(ctx) ?? (await seedState(ctx)),
 		);
 		updateWidget();
+	});
+
+	pi.on("session_shutdown", () => {
+		lastCtx?.ui.setWidget("gauntlet", undefined);
+		lastCtx?.ui.setStatus("gauntlet", undefined);
+		lastCtx = undefined;
 	});
 
 	pi.on("agent_settled", async (_event, ctx) => {

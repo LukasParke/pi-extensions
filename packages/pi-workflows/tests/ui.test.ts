@@ -29,7 +29,7 @@ function run(overrides: Partial<LiveWorkflowRun> = {}): LiveWorkflowRun {
 describe("workflowStatus", () => {
 	it("shows active and ready counts, then clears when nothing is actionable", () => {
 		expect(workflowStatus([run(), run({ runId: "done", state: "completed" })])).toBe(
-			"⚙ 1 running · 1 ready · /workflows",
+			"1 active · 1 ready · /workflows",
 		);
 		expect(
 			workflowStatus([

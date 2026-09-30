@@ -5,6 +5,10 @@ non-blocking, conversation-aware recall delivered through the dispatch queue, ex
 `memory_remember` / `memory_recall` / `memory_status` tools, and a direct MCP-over-HTTP
 connection — no gateway in the middle.
 
+A native-themed warning identifies unavailable memory and points to
+`memory_status`. A successful status check clears it; shutdown clears the status
+and prevents stale health checks from restoring it.
+
 ```sh
 pi install npm:@parke.dev/pi-graphiti
 ```

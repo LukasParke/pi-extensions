@@ -6,8 +6,8 @@ import { NO_KEY_MESSAGE, NOTION_AUTH_REF, resolveKey } from "../src/auth.ts";
 import { withBlockedSignal } from "./blocked.ts";
 import { NotionClient } from "../src/client.ts";
 import { NOTION_DESCRIPTION } from "../src/describe.ts";
-import { renderBlocks, renderPages, renderToolCall } from "../src/tui.ts";
-import { type PageBlock, type PageRow, pageToText, toPageDetail, toPageRow } from "../src/viewmodel.ts";
+import { renderToolCall, renderToolResult } from "../src/tui.ts";
+import { type PageRow, pageToText, toPageDetail, toPageRow } from "../src/viewmodel.ts";
 import {
 	searchSchema,
 	pageSchema,
@@ -98,6 +98,13 @@ function renderRows(rows: PageRow[], truncated: boolean): string {
 }
 
 export default function notion(pi: ExtensionAPI): void {
+	const registerTool: ExtensionAPI["registerTool"] = (tool) =>
+		pi.registerTool({
+			...tool,
+			renderCall: (args, theme, context) => renderToolCall(tool.name, args, theme, context),
+			renderResult: (result, options, theme, context) =>
+				renderToolResult(tool.name, result, options, theme, context),
+		});
 	registerCredentialCommand(pi, {
 		id: "notion-login",
 		label: "Notion",
@@ -108,7 +115,7 @@ export default function notion(pi: ExtensionAPI): void {
 		validate: async (key) => (await new NotionClient({ key }).me()).data.name,
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "notion_search",
 		namespace,
 		annotations: readAnnotations,
@@ -142,14 +149,9 @@ export default function notion(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("notion_search", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { rows?: PageRow[] } }).details;
-			return renderPages(d?.rows ?? []);
-		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "notion_page",
 		namespace,
 		annotations: readAnnotations,
@@ -179,16 +181,11 @@ export default function notion(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("notion_page", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { page?: { blocks?: PageBlock[] } } }).details;
-			return renderBlocks(d?.page?.blocks ?? []);
-		},
 	});
 
 	/* -------------------------------- writes -------------------------------- */
 
-	pi.registerTool({
+	registerTool({
 		name: "notion_append",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -239,7 +236,7 @@ export default function notion(pi: ExtensionAPI): void {
 
 	/* ------------------------------ credential ------------------------------ */
 
-	pi.registerTool({
+	registerTool({
 		name: "notion_status",
 		namespace,
 		annotations: readAnnotations,
@@ -276,7 +273,7 @@ export default function notion(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "notion_connect",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
@@ -332,7 +329,7 @@ export default function notion(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "notion_disconnect",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },

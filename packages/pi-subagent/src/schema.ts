@@ -38,7 +38,7 @@ export const TaskFields = {
   profile: Type.Optional({ ...Profile, description: profileDescription }),
   cwd: Type.Optional(Type.String({ description: "Working directory for the child process." })),
   timeout_ms: Type.Optional(Type.Number({ minimum: 1, maximum: 24 * 60 * 60_000, description: "Total budget in milliseconds including queue time. Timed-out runs report which phase timed out." })),
-  max_turns: Type.Optional(Type.Number({ minimum: 1, maximum: 500, description: "Budget: at this many turns the child is steered to wrap up and given grace turns for a final answer; ends as 'partial' with output preserved." })),
+  max_turns: Type.Optional(Type.Number({ minimum: 1, description: "Optional budget (no default turn ceiling): at this many turns the child is steered to wrap up and given grace turns for a final answer; ends as 'partial' with output preserved." })),
   max_cost: Type.Optional(Type.Number({ minimum: 0, description: "Soft cost ceiling in dollars; checked after each turn, triggers the same wrap-up flow as max_turns." })),
   grace_turns: Type.Optional(Type.Number({ minimum: 0, maximum: 20, description: "Wrap-up turns allowed after a budget breach before hard stop. 0 = immediate stop. Default from config (2)." })),
   fallback_models: Type.Optional(Type.Array(Type.String(), { maxItems: 5, description: "Ordered backup models tried automatically on transient failures (provider error, stall, queue timeout)." })),

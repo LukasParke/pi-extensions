@@ -24,6 +24,10 @@ secret-looking values) and capped at 4KB. The file rotates to
 The text result is a one-line preview per entry; full entries (including the
 serialized args and stack) are in `details.entries`.
 
+Terminal previews collapse messages; expand for stored args and stacks, or use
+`details.entries` for complete sanitized records. A disabled row means logging
+is off, not that the session had no errors. Follow the full-log pointer for overflow.
+
 ## Config
 
 `~/.pi/error-log.json` or env: `enabled` (`PI_ERROR_LOG_ENABLED`, default

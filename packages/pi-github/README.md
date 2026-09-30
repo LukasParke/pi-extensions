@@ -46,7 +46,13 @@ github prs vitest-dev/vitest
 
 ## Native Pi contracts
 
-Requires Pi **0.99.1 or newer**. All nine tools belong to the `github` namespace and declare
+Requires Pi **0.99.1 or newer**.
+
+Native tool rows follow Pi's theme and terminal width, with five preview rows and
+an overflow notice. Expand for PR descriptions, patches, checks, reviews, and
+credential-source metadata (never token arguments). Expanded output is bounded to
+200 terminal lines. Refusals, errors, and provider truncation are explicit; model
+content, structured results, and confirmation/approval gates are unchanged. All nine tools belong to the `github` namespace and declare
 read/write, destructive, idempotent and open-world hints. Comments are additive; reviews can
 change approval state. Connecting replaces a stored credential; disconnecting removes it locally.
 

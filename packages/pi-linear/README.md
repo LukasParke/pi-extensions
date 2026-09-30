@@ -3,6 +3,12 @@
 Linear issues: read, search, comment on and transition tickets, as a Pi extension.
 Requires Pi **0.99.1 or newer**.
 
+Native tool rows follow Pi's theme and terminal width, with five preview rows and
+an overflow notice. Expand for issue descriptions, full returned comments,
+workflow states, and credential-source metadata (never key arguments). Expanded
+output is bounded to 200 terminal lines. Refusals and errors are explicit; model
+content, structured results, and confirmation gates are unchanged.
+
 ```sh
 pi install npm:@parke.dev/pi-linear
 ```

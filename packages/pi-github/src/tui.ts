@@ -1,114 +1,338 @@
+import type { Theme as NativeTheme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import {
+	Text as NativeText,
+	stripTerminalSequences,
+	truncateToWidth,
+	wrapTextWithAnsi,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
+
 export interface RenderedComponent {
 	render(width: number): string[];
 	invalidate(): void;
 }
+type RenderContext = { lastComponent?: RenderedComponent; isError?: boolean };
+type Options = Partial<ToolRenderResultOptions>;
+type Tone = "accent" | "success" | "warning" | "error" | "muted";
+type Result = {
+	content?: { type: string; text?: string }[];
+	details?: Record<string, unknown>;
+	isError?: boolean;
+};
 
-export function component(lines: (width: number) => string[]): RenderedComponent {
-	return {
-		render: (width: number) => lines(width),
-		invalidate: () => undefined,
-	};
-}
-
-const DIM = "\x1b[2m";
-const RED = "\x1b[31m";
-const GREEN = "\x1b[32m";
-const YELLOW = "\x1b[33m";
-const BOLD = "\x1b[1m";
-const RESET = "\x1b[0m";
-
-export function plain(s: string): string {
-	return s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
-}
-
-function tint(status: string): string {
-	switch (status) {
-		case "passing":
-		case "approved":
-			return `${GREEN}${status}${RESET}`;
-		case "failing":
-		case "changes requested":
-			return `${RED}${status}${RESET}`;
-		case "pending":
-		case "review required":
-			return `${YELLOW}${status}${RESET}`;
-		default:
-			return `${DIM}${status}${RESET}`;
+class NativeRows extends NativeText {
+	constructor(public lines: (width: number) => string[]) {
+		super("", 0, 0);
+	}
+	override render(width: number): string[] {
+		const w = Math.max(1, width);
+		this.setText(
+			this.lines(w)
+				.map((line) => truncateToWidth(line, w))
+				.join("\n"),
+		);
+		const rows = super.render(w);
+		return rows.length <= 200 ? rows : [...rows.slice(0, 199), truncateToWidth("… more in tool content", w)];
 	}
 }
+export function component(lines: (width: number) => string[], context?: RenderContext): RenderedComponent {
+	if (context?.lastComponent instanceof NativeRows) {
+		context.lastComponent.lines = lines;
+		context.lastComponent.invalidate();
+		return context.lastComponent;
+	}
+	return new NativeRows(lines);
+}
+export function plain(s: string): string {
+	return stripTerminalSequences(s).replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
+}
+function one(s: string): string {
+	return plain(s).replace(/\s+/g, " ").trim();
+}
+function color(theme: NativeTheme | undefined, tone: Tone, text: string): string {
+	return theme?.fg(tone, text) ?? text;
+}
+function stateTone(state: string): Tone {
+	return /failing|conflict|changes requested/.test(state)
+		? "error"
+		: /warning|not configured|not ready|timed out|pending|review required/.test(state)
+			? "warning"
+			: /passing|ready|clean|approved/.test(state)
+				? "success"
+				: "muted";
+}
+function preview(rows: string[], expanded?: boolean): string[] {
+	return expanded || rows.length <= 5
+		? rows
+		: [...rows.slice(0, 5), `… ${String(rows.length - 5)} more · expand`];
+}
+function text(result: Result): string {
+	return (result.content ?? [])
+		.filter((c) => c.type === "text")
+		.map((c) => c.text ?? "")
+		.join("\n");
+}
+function failure(result: Result, options: Options, theme?: NativeTheme, context?: RenderContext) {
+	if (!(result.isError || context?.isError || result.details?.refused || result.details?.error)) return;
+	const message = plain(text(result) || String(result.details?.error ?? "Tool failed"));
+	return component(
+		(width) =>
+			options.expanded
+				? [
+						color(theme, "error", "error"),
+						...wrapTextWithAnsi(message, width).map((line) => color(theme, "error", line)),
+					]
+				: [color(theme, "error", `error · ${one(message)}`)],
+		context,
+	);
+}
+function finish(
+	result: Result,
+	summary: string,
+	rows: (width: number) => string[],
+	options: Options,
+	theme?: NativeTheme,
+	context?: RenderContext,
+	tone: Tone = "success",
+	full?: (width: number) => string[],
+) {
+	return component(
+		(w) => [
+			color(
+				theme,
+				options.isPartial ? "warning" : tone,
+				`${options.isPartial ? "partial · " : ""}${one(summary)}`,
+			),
+			...preview(
+				options.expanded && full ? full(w).flatMap((line) => wrapTextWithAnsi(line, w)) : rows(w),
+				options.expanded,
+			),
+		],
+		context,
+	);
+}
 
+function row(primary: string, body: string, metadata: string, width: number, theme?: NativeTheme): string {
+	const head = truncateToWidth(
+		plain(primary).replace(/[\n\t]/g, " "),
+		Math.max(1, Math.floor(width / 3)),
+		"…",
+	);
+	const meta = truncateToWidth(one(metadata), Math.max(1, Math.floor(width / 2)), "…");
+	const room = Math.max(0, width - visibleWidth(head) - visibleWidth(meta) - 2);
+	return truncateToWidth(
+		`${color(theme, "accent", head)} ${truncateToWidth(one(body), room, "…")} ${color(theme, "muted", meta)}`,
+		width,
+		"…",
+	);
+}
+
+import type { PullDetail } from "./viewmodel.ts";
 export function pullRowLines(
 	rows: {
 		number: number;
 		title: string;
 		author: string;
 		state: string;
-		review: string;
-		checks: string;
+		review?: string;
+		checks?: string;
+		labels?: string[];
+		assignees?: string[];
 	}[],
 	width: number,
+	theme?: NativeTheme,
 ): string[] {
-	if (rows.length === 0) return [`${DIM}no open pull requests${RESET}`];
-	const numWidth = Math.max(...rows.map((r) => String(r.number).length));
-	return rows.map((r) => {
-		const num = `#${String(r.number).padStart(numWidth, " ")}`;
-		const author = plain(r.author);
-		const statuses = `${r.state === "open" ? "" : `${r.state}, `}${r.review}, ${r.checks}`;
-		const fixed = `${num}  (${author}; ${statuses})`;
-		const room = Math.max(8, width - fixed.length);
-		const title = plain(r.title);
-		const cut = title.length > room ? `${title.slice(0, Math.max(1, room - 1))}…` : title;
-		const tinted = `${r.state === "open" ? "" : `${tint(r.state)}, `}${tint(r.review)}, ${tint(r.checks)}`;
-		return `${BOLD}${num}${RESET} ${cut} ${DIM}(${author}; ${RESET}${tinted}${DIM})${RESET}`;
-	});
+	if (!rows.length) return [color(theme, "muted", "no open pull requests")];
+	const pad = Math.max(...rows.map((r) => String(r.number).length));
+	return rows.map((r) =>
+		row(
+			`#${String(r.number).padStart(pad)}`,
+			r.title,
+			`(${r.review ? `${r.review}, ` : ""}${r.checks ? `${r.checks}, ` : ""}${r.state}; ${r.author ?? r.assignees?.join(", ") ?? "unassigned"})`,
+			width,
+			theme,
+		),
+	);
 }
-
 export function checkRowLines(
-	rows: { name: string; status: string; durationSec: number | null }[],
+	rows: { name: string; status: string; durationSec: number | null; summary?: string | null }[],
+	width = 80,
+	theme?: NativeTheme,
 ): string[] {
-	if (rows.length === 0) return [`${DIM}no check runs${RESET}`];
-	const pad = Math.max(...rows.map((r) => r.status.length));
-	return rows.map((r) => {
-		const dur = r.durationSec === null ? "" : ` ${DIM}${String(r.durationSec)}s${RESET}`;
-		return `${tint(r.status)}${" ".repeat(pad - r.status.length)}  ${plain(r.name)}${dur}`;
-	});
+	return rows.length
+		? rows.map((r) =>
+				truncateToWidth(
+					`${color(theme, stateTone(r.status), one(r.status))} ${one(r.name)}${r.durationSec === null ? "" : ` ${color(theme, "muted", `${String(r.durationSec)}s`)}`}`,
+					width,
+				),
+			)
+		: [color(theme, "muted", "no check runs")];
 }
-
 export function issueRowLines(
 	rows: { number: number; title: string; labels: string[]; assignees: string[] }[],
 	width: number,
+	theme?: NativeTheme,
 ): string[] {
-	if (rows.length === 0) return [`${DIM}no matching issues${RESET}`];
-	return rows.map((r) => {
-		const labelText = r.labels.length === 0 ? "" : ` [${r.labels.map(plain).join(", ")}]`;
-		const labels = r.labels.length === 0 ? "" : ` ${DIM}[${r.labels.map(plain).join(", ")}]${RESET}`;
-		const who = r.assignees.length === 0 ? "unassigned" : r.assignees.map(plain).join(", ");
-		const fixed = `#${String(r.number)} ${labelText} (${who})`;
-		const room = Math.max(8, width - fixed.length);
-		const title = plain(r.title);
-		const cut = title.length > room ? `${title.slice(0, Math.max(1, room - 1))}…` : title;
-		return `${BOLD}#${String(r.number)}${RESET} ${cut}${labels} ${DIM}(${who})${RESET}`;
-	});
+	return rows.length
+		? rows.map((r) =>
+				row(
+					`#${String(r.number)}`,
+					r.title,
+					`${r.labels.length ? `[${r.labels.join(", ")}] ` : ""}(${r.assignees.length ? r.assignees.join(", ") : "unassigned"})`,
+					width,
+					theme,
+				),
+			)
+		: [color(theme, "muted", "no matching issues")];
 }
-
-export function renderToolCall(tool: string, args: Record<string, unknown>): RenderedComponent {
-	const repo = typeof args.repo === "string" ? ` ${plain(args.repo)}` : "";
-	const number = typeof args.number === "number" ? ` #${String(args.number)}` : "";
-	const ref = typeof args.ref === "string" ? ` ${plain(args.ref)}` : "";
-	const label = tool.replace(/^github_/, "");
-	return component(() => [`${DIM}github ${label}${repo}${number}${ref}${RESET}`]);
+export function renderPullRows(
+	rows: Parameters<typeof pullRowLines>[0],
+	theme?: NativeTheme,
+	options: Options = {},
+): RenderedComponent {
+	return component((w) => preview(pullRowLines(rows, w, theme), options.expanded));
 }
-
-/* ------------------------- Component wrappers ------------------------- */
-
-export function renderPullRows(rows: Parameters<typeof pullRowLines>[0]): RenderedComponent {
-	return component((width) => pullRowLines(rows, width));
+export function renderIssueRows(
+	rows: Parameters<typeof issueRowLines>[0],
+	theme?: NativeTheme,
+	options: Options = {},
+): RenderedComponent {
+	return component((w) => preview(issueRowLines(rows, w, theme), options.expanded));
 }
-
-export function renderIssueRows(rows: Parameters<typeof issueRowLines>[0]): RenderedComponent {
-	return component((width) => issueRowLines(rows, width));
+export function renderCheckRows(
+	rows: Parameters<typeof checkRowLines>[0],
+	theme?: NativeTheme,
+	options: Options = {},
+): RenderedComponent {
+	return component((w) => preview(checkRowLines(rows, w, theme), options.expanded));
 }
-
-export function renderCheckRows(rows: Parameters<typeof checkRowLines>[0]): RenderedComponent {
-	return component(() => checkRowLines(rows));
+export function renderToolCall(
+	tool: string,
+	args: Record<string, unknown>,
+	theme?: NativeTheme,
+	context?: RenderContext,
+): RenderedComponent {
+	const target = [
+		args.repo,
+		typeof args.number === "number" ? `#${String(args.number)}` : undefined,
+		args.ref,
+		args.search,
+		args.event,
+		args.label,
+	]
+		.filter((v) => typeof v === "string")
+		.map((v) => one(String(v)))
+		.join(" · ");
+	return component(
+		() => [
+			`${color(theme, "accent", tool.replace("github_", "github "))}${target ? ` ${color(theme, "muted", target)}` : ""}`,
+		],
+		context,
+	);
+}
+export function renderToolResult(
+	tool: string,
+	value: unknown,
+	options: Options = {},
+	theme?: NativeTheme,
+	context?: RenderContext,
+): RenderedComponent {
+	const result = (value ?? {}) as Result;
+	const error = failure(result, options, theme, context);
+	if (error) return error;
+	const d = result.details as
+		| {
+				rows?:
+					| Parameters<typeof pullRowLines>[0]
+					| Parameters<typeof checkRowLines>[0]
+					| Parameters<typeof issueRowLines>[0];
+				pr?: PullDetail;
+				truncated?: boolean;
+				rollup?: string;
+				repo?: string;
+		  }
+		| undefined;
+	const partial = d?.truncated === true || d?.pr?.filesTruncated === true;
+	const opts = { ...options, isPartial: options.isPartial || partial };
+	if (d?.rows) {
+		const rows = d.rows;
+		const kind = tool === "github_prs" ? "pull requests" : tool === "github_checks" ? "checks" : "issues";
+		const summary = `${d.rollup ? `${d.rollup} · ` : ""}${rows.length ? `${String(rows.length)} ${kind}` : `no ${kind}`}${d.repo ? ` · ${d.repo}` : ""}${partial ? " · more available" : ""}`;
+		const lines = (w: number) =>
+			!rows.length
+				? []
+				: tool === "github_prs"
+					? pullRowLines(rows as Parameters<typeof pullRowLines>[0], w, theme)
+					: tool === "github_checks"
+						? checkRowLines(rows as Parameters<typeof checkRowLines>[0], w, theme)
+						: issueRowLines(rows as Parameters<typeof issueRowLines>[0], w, theme);
+		return finish(result, summary, lines, opts, theme, context, stateTone(d.rollup ?? "ready"), () =>
+			rows.length ? plain(text(result)).split("\n") : [],
+		);
+	}
+	if (d?.pr) {
+		const p = d.pr;
+		const rows = (w: number) => [
+			color(theme, "muted", `${one(p.author)} · ${one(p.state)} · ${one(p.branch)} → ${one(p.baseBranch)}`),
+			`+${String(p.additions)}/−${String(p.deletions)} · ${String(p.changedFiles)} files`,
+			...checkRowLines(p.checks, w, theme),
+			...(p.mergeable ? [color(theme, "warning", `cannot merge: ${one(p.mergeable)}`)] : []),
+		];
+		const full = () => [
+			color(theme, "muted", `${one(p.author)} · ${one(p.branch)} → ${one(p.baseBranch)}`),
+			color(theme, "muted", one(p.url)),
+			...(p.mergeable ? [color(theme, "warning", `cannot merge: ${one(p.mergeable)}`)] : []),
+			color(theme, "accent", "Description"),
+			plain(p.body) || "(no description)",
+			color(theme, "accent", "Checks"),
+			...p.checks.map(
+				(c) =>
+					`${color(theme, stateTone(c.status), one(c.status))} ${one(c.name)}${c.durationSec === null ? "" : ` · ${String(c.durationSec)}s`}`,
+			),
+			...p.checks.flatMap((c) => (c.summary ? [plain(c.summary)] : [])),
+			color(theme, "accent", "Reviews"),
+			...p.reviews.flatMap((r) => [`${one(r.author)} · ${one(r.state)}`, plain(r.body)]),
+			color(theme, "accent", "Files"),
+			...p.files.flatMap((f) => [
+				color(
+					theme,
+					"accent",
+					`${one(f.path)} · ${one(f.status)} +${String(f.additions)}/−${String(f.deletions)}`,
+				),
+				...(f.patch === null
+					? [`patch omitted: ${one(f.patchOmitted ?? "unknown reason")}`]
+					: plain(f.patch)
+							.split("\n")
+							.map((l) =>
+								color(theme, l.startsWith("+") ? "success" : l.startsWith("-") ? "error" : "muted", l),
+							)),
+			]),
+			...(p.filesTruncated ? [`file list truncated · ${one(p.url)}`] : []),
+		];
+		return finish(
+			result,
+			`${p.state} · #${String(p.number)} ${p.title}`,
+			rows,
+			opts,
+			theme,
+			context,
+			"success",
+			full,
+		);
+	}
+	return finish(
+		result,
+		one(text(result).split("\n")[0] ?? "") ||
+			(options.isPartial ? "loading github result" : "no result data"),
+		() => [],
+		options,
+		theme,
+		context,
+		result.details?.disconnected
+			? "muted"
+			: result.details?.connected || result.details?.posted
+				? "success"
+				: "muted",
+		() => plain(text(result)).split("\n"),
+	);
 }

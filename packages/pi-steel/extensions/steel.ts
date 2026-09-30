@@ -33,6 +33,7 @@ import {
 import { Type } from "typebox";
 import { explain, imageMime, steelGet, steelPost, withRetry } from "../src/client.ts";
 import { cdpBase, looksRemote, steelConfig } from "../src/config.ts";
+import { browserRenderers } from "../src/tui.ts";
 
 const namespace = { name: "steel", description: "Self-hosted Steel browser tools" };
 
@@ -68,6 +69,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "steel_scrape",
 		label: "Steel Scrape",
+		...browserRenderers("Steel Scrape"),
 		description:
 			"Fetch a page with a real headless Chromium (self-hosted Steel) and return its content. Executes JavaScript, so it works on SPAs and client-rendered pages where a plain HTTP fetch returns an empty shell. Returns markdown by default plus page metadata and extracted links.",
 		parameters: Type.Object(
@@ -186,6 +188,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "steel_screenshot",
 		label: "Steel Screenshot",
+		...browserRenderers("Steel Screenshot"),
 		description:
 			"Screenshot a URL with a real headless Chromium (self-hosted Steel) and return the image so you can see the rendered page. Use to verify layout, inspect visual bugs, or read content that only exists after rendering.",
 		parameters: Type.Object(
@@ -307,6 +310,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "steel_pdf",
 		label: "Steel PDF",
+		...browserRenderers("Steel PDF"),
 		description:
 			"Render a URL to PDF with a real headless Chromium (self-hosted Steel) and save it to a file. Use when you need a paginated snapshot of a page to keep or attach.",
 		parameters: Type.Object(
@@ -372,6 +376,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "steel_search",
 		label: "Steel Search",
+		...browserRenderers("Steel Search"),
 		description:
 			"Search the web through the self-hosted Steel browser and return result titles, URLs and snippets. A privacy-preserving alternative to a search API: the query runs from the home cluster, not from a third-party key.",
 		parameters: Type.Object(

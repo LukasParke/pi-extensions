@@ -1,36 +1,126 @@
+import type { Theme as NativeTheme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import {
+	Text as NativeText,
+	stripTerminalSequences,
+	truncateToWidth,
+	wrapTextWithAnsi,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
+
 export interface RenderedComponent {
 	render(width: number): string[];
 	invalidate(): void;
 }
+type RenderContext = { lastComponent?: RenderedComponent; isError?: boolean };
+type Options = Partial<ToolRenderResultOptions>;
+type Tone = "accent" | "success" | "warning" | "error" | "muted";
+type Result = {
+	content?: { type: string; text?: string }[];
+	details?: Record<string, unknown>;
+	isError?: boolean;
+};
 
-export function component(lines: (width: number) => string[]): RenderedComponent {
-	return { render: (width) => lines(width), invalidate: () => undefined };
-}
-
-const DIM = "\x1b[2m";
-const RED = "\x1b[31m";
-const GREEN = "\x1b[32m";
-const YELLOW = "\x1b[33m";
-const BOLD = "\x1b[1m";
-const RESET = "\x1b[0m";
-
-export function plain(s: string): string {
-	return s.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
-}
-
-function tint(state: string): string {
-	switch (state) {
-		case "passing":
-			return `${GREEN}${state}${RESET}`;
-		case "failing":
-		case "timed out":
-			return `${RED}${state}${RESET}`;
-		case "warning":
-		case "not configured":
-			return `${YELLOW}${state}${RESET}`;
-		default:
-			return `${DIM}${state}${RESET}`;
+class NativeRows extends NativeText {
+	constructor(public lines: (width: number) => string[]) {
+		super("", 0, 0);
 	}
+	override render(width: number): string[] {
+		const w = Math.max(1, width);
+		this.setText(
+			this.lines(w)
+				.map((line) => truncateToWidth(line, w))
+				.join("\n"),
+		);
+		const rows = super.render(w);
+		return rows.length <= 200 ? rows : [...rows.slice(0, 199), truncateToWidth("… more in tool content", w)];
+	}
+}
+export function component(lines: (width: number) => string[], context?: RenderContext): RenderedComponent {
+	if (context?.lastComponent instanceof NativeRows) {
+		context.lastComponent.lines = lines;
+		context.lastComponent.invalidate();
+		return context.lastComponent;
+	}
+	return new NativeRows(lines);
+}
+export function plain(s: string): string {
+	return stripTerminalSequences(s).replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "");
+}
+function one(s: string): string {
+	return plain(s).replace(/\s+/g, " ").trim();
+}
+function color(theme: NativeTheme | undefined, tone: Tone, text: string): string {
+	return theme?.fg(tone, text) ?? text;
+}
+function stateTone(state: string): Tone {
+	return /failing|conflict|changes requested/.test(state)
+		? "error"
+		: /warning|not configured|not ready|timed out|pending|review required/.test(state)
+			? "warning"
+			: /passing|ready|clean|approved/.test(state)
+				? "success"
+				: "muted";
+}
+function preview(rows: string[], expanded?: boolean): string[] {
+	return expanded || rows.length <= 5
+		? rows
+		: [...rows.slice(0, 5), `… ${String(rows.length - 5)} more · expand`];
+}
+function text(result: Result): string {
+	return (result.content ?? [])
+		.filter((c) => c.type === "text")
+		.map((c) => c.text ?? "")
+		.join("\n");
+}
+function failure(result: Result, options: Options, theme?: NativeTheme, context?: RenderContext) {
+	if (!(result.isError || context?.isError || result.details?.refused || result.details?.error)) return;
+	const message = plain(text(result) || String(result.details?.error ?? "Tool failed"));
+	return component(
+		(width) =>
+			options.expanded
+				? [
+						color(theme, "error", "error"),
+						...wrapTextWithAnsi(message, width).map((line) => color(theme, "error", line)),
+					]
+				: [color(theme, "error", `error · ${one(message)}`)],
+		context,
+	);
+}
+function finish(
+	result: Result,
+	summary: string,
+	rows: (width: number) => string[],
+	options: Options,
+	theme?: NativeTheme,
+	context?: RenderContext,
+	tone: Tone = "success",
+	full?: (width: number) => string[],
+) {
+	return component(
+		(w) => [
+			color(
+				theme,
+				options.isPartial ? "warning" : tone,
+				`${options.isPartial ? "partial · " : ""}${one(summary)}`,
+			),
+			...preview(
+				options.expanded && full ? full(w).flatMap((line) => wrapTextWithAnsi(line, w)) : rows(w),
+				options.expanded,
+			),
+		],
+		context,
+	);
+}
+
+function row(primary: string, body: string, metadata: string, width: number, theme?: NativeTheme): string {
+	const head = truncateToWidth(one(primary), Math.max(1, Math.floor(width / 3)), "…");
+	const meta = truncateToWidth(one(metadata), Math.max(1, Math.floor(width / 2)), "…");
+	const room = Math.max(0, width - visibleWidth(head) - visibleWidth(meta) - 2);
+	return truncateToWidth(
+		`${color(theme, "accent", head)} ${truncateToWidth(one(body), room, "…")} ${color(theme, "muted", meta)}`,
+		width,
+		"…",
+	);
 }
 
 export function statusLines(
@@ -42,104 +132,197 @@ export function statusLines(
 		conflicted: boolean;
 	},
 	width: number,
+	theme?: NativeTheme,
 ): string[] {
-	const head: string[] = [];
-	const branch = st.branch === null ? "(detached)" : plain(st.branch);
-	const tracking =
-		st.ahead === 0 && st.behind === 0
-			? ""
-			: ` ${DIM}(${st.ahead > 0 ? `↑${String(st.ahead)}` : ""}${st.behind > 0 ? `↓${String(st.behind)}` : ""})${RESET}`;
-	head.push(`${BOLD}${branch}${RESET}${tracking}`);
-	if (st.conflicted) head.push(`${RED}conflicts unresolved${RESET}`);
-	if (st.files.length === 0) {
-		head.push(`${DIM}clean${RESET}`);
-		return head;
-	}
-
-	const pad = Math.max(...st.files.map((f) => f.status.length));
-	for (const f of st.files.slice(0, 50)) {
-		const room = Math.max(8, width - pad - 4);
-		const path = plain(f.path);
-		const cut = path.length > room ? `…${path.slice(-(room - 1))}` : path;
-		const staged = f.staged ? "" : `${DIM} (unstaged)${RESET}`;
-		head.push(`${DIM}${f.status.padEnd(pad)}${RESET}  ${cut}${staged}`);
-	}
-	if (st.files.length > 50) head.push(`${DIM}… and ${String(st.files.length - 50)} more${RESET}`);
-	return head;
+	const head = `${st.branch === null ? "(detached)" : one(st.branch)}${st.ahead ? ` ↑${String(st.ahead)}` : ""}${st.behind ? ` ↓${String(st.behind)}` : ""}`;
+	return [
+		color(theme, "accent", head),
+		...(st.conflicted ? [color(theme, "error", "conflicts unresolved")] : []),
+		...(st.files.length
+			? st.files.map((f) =>
+					truncateToWidth(
+						`${color(theme, "muted", one(f.status))} ${one(f.path)}${f.staged ? " (staged)" : " (unstaged)"}`,
+						width,
+					),
+				)
+			: [color(theme, "success", "clean")]),
+	];
 }
-
 export function branchLines(
-	rows: {
-		name: string;
-		current: boolean;
-		ahead: number;
-		behind: number;
-		upstream: string | null;
-	}[],
+	rows: { name: string; current: boolean; ahead: number; behind: number; upstream: string | null }[],
 	width: number,
+	theme?: NativeTheme,
 ): string[] {
-	if (rows.length === 0) return [`${DIM}no branches${RESET}`];
-	const pad = Math.min(40, Math.max(...rows.map((r) => r.name.length)));
-	return rows.map((r) => {
-		const mark = r.current ? `${BOLD}*${RESET}` : " ";
-		const name = plain(r.name);
-		const shown = name.length > pad ? `${name.slice(0, pad - 1)}…` : name.padEnd(pad);
-		const track =
-			r.upstream === null
-				? `${DIM}no upstream${RESET}`
-				: `${DIM}${plain(r.upstream)}${r.ahead > 0 ? ` ↑${String(r.ahead)}` : ""}${r.behind > 0 ? ` ↓${String(r.behind)}` : ""}${RESET}`;
-		void width;
-		return `${mark} ${shown}  ${track}`;
-	});
+	return rows.length
+		? rows.map((r) =>
+				truncateToWidth(
+					`${r.current ? "* " : ""}${one(r.name)} ${color(theme, "muted", `${r.upstream === null ? "no upstream" : one(r.upstream)}${r.ahead ? ` ↑${String(r.ahead)}` : ""}${r.behind ? ` ↓${String(r.behind)}` : ""}`)}`,
+					width,
+				),
+			)
+		: [color(theme, "muted", "no branches")];
 }
-
-export function checklistLines(result: {
-	ready: boolean;
-	checks: { name: string; state: string; detail: string | null }[];
-}): string[] {
-	const pad = Math.max(...result.checks.map((c) => c.state.length), 1);
-	const rows = result.checks.map((c) => {
-		const detail = c.detail === null ? "" : `  ${DIM}${plain(c.detail).split("\n")[0] ?? ""}${RESET}`;
-		return `${tint(c.state)}${" ".repeat(Math.max(0, pad - c.state.length))}  ${c.name}${detail}`;
-	});
-	rows.unshift(result.ready ? `${GREEN}ready${RESET}` : `${YELLOW}not ready${RESET}`);
-	return rows;
+export function checklistLines(
+	result: { ready: boolean; checks: { name: string; state: string; detail: string | null }[] },
+	theme?: NativeTheme,
+): string[] {
+	return [
+		color(theme, result.ready ? "success" : "warning", result.ready ? "ready" : "not ready"),
+		...result.checks.map(
+			(c) =>
+				`${color(theme, stateTone(c.state), one(c.state))} ${one(c.name)}${c.detail === null ? "" : ` · ${color(theme, "muted", one(c.detail))}`}`,
+		),
+	];
 }
-
 export function diffLines(
 	files: { path: string; status: string; additions: number; deletions: number }[],
 	width: number,
+	theme?: NativeTheme,
 ): string[] {
-	if (files.length === 0) return [`${DIM}no changes${RESET}`];
-	const pad = Math.min(50, Math.max(...files.map((f) => f.path.length)));
-	return files.map((f) => {
-		const path = plain(f.path);
-		const shown = path.length > pad ? `…${path.slice(-(pad - 1))}` : path.padEnd(pad);
-		void width;
-		return `${shown}  ${GREEN}+${String(f.additions)}${RESET}/${RED}−${String(f.deletions)}${RESET} ${DIM}${f.status}${RESET}`;
-	});
+	return files.length
+		? files.map((f) =>
+				truncateToWidth(
+					`${one(f.path)} ${color(theme, "success", `+${String(f.additions)}`)}/${color(theme, "error", `−${String(f.deletions)}`)} ${color(theme, "muted", one(f.status))}`,
+					width,
+				),
+			)
+		: [color(theme, "muted", "no changes")];
 }
-
-export function renderStatus(st: Parameters<typeof statusLines>[0]): RenderedComponent {
-	return component((w) => statusLines(st, w));
+export function renderStatus(
+	st: Parameters<typeof statusLines>[0],
+	theme?: NativeTheme,
+	options: Options = {},
+): RenderedComponent {
+	return component((w) => preview(statusLines(st, w, theme), options.expanded));
 }
-export function renderBranches(rows: Parameters<typeof branchLines>[0]): RenderedComponent {
-	return component((w) => branchLines(rows, w));
+export function renderBranches(
+	rows: Parameters<typeof branchLines>[0],
+	theme?: NativeTheme,
+	options: Options = {},
+): RenderedComponent {
+	return component((w) => preview(branchLines(rows, w, theme), options.expanded));
 }
-export function renderChecklist(r: Parameters<typeof checklistLines>[0]): RenderedComponent {
-	return component(() => checklistLines(r));
+export function renderChecklist(
+	r: Parameters<typeof checklistLines>[0],
+	theme?: NativeTheme,
+	options: Options = {},
+): RenderedComponent {
+	return component(() => preview(checklistLines(r, theme), options.expanded));
 }
-export function renderDiff(files: Parameters<typeof diffLines>[0]): RenderedComponent {
-	return component((w) => diffLines(files, w));
+export function renderDiff(
+	files: Parameters<typeof diffLines>[0],
+	theme?: NativeTheme,
+	options: Options = {},
+): RenderedComponent {
+	return component((w) => preview(diffLines(files, w, theme), options.expanded));
 }
-
-export function renderToolCall(tool: string, args: Record<string, unknown>): RenderedComponent {
-	const label = tool.replace(/^git_/, "");
-	const target =
-		typeof args.path === "string"
-			? ` ${plain(args.path)}`
-			: typeof args.ref === "string"
-				? ` ${plain(args.ref)}`
-				: "";
-	return component(() => [`${DIM}git ${label}${target}${RESET}`]);
+export function renderToolCall(
+	tool: string,
+	args: Record<string, unknown>,
+	theme?: NativeTheme,
+	context?: RenderContext,
+): RenderedComponent {
+	const target = [args.path, args.ref, args.file, args.from, args.to]
+		.filter((v) => typeof v === "string")
+		.map((v) => one(String(v)))
+		.join(" · ");
+	return component(
+		() => [
+			`${color(theme, "accent", tool.replace("git_", "git "))}${target ? ` ${color(theme, "muted", target)}` : ""}`,
+		],
+		context,
+	);
+}
+export function renderToolResult(
+	tool: string,
+	value: unknown,
+	options: Options = {},
+	theme?: NativeTheme,
+	context?: RenderContext,
+): RenderedComponent {
+	const result = (value ?? {}) as Result;
+	const error = failure(result, options, theme, context);
+	if (error) return error;
+	const d = result.details as
+		| {
+				status?: Parameters<typeof statusLines>[0];
+				diff?: { files: Parameters<typeof diffLines>[0] };
+				branches?: Parameters<typeof branchLines>[0];
+				checks?: Parameters<typeof checklistLines>[0]["checks"];
+				ready?: boolean;
+				commits?: { sha: string; subject: string }[];
+				worktrees?: { path: string; branch: string | null }[];
+		  }
+		| undefined;
+	const full = () => plain(text(result)).split("\n");
+	if (tool === "git_status" && d?.status) {
+		const st = d.status;
+		return finish(
+			result,
+			`${st.conflicted ? "conflicts unresolved" : st.files.length ? `${String(st.files.length)} changes` : "clean"} · ${st.branch ?? "(detached)"}`,
+			(w) => (st.files.length ? statusLines(st, w, theme).slice(st.conflicted ? 2 : 1) : []),
+			options,
+			theme,
+			context,
+			st.conflicted ? "error" : "success",
+			full,
+		);
+	}
+	if (tool === "git_diff" && d?.diff)
+		return finish(
+			result,
+			d.diff.files.length ? `${String(d.diff.files.length)} changed files` : "no changes",
+			(w) => (d.diff ? diffLines(d.diff.files, w, theme).filter(() => d.diff!.files.length > 0) : []),
+			options,
+			theme,
+			context,
+			"success",
+			full,
+		);
+	if (tool === "git_branches" && d?.branches)
+		return finish(
+			result,
+			d.branches.length ? `${String(d.branches.length)} branches` : "no branches",
+			(w) => (d.branches!.length ? branchLines(d.branches!, w, theme) : []),
+			options,
+			theme,
+			context,
+			"success",
+			full,
+		);
+	if (tool === "git_checklist" && d?.checks)
+		return finish(
+			result,
+			d.ready ? "ready" : "not ready",
+			() => checklistLines({ ready: d.ready === true, checks: d.checks! }, theme).slice(1),
+			options,
+			theme,
+			context,
+			d.ready ? "success" : "warning",
+			full,
+		);
+	if (tool === "git_log" && d?.commits)
+		return finish(
+			result,
+			d.commits.length ? `${String(d.commits.length)} commits` : "no commits in that range",
+			() => d.commits!.map((c) => `${color(theme, "accent", one(c.sha.slice(0, 8)))} ${one(c.subject)}`),
+			options,
+			theme,
+			context,
+			"success",
+			full,
+		);
+	return finish(
+		result,
+		text(result)
+			? one(text(result).split("\n")[0] ?? "")
+			: options.isPartial
+				? "loading git result"
+				: "no result data",
+		() => [],
+		options,
+		theme,
+		context,
+		"muted",
+	);
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0
+
+- Label-first native run previews and widgets; active rows remain fixed-height,
+  with accounting and bounded output detail available on expansion.
+- Active / Ready / History inspector groups, ID-stable selection, height-aware
+  scrolling and summary-first detail with transcripts on demand.
+- Remove the 500-turn schema ceiling and automatic synthesis turn cap. No built-in
+  spend/turn budgets; explicitly requested or configured limits remain enforced.
+
 ## 0.11.0
 
 - Requires parent Pi 0.99.1+ and declares native model-only exposure with effect

@@ -5,6 +5,11 @@ Optional TUI header/footer dashboard for the [Pi coding agent](https://pi.dev).
 **Default is off.** Installing the package does not replace stock UI and starts
 no pollers — enabling the dashboard is an explicit opt-in.
 
+The header uses one row. The footer previews the first line of at most two
+extension statuses, with overflow disclosure rather than stacking every panel.
+Use `/dashboard status` to select a status and inspect its full text locally;
+these details are not sent to the model.
+
 Inspired by [Ben Davis](https://github.com/davis7dotsh) /
 [my-pi-setup](https://github.com/davis7dotsh/my-pi-setup) — this is an
 independent implementation, not a fork.

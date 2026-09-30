@@ -42,7 +42,7 @@ describe('UI Models', () => {
     const theme = { fg: (_: string, t: string) => t, muted: (t: string) => t } as any;
     footer.update(3);
     const status = footer.render(theme, 80);
-    expect(status).toContain('3 running');
+    expect(status).toContain('3 active');
     expect(status).toContain('2 ready');
     expect(status).toContain('/subagents');
   });

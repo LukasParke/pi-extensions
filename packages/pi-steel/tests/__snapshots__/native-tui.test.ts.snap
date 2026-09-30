@@ -1,0 +1,1190 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`registered native browser/search/log renderers > error_log: disabled native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Error Log all tools                                                                                                     ",
+    "Disabled · error logging is off                                                                                         ",
+  ],
+  "120 expanded": [
+    "Error Log all tools                                                                                                     ",
+    "Disabled · error logging is off                                                                                         ",
+  ],
+  "60 collapsed": [
+    "Error Log all tools                                         ",
+    "Disabled · error logging is off                             ",
+  ],
+  "60 expanded": [
+    "Error Log all tools                                         ",
+    "Disabled · error logging is off                             ",
+  ],
+  "80 collapsed": [
+    "Error Log all tools                                                             ",
+    "Disabled · error logging is off                                                 ",
+  ],
+  "80 expanded": [
+    "Error Log all tools                                                             ",
+    "Disabled · error logging is off                                                 ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > error_log: empty native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Error Log all tools                                                                                                     ",
+    "Empty · no matching errors                                                                                              ",
+  ],
+  "120 expanded": [
+    "Error Log all tools                                                                                                     ",
+    "Empty · no matching errors                                                                                              ",
+    "Full log: /tmp/errors.jsonl                                                                                             ",
+  ],
+  "60 collapsed": [
+    "Error Log all tools                                         ",
+    "Empty · no matching errors                                  ",
+  ],
+  "60 expanded": [
+    "Error Log all tools                                         ",
+    "Empty · no matching errors                                  ",
+    "Full log: /tmp/errors.jsonl                                 ",
+  ],
+  "80 collapsed": [
+    "Error Log all tools                                                             ",
+    "Empty · no matching errors                                                      ",
+  ],
+  "80 expanded": [
+    "Error Log all tools                                                             ",
+    "Empty · no matching errors                                                      ",
+    "Full log: /tmp/errors.jsonl                                                     ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > error_log: errors native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Error Log rg · 2h                                                                                                       ",
+    "Ready · 5 captured errors                                                                                               ",
+    "rg · Failed to read 中文                                                                                                ",
+    "rg · Failed to read 中文                                                                                                ",
+    "rg · Failed to read 中文                                                                                                ",
+    "… 2 more errors; expand                                                                                                 ",
+  ],
+  "120 expanded": [
+    "Error Log rg · 2h                                                                                                       ",
+    "Ready · 5 captured errors                                                                                               ",
+    "2026-09-29T12:00:00Z · tool · rg                                                                                        ",
+    "Failed to read 中文                                                                                                     ",
+    "permission denied                                                                                                       ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}                                                                           ",
+    "Stack:                                                                                                                  ",
+    "Error: denied                                                                                                           ",
+    "  at search (/work/search.ts:10)                                                                                        ",
+    "Cwd: /work                                                                                                              ",
+    "2026-09-29T12:00:00Z · tool · rg                                                                                        ",
+    "Failed to read 中文                                                                                                     ",
+    "permission denied                                                                                                       ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}                                                                           ",
+    "Stack:                                                                                                                  ",
+    "Error: denied                                                                                                           ",
+    "  at search (/work/search.ts:10)                                                                                        ",
+    "Cwd: /work                                                                                                              ",
+    "2026-09-29T12:00:00Z · tool · rg                                                                                        ",
+    "Failed to read 中文                                                                                                     ",
+    "permission denied                                                                                                       ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}                                                                           ",
+    "Stack:                                                                                                                  ",
+    "Error: denied                                                                                                           ",
+    "  at search (/work/search.ts:10)                                                                                        ",
+    "Cwd: /work                                                                                                              ",
+    "2026-09-29T12:00:00Z · tool · rg                                                                                        ",
+    "Failed to read 中文                                                                                                     ",
+    "permission denied                                                                                                       ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}                                                                           ",
+    "Stack:                                                                                                                  ",
+    "Error: denied                                                                                                           ",
+    "  at search (/work/search.ts:10)                                                                                        ",
+    "Cwd: /work                                                                                                              ",
+    "2026-09-29T12:00:00Z · tool · rg                                                                                        ",
+    "Failed to read 中文                                                                                                     ",
+    "permission denied                                                                                                       ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}                                                                           ",
+    "Stack:                                                                                                                  ",
+    "Error: denied                                                                                                           ",
+    "  at search (/work/search.ts:10)                                                                                        ",
+    "Cwd: /work                                                                                                              ",
+    "Full log: /tmp/errors.jsonl                                                                                             ",
+  ],
+  "60 collapsed": [
+    "Error Log rg · 2h                                           ",
+    "Ready · 5 captured errors                                   ",
+    "rg · Failed to read 中文                                    ",
+    "rg · Failed to read 中文                                    ",
+    "rg · Failed to read 中文                                    ",
+    "… 2 more errors; expand                                     ",
+  ],
+  "60 expanded": [
+    "Error Log rg · 2h                                           ",
+    "Ready · 5 captured errors                                   ",
+    "2026-09-29T12:00:00Z · tool · rg                            ",
+    "Failed to read 中文                                         ",
+    "permission denied                                           ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}               ",
+    "Stack:                                                      ",
+    "Error: denied                                               ",
+    "  at search (/work/search.ts:10)                            ",
+    "Cwd: /work                                                  ",
+    "2026-09-29T12:00:00Z · tool · rg                            ",
+    "Failed to read 中文                                         ",
+    "permission denied                                           ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}               ",
+    "Stack:                                                      ",
+    "Error: denied                                               ",
+    "  at search (/work/search.ts:10)                            ",
+    "Cwd: /work                                                  ",
+    "2026-09-29T12:00:00Z · tool · rg                            ",
+    "Failed to read 中文                                         ",
+    "permission denied                                           ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}               ",
+    "Stack:                                                      ",
+    "Error: denied                                               ",
+    "  at search (/work/search.ts:10)                            ",
+    "Cwd: /work                                                  ",
+    "2026-09-29T12:00:00Z · tool · rg                            ",
+    "Failed to read 中文                                         ",
+    "permission denied                                           ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}               ",
+    "Stack:                                                      ",
+    "Error: denied                                               ",
+    "  at search (/work/search.ts:10)                            ",
+    "Cwd: /work                                                  ",
+    "2026-09-29T12:00:00Z · tool · rg                            ",
+    "Failed to read 中文                                         ",
+    "permission denied                                           ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}               ",
+    "Stack:                                                      ",
+    "Error: denied                                               ",
+    "  at search (/work/search.ts:10)                            ",
+    "Cwd: /work                                                  ",
+    "Full log: /tmp/errors.jsonl                                 ",
+  ],
+  "80 collapsed": [
+    "Error Log rg · 2h                                                               ",
+    "Ready · 5 captured errors                                                       ",
+    "rg · Failed to read 中文                                                        ",
+    "rg · Failed to read 中文                                                        ",
+    "rg · Failed to read 中文                                                        ",
+    "… 2 more errors; expand                                                         ",
+  ],
+  "80 expanded": [
+    "Error Log rg · 2h                                                               ",
+    "Ready · 5 captured errors                                                       ",
+    "2026-09-29T12:00:00Z · tool · rg                                                ",
+    "Failed to read 中文                                                             ",
+    "permission denied                                                               ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}                                   ",
+    "Stack:                                                                          ",
+    "Error: denied                                                                   ",
+    "  at search (/work/search.ts:10)                                                ",
+    "Cwd: /work                                                                      ",
+    "2026-09-29T12:00:00Z · tool · rg                                                ",
+    "Failed to read 中文                                                             ",
+    "permission denied                                                               ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}                                   ",
+    "Stack:                                                                          ",
+    "Error: denied                                                                   ",
+    "  at search (/work/search.ts:10)                                                ",
+    "Cwd: /work                                                                      ",
+    "2026-09-29T12:00:00Z · tool · rg                                                ",
+    "Failed to read 中文                                                             ",
+    "permission denied                                                               ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}                                   ",
+    "Stack:                                                                          ",
+    "Error: denied                                                                   ",
+    "  at search (/work/search.ts:10)                                                ",
+    "Cwd: /work                                                                      ",
+    "2026-09-29T12:00:00Z · tool · rg                                                ",
+    "Failed to read 中文                                                             ",
+    "permission denied                                                               ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}                                   ",
+    "Stack:                                                                          ",
+    "Error: denied                                                                   ",
+    "  at search (/work/search.ts:10)                                                ",
+    "Cwd: /work                                                                      ",
+    "2026-09-29T12:00:00Z · tool · rg                                                ",
+    "Failed to read 中文                                                             ",
+    "permission denied                                                               ",
+    "Args: {"token":"[REDACTED]","pattern":"中文"}                                   ",
+    "Stack:                                                                          ",
+    "Error: denied                                                                   ",
+    "  at search (/work/search.ts:10)                                                ",
+    "Cwd: /work                                                                      ",
+    "Full log: /tmp/errors.jsonl                                                     ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > fd: no results native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Find Files all entries · .                                                                                              ",
+    "Empty · 0 paths                                                                                                         ",
+  ],
+  "120 expanded": [
+    "Find Files all entries · .                                                                                              ",
+    "Empty · 0 paths                                                                                                         ",
+  ],
+  "60 collapsed": [
+    "Find Files all entries · .                                  ",
+    "Empty · 0 paths                                             ",
+  ],
+  "60 expanded": [
+    "Find Files all entries · .                                  ",
+    "Empty · 0 paths                                             ",
+  ],
+  "80 collapsed": [
+    "Find Files all entries · .                                                      ",
+    "Empty · 0 paths                                                                 ",
+  ],
+  "80 expanded": [
+    "Find Files all entries · .                                                      ",
+    "Empty · 0 paths                                                                 ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > fd: paths native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Find Files 中文 · /work/中文                                                                                            ",
+    "Done · 2 paths                                                                                                          ",
+    "src/中文.ts                                                                                                             ",
+    "src/other.ts                                                                                                            ",
+  ],
+  "120 expanded": [
+    "Find Files 中文 · /work/中文                                                                                            ",
+    "Done · 2 paths                                                                                                          ",
+    "src/中文.ts                                                                                                             ",
+    "src/other.ts                                                                                                            ",
+  ],
+  "60 collapsed": [
+    "Find Files 中文 · /work/中文                                ",
+    "Done · 2 paths                                              ",
+    "src/中文.ts                                                 ",
+    "src/other.ts                                                ",
+  ],
+  "60 expanded": [
+    "Find Files 中文 · /work/中文                                ",
+    "Done · 2 paths                                              ",
+    "src/中文.ts                                                 ",
+    "src/other.ts                                                ",
+  ],
+  "80 collapsed": [
+    "Find Files 中文 · /work/中文                                                    ",
+    "Done · 2 paths                                                                  ",
+    "src/中文.ts                                                                     ",
+    "src/other.ts                                                                    ",
+  ],
+  "80 expanded": [
+    "Find Files 中文 · /work/中文                                                    ",
+    "Done · 2 paths                                                                  ",
+    "src/中文.ts                                                                     ",
+    "src/other.ts                                                                    ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > firecrawl_crawl: complete empty native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Firecrawl Crawl                                                                                                         ",
+    "Empty · completed · 0/0 pages                                                                                           ",
+  ],
+  "120 expanded": [
+    "Firecrawl Crawl                                                                                                         ",
+    "Empty · completed · 0/0 pages                                                                                           ",
+    "Crawled 0 page(s) (status: completed).                                                                                  ",
+  ],
+  "60 collapsed": [
+    "Firecrawl Crawl                                             ",
+    "Empty · completed · 0/0 pages                               ",
+  ],
+  "60 expanded": [
+    "Firecrawl Crawl                                             ",
+    "Empty · completed · 0/0 pages                               ",
+    "Crawled 0 page(s) (status: completed).                      ",
+  ],
+  "80 collapsed": [
+    "Firecrawl Crawl                                                                 ",
+    "Empty · completed · 0/0 pages                                                   ",
+  ],
+  "80 expanded": [
+    "Firecrawl Crawl                                                                 ",
+    "Empty · completed · 0/0 pages                                                   ",
+    "Crawled 0 page(s) (status: completed).                                          ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > firecrawl_crawl: failed with pages native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Firecrawl Crawl                                                                                                         ",
+    "Failed · failed · 1/8 pages                                                                                             ",
+  ],
+  "120 expanded": [
+    "Firecrawl Crawl                                                                                                         ",
+    "Failed · failed · 1/8 pages                                                                                             ",
+    "denied                                                                                                                  ",
+    "Crawled 1 page(s) (status: failed).                                                                                     ",
+    "Partial body                                                                                                            ",
+  ],
+  "60 collapsed": [
+    "Firecrawl Crawl                                             ",
+    "Failed · failed · 1/8 pages                                 ",
+  ],
+  "60 expanded": [
+    "Firecrawl Crawl                                             ",
+    "Failed · failed · 1/8 pages                                 ",
+    "denied                                                      ",
+    "Crawled 1 page(s) (status: failed).                         ",
+    "Partial body                                                ",
+  ],
+  "80 collapsed": [
+    "Firecrawl Crawl                                                                 ",
+    "Failed · failed · 1/8 pages                                                     ",
+  ],
+  "80 expanded": [
+    "Firecrawl Crawl                                                                 ",
+    "Failed · failed · 1/8 pages                                                     ",
+    "denied                                                                          ",
+    "Crawled 1 page(s) (status: failed).                                             ",
+    "Partial body                                                                    ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > firecrawl_crawl: progress native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Firecrawl Crawl https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中...",
+    "Active · scraping · 1/8 pages                                                                                           ",
+  ],
+  "120 expanded": [
+    "Firecrawl Crawl https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中...",
+    "Active · scraping · 1/8 pages                                                                                           ",
+  ],
+  "60 collapsed": [
+    "Firecrawl Crawl https://example.invalid/中文/中文/中文/中...",
+    "Active · scraping · 1/8 pages                               ",
+  ],
+  "60 expanded": [
+    "Firecrawl Crawl https://example.invalid/中文/中文/中文/中...",
+    "Active · scraping · 1/8 pages                               ",
+  ],
+  "80 collapsed": [
+    "Firecrawl Crawl https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中...",
+    "Active · scraping · 1/8 pages                                                   ",
+  ],
+  "80 expanded": [
+    "Firecrawl Crawl https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中...",
+    "Active · scraping · 1/8 pages                                                   ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > firecrawl_crawl: timeout with pages native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Firecrawl Crawl                                                                                                         ",
+    "Partial / timeout · scraping · 1/8 pages                                                                                ",
+  ],
+  "120 expanded": [
+    "Firecrawl Crawl                                                                                                         ",
+    "Partial / timeout · scraping · 1/8 pages                                                                                ",
+    "Crawled 1 page(s) (status: scraping).                                                                                   ",
+    "                                                                                                                        ",
+    "### 1. 中文 page                                                                                                        ",
+    "https://example.invalid                                                                                                 ",
+    "                                                                                                                        ",
+    "Partial body                                                                                                            ",
+  ],
+  "60 collapsed": [
+    "Firecrawl Crawl                                             ",
+    "Partial / timeout · scraping · 1/8 pages                    ",
+  ],
+  "60 expanded": [
+    "Firecrawl Crawl                                             ",
+    "Partial / timeout · scraping · 1/8 pages                    ",
+    "Crawled 1 page(s) (status: scraping).                       ",
+    "                                                            ",
+    "### 1. 中文 page                                            ",
+    "https://example.invalid                                     ",
+    "                                                            ",
+    "Partial body                                                ",
+  ],
+  "80 collapsed": [
+    "Firecrawl Crawl                                                                 ",
+    "Partial / timeout · scraping · 1/8 pages                                        ",
+  ],
+  "80 expanded": [
+    "Firecrawl Crawl                                                                 ",
+    "Partial / timeout · scraping · 1/8 pages                                        ",
+    "Crawled 1 page(s) (status: scraping).                                           ",
+    "                                                                                ",
+    "### 1. 中文 page                                                                ",
+    "https://example.invalid                                                         ",
+    "                                                                                ",
+    "Partial body                                                                    ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > firecrawl_crawl: waiting native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Firecrawl Crawl                                                                                                         ",
+    "Waiting · queued · 0/? pages                                                                                            ",
+  ],
+  "120 expanded": [
+    "Firecrawl Crawl                                                                                                         ",
+    "Waiting · queued · 0/? pages                                                                                            ",
+  ],
+  "60 collapsed": [
+    "Firecrawl Crawl                                             ",
+    "Waiting · queued · 0/? pages                                ",
+  ],
+  "60 expanded": [
+    "Firecrawl Crawl                                             ",
+    "Waiting · queued · 0/? pages                                ",
+  ],
+  "80 collapsed": [
+    "Firecrawl Crawl                                                                 ",
+    "Waiting · queued · 0/? pages                                                    ",
+  ],
+  "80 expanded": [
+    "Firecrawl Crawl                                                                 ",
+    "Waiting · queued · 0/? pages                                                    ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > firecrawl_map: URLs native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Firecrawl Map https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文...",
+    "Done · 2 URLs                                                                                                           ",
+  ],
+  "120 expanded": [
+    "Firecrawl Map https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文...",
+    "Done · 2 URLs                                                                                                           ",
+    "Found 2 URL(s):                                                                                                         ",
+    "                                                                                                                        ",
+    "https://example.invalid/中文                                                                                            ",
+    "https://example.invalid/docs                                                                                            ",
+  ],
+  "60 collapsed": [
+    "Firecrawl Map https://example.invalid/中文/中文/中文/中文...",
+    "Done · 2 URLs                                               ",
+  ],
+  "60 expanded": [
+    "Firecrawl Map https://example.invalid/中文/中文/中文/中文...",
+    "Done · 2 URLs                                               ",
+    "Found 2 URL(s):                                             ",
+    "                                                            ",
+    "https://example.invalid/中文                                ",
+    "https://example.invalid/docs                                ",
+  ],
+  "80 collapsed": [
+    "Firecrawl Map https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文...",
+    "Done · 2 URLs                                                                   ",
+  ],
+  "80 expanded": [
+    "Firecrawl Map https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文...",
+    "Done · 2 URLs                                                                   ",
+    "Found 2 URL(s):                                                                 ",
+    "                                                                                ",
+    "https://example.invalid/中文                                                    ",
+    "https://example.invalid/docs                                                    ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > firecrawl_scrape: empty native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Firecrawl Scrape                                                                                                        ",
+    "Empty · (no content returned)                                                                                           ",
+  ],
+  "120 expanded": [
+    "Firecrawl Scrape                                                                                                        ",
+    "Empty · (no content returned)                                                                                           ",
+    "(no content returned)                                                                                                   ",
+  ],
+  "60 collapsed": [
+    "Firecrawl Scrape                                            ",
+    "Empty · (no content returned)                               ",
+  ],
+  "60 expanded": [
+    "Firecrawl Scrape                                            ",
+    "Empty · (no content returned)                               ",
+    "(no content returned)                                       ",
+  ],
+  "80 collapsed": [
+    "Firecrawl Scrape                                                                ",
+    "Empty · (no content returned)                                                   ",
+  ],
+  "80 expanded": [
+    "Firecrawl Scrape                                                                ",
+    "Empty · (no content returned)                                                   ",
+    "(no content returned)                                                           ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > firecrawl_scrape: refused native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Firecrawl Scrape                                                                                                        ",
+    "Refused · Access refused: configuration required                                                                        ",
+  ],
+  "120 expanded": [
+    "Firecrawl Scrape                                                                                                        ",
+    "Refused · Access refused: configuration required                                                                        ",
+    "configuration required                                                                                                  ",
+    "Access refused: configuration required                                                                                  ",
+  ],
+  "60 collapsed": [
+    "Firecrawl Scrape                                            ",
+    "Refused · Access refused: configuration required            ",
+  ],
+  "60 expanded": [
+    "Firecrawl Scrape                                            ",
+    "Refused · Access refused: configuration required            ",
+    "configuration required                                      ",
+    "Access refused: configuration required                      ",
+  ],
+  "80 collapsed": [
+    "Firecrawl Scrape                                                                ",
+    "Refused · Access refused: configuration required                                ",
+  ],
+  "80 expanded": [
+    "Firecrawl Scrape                                                                ",
+    "Refused · Access refused: configuration required                                ",
+    "configuration required                                                          ",
+    "Access refused: configuration required                                          ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > firecrawl_search: no results native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Firecrawl Search                                                                                                        ",
+    "Empty · 0 results                                                                                                       ",
+  ],
+  "120 expanded": [
+    "Firecrawl Search                                                                                                        ",
+    "Empty · 0 results                                                                                                       ",
+    "No results found.                                                                                                       ",
+  ],
+  "60 collapsed": [
+    "Firecrawl Search                                            ",
+    "Empty · 0 results                                           ",
+  ],
+  "60 expanded": [
+    "Firecrawl Search                                            ",
+    "Empty · 0 results                                           ",
+    "No results found.                                           ",
+  ],
+  "80 collapsed": [
+    "Firecrawl Search                                                                ",
+    "Empty · 0 results                                                               ",
+  ],
+  "80 expanded": [
+    "Firecrawl Search                                                                ",
+    "Empty · 0 results                                                               ",
+    "No results found.                                                               ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > rg: failed native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Search Content all entries · .                                                                                          ",
+    "Failed · rg failed: invalid regular expression                                                                          ",
+    "rg failed: invalid regular expression                                                                                   ",
+  ],
+  "120 expanded": [
+    "Search Content all entries · .                                                                                          ",
+    "Failed · rg failed: invalid regular expression                                                                          ",
+    "rg failed: invalid regular expression                                                                                   ",
+  ],
+  "60 collapsed": [
+    "Search Content all entries · .                              ",
+    "Failed · rg failed: invalid regular expression              ",
+    "rg failed: invalid regular expression                       ",
+  ],
+  "60 expanded": [
+    "Search Content all entries · .                              ",
+    "Failed · rg failed: invalid regular expression              ",
+    "rg failed: invalid regular expression                       ",
+  ],
+  "80 collapsed": [
+    "Search Content all entries · .                                                  ",
+    "Failed · rg failed: invalid regular expression                                  ",
+    "rg failed: invalid regular expression                                           ",
+  ],
+  "80 expanded": [
+    "Search Content all entries · .                                                  ",
+    "Failed · rg failed: invalid regular expression                                  ",
+    "rg failed: invalid regular expression                                           ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > rg: partial and capped native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Search Content 中文 · /work                                                                                             ",
+    "Partial · 5000 output lines (matches + context)                                                                         ",
+    "src/中文.ts-9-before                                                                                                    ",
+    "… 4 more lines; expand                                                                                                  ",
+    "some paths were unreadable; results may be incomplete                                                                   ",
+    "Full results: /tmp/full.txt                                                                                             ",
+  ],
+  "120 expanded": [
+    "Search Content 中文 · /work                                                                                             ",
+    "Partial · 5000 output lines (matches + context)                                                                         ",
+    "src/中文.ts-9-before                                                                                                    ",
+    "src/中文.ts:10:中文                                                                                                     ",
+    "src/中文.ts-11-after                                                                                                    ",
+    "--                                                                                                                      ",
+    "other.ts:1:中文                                                                                                         ",
+    "some paths were unreadable; results may be incomplete                                                                   ",
+    "Full results: /tmp/full.txt                                                                                             ",
+  ],
+  "60 collapsed": [
+    "Search Content 中文 · /work                                 ",
+    "Partial · 5000 output lines (matches + context)             ",
+    "src/中文.ts-9-before                                        ",
+    "… 4 more lines; expand                                      ",
+    "some paths were unreadable; results may be incomplete       ",
+    "Full results: /tmp/full.txt                                 ",
+  ],
+  "60 expanded": [
+    "Search Content 中文 · /work                                 ",
+    "Partial · 5000 output lines (matches + context)             ",
+    "src/中文.ts-9-before                                        ",
+    "src/中文.ts:10:中文                                         ",
+    "src/中文.ts-11-after                                        ",
+    "--                                                          ",
+    "other.ts:1:中文                                             ",
+    "some paths were unreadable; results may be incomplete       ",
+    "Full results: /tmp/full.txt                                 ",
+  ],
+  "80 collapsed": [
+    "Search Content 中文 · /work                                                     ",
+    "Partial · 5000 output lines (matches + context)                                 ",
+    "src/中文.ts-9-before                                                            ",
+    "… 4 more lines; expand                                                          ",
+    "some paths were unreadable; results may be incomplete                           ",
+    "Full results: /tmp/full.txt                                                     ",
+  ],
+  "80 expanded": [
+    "Search Content 中文 · /work                                                     ",
+    "Partial · 5000 output lines (matches + context)                                 ",
+    "src/中文.ts-9-before                                                            ",
+    "src/中文.ts:10:中文                                                             ",
+    "src/中文.ts-11-after                                                            ",
+    "--                                                                              ",
+    "other.ts:1:中文                                                                 ",
+    "some paths were unreadable; results may be incomplete                           ",
+    "Full results: /tmp/full.txt                                                     ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_act: done native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Act type · #password                                                                                              ",
+    "Done · Typed 8 chars into #password. Now at https://example.invalid.                                                    ",
+  ],
+  "120 expanded": [
+    "Steel Act type · #password                                                                                              ",
+    "Done · Typed 8 chars into #password. Now at https://example.invalid.                                                    ",
+    "Typed 8 chars into #password. Now at https://example.invalid.                                                           ",
+  ],
+  "60 collapsed": [
+    "Steel Act type · #password                                  ",
+    "Done · Typed 8 chars into #password. Now at https://examp...",
+  ],
+  "60 expanded": [
+    "Steel Act type · #password                                  ",
+    "Done · Typed 8 chars into #password. Now at https://examp...",
+    "Typed 8 chars into #password. Now at                        ",
+    "https://example.invalid.                                    ",
+  ],
+  "80 collapsed": [
+    "Steel Act type · #password                                                      ",
+    "Done · Typed 8 chars into #password. Now at https://example.invalid.            ",
+  ],
+  "80 expanded": [
+    "Steel Act type · #password                                                      ",
+    "Done · Typed 8 chars into #password. Now at https://example.invalid.            ",
+    "Typed 8 chars into #password. Now at https://example.invalid.                   ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_act: waiting native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Act wait                                                                                                          ",
+    "Waiting · Browser operation in progress                                                                                 ",
+  ],
+  "120 expanded": [
+    "Steel Act wait                                                                                                          ",
+    "Waiting · Browser operation in progress                                                                                 ",
+  ],
+  "60 collapsed": [
+    "Steel Act wait                                              ",
+    "Waiting · Browser operation in progress                     ",
+  ],
+  "60 expanded": [
+    "Steel Act wait                                              ",
+    "Waiting · Browser operation in progress                     ",
+  ],
+  "80 collapsed": [
+    "Steel Act wait                                                                  ",
+    "Waiting · Browser operation in progress                                         ",
+  ],
+  "80 expanded": [
+    "Steel Act wait                                                                  ",
+    "Waiting · Browser operation in progress                                         ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_look: too large native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Look                                                                                                              ",
+    "Limited · Screenshot is 10 MB, too large to inline. Try fullPage:false or scope with steel_read.                        ",
+  ],
+  "120 expanded": [
+    "Steel Look                                                                                                              ",
+    "Limited · Screenshot is 10 MB, too large to inline. Try fullPage:false or scope with steel_read.                        ",
+    "Screenshot is 10 MB, too large to inline. Try fullPage:false or scope with steel_read.                                  ",
+  ],
+  "60 collapsed": [
+    "Steel Look                                                  ",
+    "Limited · Screenshot is 10 MB, too large to inline. Try f...",
+  ],
+  "60 expanded": [
+    "Steel Look                                                  ",
+    "Limited · Screenshot is 10 MB, too large to inline. Try f...",
+    "Screenshot is 10 MB, too large to inline. Try fullPage:false",
+    "or scope with steel_read.                                   ",
+  ],
+  "80 collapsed": [
+    "Steel Look                                                                      ",
+    "Limited · Screenshot is 10 MB, too large to inline. Try fullPage:false or sco...",
+  ],
+  "80 expanded": [
+    "Steel Look                                                                      ",
+    "Limited · Screenshot is 10 MB, too large to inline. Try fullPage:false or sco...",
+    "Screenshot is 10 MB, too large to inline. Try fullPage:false or scope with      ",
+    "steel_read.                                                                     ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_navigate: progress native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Navigate https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中... ",
+    "Active · Browser operation in progress                                                                                  ",
+  ],
+  "120 expanded": [
+    "Steel Navigate https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中... ",
+    "Active · Browser operation in progress                                                                                  ",
+  ],
+  "60 collapsed": [
+    "Steel Navigate https://example.invalid/中文/中文/中文/中... ",
+    "Active · Browser operation in progress                      ",
+  ],
+  "60 expanded": [
+    "Steel Navigate https://example.invalid/中文/中文/中文/中... ",
+    "Active · Browser operation in progress                      ",
+  ],
+  "80 collapsed": [
+    "Steel Navigate https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中... ",
+    "Active · Browser operation in progress                                          ",
+  ],
+  "80 expanded": [
+    "Steel Navigate https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中... ",
+    "Active · Browser operation in progress                                          ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_pdf: saved PDF native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel PDF                                                                                                               ",
+    "Done · PDF of https://example.invalid written to /tmp/page.pdf (10 KB).                                                 ",
+  ],
+  "120 expanded": [
+    "Steel PDF                                                                                                               ",
+    "Done · PDF of https://example.invalid written to /tmp/page.pdf (10 KB).                                                 ",
+    "PDF of https://example.invalid written to /tmp/page.pdf (10 KB).                                                        ",
+  ],
+  "60 collapsed": [
+    "Steel PDF                                                   ",
+    "Done · PDF of https://example.invalid written to /tmp/pag...",
+  ],
+  "60 expanded": [
+    "Steel PDF                                                   ",
+    "Done · PDF of https://example.invalid written to /tmp/pag...",
+    "PDF of https://example.invalid written to /tmp/page.pdf (10 ",
+    "KB).                                                        ",
+  ],
+  "80 collapsed": [
+    "Steel PDF                                                                       ",
+    "Done · PDF of https://example.invalid written to /tmp/page.pdf (10 KB).         ",
+  ],
+  "80 expanded": [
+    "Steel PDF                                                                       ",
+    "Done · PDF of https://example.invalid written to /tmp/page.pdf (10 KB).         ",
+    "PDF of https://example.invalid written to /tmp/page.pdf (10 KB).                ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_read: selector failure native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Read                                                                                                              ",
+    "Failed · Read failed: selector matched nothing                                                                          ",
+  ],
+  "120 expanded": [
+    "Steel Read                                                                                                              ",
+    "Failed · Read failed: selector matched nothing                                                                          ",
+    "Read failed: selector matched nothing                                                                                   ",
+  ],
+  "60 collapsed": [
+    "Steel Read                                                  ",
+    "Failed · Read failed: selector matched nothing              ",
+  ],
+  "60 expanded": [
+    "Steel Read                                                  ",
+    "Failed · Read failed: selector matched nothing              ",
+    "Read failed: selector matched nothing                       ",
+  ],
+  "80 collapsed": [
+    "Steel Read                                                                      ",
+    "Failed · Read failed: selector matched nothing                                  ",
+  ],
+  "80 expanded": [
+    "Steel Read                                                                      ",
+    "Failed · Read failed: selector matched nothing                                  ",
+    "Read failed: selector matched nothing                                           ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_scrape: capped native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Scrape                                                                                                            ",
+    "Limited · # page                                                                                                        ",
+    "[truncated — full 2 MB output: /tmp/full.txt]                                                                           ",
+  ],
+  "120 expanded": [
+    "Steel Scrape                                                                                                            ",
+    "Limited · # page                                                                                                        ",
+    "# page                                                                                                                  ",
+    "body                                                                                                                    ",
+    "                                                                                                                        ",
+    "[truncated — full 2 MB output: /tmp/full.txt]                                                                           ",
+    "[truncated — full 2 MB output: /tmp/full.txt]                                                                           ",
+  ],
+  "60 collapsed": [
+    "Steel Scrape                                                ",
+    "Limited · # page                                            ",
+    "[truncated — full 2 MB output: /tmp/full.txt]               ",
+  ],
+  "60 expanded": [
+    "Steel Scrape                                                ",
+    "Limited · # page                                            ",
+    "# page                                                      ",
+    "body                                                        ",
+    "                                                            ",
+    "[truncated — full 2 MB output: /tmp/full.txt]               ",
+    "[truncated — full 2 MB output: /tmp/full.txt]               ",
+  ],
+  "80 collapsed": [
+    "Steel Scrape                                                                    ",
+    "Limited · # page                                                                ",
+    "[truncated — full 2 MB output: /tmp/full.txt]                                   ",
+  ],
+  "80 expanded": [
+    "Steel Scrape                                                                    ",
+    "Limited · # page                                                                ",
+    "# page                                                                          ",
+    "body                                                                            ",
+    "                                                                                ",
+    "[truncated — full 2 MB output: /tmp/full.txt]                                   ",
+    "[truncated — full 2 MB output: /tmp/full.txt]                                   ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_scrape: empty native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Scrape                                                                                                            ",
+    "Empty · url: https://example.invalid                                                                                    ",
+  ],
+  "120 expanded": [
+    "Steel Scrape                                                                                                            ",
+    "Empty · url: https://example.invalid                                                                                    ",
+    "url: https://example.invalid                                                                                            ",
+  ],
+  "60 collapsed": [
+    "Steel Scrape                                                ",
+    "Empty · url: https://example.invalid                        ",
+  ],
+  "60 expanded": [
+    "Steel Scrape                                                ",
+    "Empty · url: https://example.invalid                        ",
+    "url: https://example.invalid                                ",
+  ],
+  "80 collapsed": [
+    "Steel Scrape                                                                    ",
+    "Empty · url: https://example.invalid                                            ",
+  ],
+  "80 expanded": [
+    "Steel Scrape                                                                    ",
+    "Empty · url: https://example.invalid                                            ",
+    "url: https://example.invalid                                                    ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_scrape: page native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Scrape https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/...",
+    "Done · # 中文 page                                                                                                      ",
+  ],
+  "120 expanded": [
+    "Steel Scrape https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/中文/...",
+    "Done · # 中文 page                                                                                                      ",
+    "# 中文 page                                                                                                             ",
+    "url: https://example.invalid                                                                                            ",
+    "                                                                                                                        ",
+    "## markdown                                                                                                             ",
+    "Readable 中文 body                                                                                                      ",
+  ],
+  "60 collapsed": [
+    "Steel Scrape https://example.invalid/中文/中文/中文/中文/...",
+    "Done · # 中文 page                                          ",
+  ],
+  "60 expanded": [
+    "Steel Scrape https://example.invalid/中文/中文/中文/中文/...",
+    "Done · # 中文 page                                          ",
+    "# 中文 page                                                 ",
+    "url: https://example.invalid                                ",
+    "                                                            ",
+    "## markdown                                                 ",
+    "Readable 中文 body                                          ",
+  ],
+  "80 collapsed": [
+    "Steel Scrape https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文/...",
+    "Done · # 中文 page                                                              ",
+  ],
+  "80 expanded": [
+    "Steel Scrape https://example.invalid/中文/中文/中文/中文/中文/中文/中文/中文/...",
+    "Done · # 中文 page                                                              ",
+    "# 中文 page                                                                     ",
+    "url: https://example.invalid                                                    ",
+    "                                                                                ",
+    "## markdown                                                                     ",
+    "Readable 中文 body                                                              ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_screenshot: saved image native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Screenshot                                                                                                        ",
+    "Limited · Screenshot saved to /tmp/shot.png (too large to inline).                                                      ",
+  ],
+  "120 expanded": [
+    "Steel Screenshot                                                                                                        ",
+    "Limited · Screenshot saved to /tmp/shot.png (too large to inline).                                                      ",
+    "Screenshot saved to /tmp/shot.png (too large to inline).                                                                ",
+  ],
+  "60 collapsed": [
+    "Steel Screenshot                                            ",
+    "Limited · Screenshot saved to /tmp/shot.png (too large to...",
+  ],
+  "60 expanded": [
+    "Steel Screenshot                                            ",
+    "Limited · Screenshot saved to /tmp/shot.png (too large to...",
+    "Screenshot saved to /tmp/shot.png (too large to inline).    ",
+  ],
+  "80 collapsed": [
+    "Steel Screenshot                                                                ",
+    "Limited · Screenshot saved to /tmp/shot.png (too large to inline).              ",
+  ],
+  "80 expanded": [
+    "Steel Screenshot                                                                ",
+    "Limited · Screenshot saved to /tmp/shot.png (too large to inline).              ",
+    "Screenshot saved to /tmp/shot.png (too large to inline).                        ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_search: no results native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Search                                                                                                            ",
+    "Empty · 0 results                                                                                                       ",
+  ],
+  "120 expanded": [
+    "Steel Search                                                                                                            ",
+    "Empty · 0 results                                                                                                       ",
+    "No results for "中文".                                                                                                  ",
+  ],
+  "60 collapsed": [
+    "Steel Search                                                ",
+    "Empty · 0 results                                           ",
+  ],
+  "60 expanded": [
+    "Steel Search                                                ",
+    "Empty · 0 results                                           ",
+    "No results for "中文".                                      ",
+  ],
+  "80 collapsed": [
+    "Steel Search                                                                    ",
+    "Empty · 0 results                                                               ",
+  ],
+  "80 expanded": [
+    "Steel Search                                                                    ",
+    "Empty · 0 results                                                               ",
+    "No results for "中文".                                                          ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_search: results native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Search 中文 browser                                                                                               ",
+    "Done · 1 results                                                                                                        ",
+  ],
+  "120 expanded": [
+    "Steel Search 中文 browser                                                                                               ",
+    "Done · 1 results                                                                                                        ",
+    "1. 中文 title                                                                                                           ",
+    "   https://example.invalid                                                                                              ",
+    "   description                                                                                                          ",
+  ],
+  "60 collapsed": [
+    "Steel Search 中文 browser                                   ",
+    "Done · 1 results                                            ",
+  ],
+  "60 expanded": [
+    "Steel Search 中文 browser                                   ",
+    "Done · 1 results                                            ",
+    "1. 中文 title                                               ",
+    "   https://example.invalid                                  ",
+    "   description                                              ",
+  ],
+  "80 collapsed": [
+    "Steel Search 中文 browser                                                       ",
+    "Done · 1 results                                                                ",
+  ],
+  "80 expanded": [
+    "Steel Search 中文 browser                                                       ",
+    "Done · 1 results                                                                ",
+    "1. 中文 title                                                                   ",
+    "   https://example.invalid                                                      ",
+    "   description                                                                  ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_session: closed native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Session end                                                                                                       ",
+    "Closed · Released Steel session session-123.                                                                            ",
+  ],
+  "120 expanded": [
+    "Steel Session end                                                                                                       ",
+    "Closed · Released Steel session session-123.                                                                            ",
+    "Released Steel session session-123.                                                                                     ",
+  ],
+  "60 collapsed": [
+    "Steel Session end                                           ",
+    "Closed · Released Steel session session-123.                ",
+  ],
+  "60 expanded": [
+    "Steel Session end                                           ",
+    "Closed · Released Steel session session-123.                ",
+    "Released Steel session session-123.                         ",
+  ],
+  "80 collapsed": [
+    "Steel Session end                                                               ",
+    "Closed · Released Steel session session-123.                                    ",
+  ],
+  "80 expanded": [
+    "Steel Session end                                                               ",
+    "Closed · Released Steel session session-123.                                    ",
+    "Released Steel session session-123.                                             ",
+  ],
+}
+`;
+
+exports[`registered native browser/search/log renderers > steel_session: ready native state/width snapshots 1`] = `
+{
+  "120 collapsed": [
+    "Steel Session start                                                                                                     ",
+    "Done · Steel session session-123 is live.                                                                               ",
+  ],
+  "120 expanded": [
+    "Steel Session start                                                                                                     ",
+    "Done · Steel session session-123 is live.                                                                               ",
+    "Steel session session-123 is live.                                                                                      ",
+    "Watch it: https://viewer.invalid/session-123                                                                            ",
+  ],
+  "60 collapsed": [
+    "Steel Session start                                         ",
+    "Done · Steel session session-123 is live.                   ",
+  ],
+  "60 expanded": [
+    "Steel Session start                                         ",
+    "Done · Steel session session-123 is live.                   ",
+    "Steel session session-123 is live.                          ",
+    "Watch it: https://viewer.invalid/session-123                ",
+  ],
+  "80 collapsed": [
+    "Steel Session start                                                             ",
+    "Done · Steel session session-123 is live.                                       ",
+  ],
+  "80 expanded": [
+    "Steel Session start                                                             ",
+    "Done · Steel session session-123 is live.                                       ",
+    "Steel session session-123 is live.                                              ",
+    "Watch it: https://viewer.invalid/session-123                                    ",
+  ],
+}
+`;

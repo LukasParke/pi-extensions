@@ -1,4 +1,5 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { stripTerminalSequences, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { dispatchQueue, ensureDelivery } from "@parke.dev/pi-dispatch";
 import type { DispatchPriority } from "@parke.dev/pi-dispatch";
@@ -82,6 +83,39 @@ export function sentinelStatus(items: SentinelSnapshot[], gate?: GateSnapshot) {
 	return parts.length ? `◉ ${parts.join(", ")}` : undefined;
 }
 
+export function sentinelTone(state: string) {
+	return state === "complete"
+		? "success"
+		: state === "failed"
+			? "error"
+			: state === "running"
+				? "accent"
+				: "warning";
+}
+
+export function sentinelWidget(
+	items: SentinelSnapshot[],
+	gate: GateSnapshot | undefined,
+	theme: Theme,
+): Component {
+	return {
+		render(width) {
+			const clean = (text: string) => stripTerminalSequences(text).replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
+			const lines = items
+				.slice(0, 3)
+				.map(
+					(item) =>
+						theme.fg(sentinelTone(item.state), `${clean(item.name)} · ${item.state}`) +
+						theme.fg("muted", ` · next ${formatEta(item.nextPollAt)}`),
+				);
+			if (gate?.active) lines.push(theme.fg(gate.complete ? "success" : "warning", gateLine(gate)));
+			if (items.length > 3) lines.push(theme.fg("muted", `… +${items.length - 3} more · sentinel_status`));
+			return lines.map((line) => truncateToWidth(line, width));
+		},
+		invalidate() {},
+	};
+}
+
 function statusText(items: SentinelSnapshot[], gate?: GateSnapshot) {
 	const lines = [
 		...items.map((item) =>
@@ -124,12 +158,19 @@ export function registerSentinel(pi: ExtensionAPI, manager = new SentinelManager
 		const snapshot = manager.snapshot();
 		const activeItems = snapshot.items.filter(isActive);
 		const status = sentinelStatus(activeItems, snapshot.gate);
-		uiCtx.ui.setStatus(UI_KEY, status ? uiCtx.ui.theme.fg("warning", status) : undefined);
+		uiCtx.ui.setStatus(
+			UI_KEY,
+			status
+				? uiCtx.ui.theme.fg(
+						activeItems.some((item) => item.state === "running") && !snapshot.gate?.active
+							? "accent"
+							: "warning",
+						`${status} · sentinel_status`,
+					)
+				: undefined,
+		);
 		if (!status) return uiCtx.ui.setWidget(UI_KEY, undefined);
-		uiCtx.ui.setWidget(UI_KEY, [
-			...activeItems.map(itemLine),
-			...(snapshot.gate?.active ? [gateLine(snapshot.gate)] : []),
-		]);
+		uiCtx.ui.setWidget(UI_KEY, (_tui, theme) => sentinelWidget(activeItems, snapshot.gate, theme));
 	};
 
 	manager.onEvent((event) => {

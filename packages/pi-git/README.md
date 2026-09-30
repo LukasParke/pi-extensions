@@ -3,6 +3,12 @@
 Structured Git reads and configurable verification for the [Pi coding agent](https://pi.dev).
 Requires Pi **0.99.1 or newer**.
 
+Tool rows use Pi's native theme and terminal-width handling. Results show at most
+five preview rows; expand for patches, logs, branch/worktree detail, and verification
+output. Expanded output is bounded to 200 terminal lines with an overflow notice.
+Errors and refusals never display a clean working tree. Model-facing content and
+structured results are unchanged.
+
 ```sh
 pi install npm:@parke.dev/pi-git
 ```

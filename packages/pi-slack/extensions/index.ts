@@ -16,7 +16,7 @@ import {
 	statusSchema,
 	threadSchema,
 } from "../src/contracts.ts";
-import { renderChannels, renderMessages, renderSearch, renderToolCall } from "../src/tui.ts";
+import { renderToolCall, renderToolResult } from "../src/tui.ts";
 import {
 	type ChannelRow,
 	type MessageRow,
@@ -116,6 +116,13 @@ function splitThreadRef(ref: string): { channel: string; ts: string } {
 }
 
 export default function slack(pi: ExtensionAPI): void {
+	const registerTool: ExtensionAPI["registerTool"] = (tool) =>
+		pi.registerTool({
+			...tool,
+			renderCall: (args, theme, context) => renderToolCall(tool.name, args, theme, context),
+			renderResult: (result, options, theme, context) =>
+				renderToolResult(tool.name, result, options, theme, context),
+		});
 	registerCredentialCommand(pi, {
 		id: "slack-login",
 		label: "Slack",
@@ -129,7 +136,7 @@ export default function slack(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "slack_channels",
 		namespace,
 		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -167,14 +174,9 @@ export default function slack(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("slack_channels", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { rows?: ChannelRow[] } }).details;
-			return renderChannels(d?.rows ?? []);
-		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "slack_thread",
 		namespace,
 		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -241,14 +243,9 @@ export default function slack(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("slack_thread", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { thread?: { messages?: MessageRow[] } } }).details;
-			return renderMessages(d?.thread?.messages ?? []);
-		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "slack_search",
 		namespace,
 		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -295,16 +292,11 @@ export default function slack(pi: ExtensionAPI): void {
 				return refuse(explain(e));
 			}
 		},
-		renderCall: (args: unknown) => renderToolCall("slack_search", (args ?? {}) as Record<string, unknown>),
-		renderResult: (result: unknown) => {
-			const d = (result as { details?: { rows?: SearchRow[] } }).details;
-			return renderSearch(d?.rows ?? []);
-		},
 	});
 
 	/* -------------------------------- writes -------------------------------- */
 
-	pi.registerTool({
+	registerTool({
 		name: "slack_post",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -368,7 +360,7 @@ export default function slack(pi: ExtensionAPI): void {
 
 	/* ------------------------------ credential ------------------------------ */
 
-	pi.registerTool({
+	registerTool({
 		name: "slack_status",
 		namespace,
 		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -405,7 +397,7 @@ export default function slack(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "slack_connect",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
@@ -462,7 +454,7 @@ export default function slack(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerTool({
+	registerTool({
 		name: "slack_disconnect",
 		namespace,
 		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },

@@ -41,6 +41,7 @@ import { Type } from "typebox";
 import { CdpSession, jsString, waitForIdle } from "../src/cdp.ts";
 import { headers } from "../src/client.ts";
 import { cdpBase, type SteelConfig, steelConfig } from "../src/config.ts";
+import { browserRenderers } from "../src/tui.ts";
 
 const namespace = { name: "steel", description: "Self-hosted Steel browser tools" };
 
@@ -311,6 +312,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "steel_session",
 		label: "Steel Session",
+		...browserRenderers("Steel Session"),
 		description:
 			"Manage the persistent Steel browser session used by steel_navigate / steel_act / steel_read / steel_look. Start one to keep cookies and login state across steps; end it when done to free the browser. Only one session is live at a time.",
 		parameters: Type.Object(
@@ -421,6 +423,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "steel_navigate",
 		label: "Steel Navigate",
+		...browserRenderers("Steel Navigate"),
 		description:
 			"Navigate the persistent Steel browser to a URL and return the settled page's visible text. Starts a session automatically if none is live. Cookies and login state from earlier steps are kept.",
 		parameters: Type.Object(
@@ -477,6 +480,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "steel_act",
 		label: "Steel Act",
+		...browserRenderers("Steel Act"),
 		description:
 			"Interact with the current page in the persistent Steel browser: click an element, type into a field, press a key, select an option, or scroll. Use steel_read with mode:'forms' first to discover selectors. This is what makes logins and multi-step flows possible.",
 		parameters: Type.Object(
@@ -629,6 +633,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "steel_read",
 		label: "Steel Read",
+		...browserRenderers("Steel Read"),
 		description:
 			"Read the current page in the persistent Steel browser. mode:'text' for visible text, 'links' for anchors, 'forms' to discover input/button selectors for steel_act, 'all' for everything. Pass a selector to scope it.",
 		parameters: Type.Object(
@@ -676,6 +681,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "steel_look",
 		label: "Steel Look",
+		...browserRenderers("Steel Look"),
 		description:
 			"Screenshot the current page in the persistent Steel browser and return it as an image, so you can see the rendered state mid-flow. Use to verify a click worked or to read something only visible after rendering.",
 		parameters: Type.Object(
